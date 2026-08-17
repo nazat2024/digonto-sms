@@ -19,13 +19,14 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Generate gradlew
-      working-directory: ./Android_SMS_Forwarder
-      run: gradle wrapper --gradle-version 8.2
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.2'
 
     - name: Build with Gradle
       working-directory: ./Android_SMS_Forwarder
-      run: ./gradlew assembleRelease
+      run: gradle assembleRelease
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
