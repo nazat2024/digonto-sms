@@ -46,11 +46,11 @@ public class MainActivity extends AppCompatActivity {
         btnSave.setOnClickListener(v -> {
             String code = pairingCodeInput.getText().toString().trim();
             if (code.length() < 6) {
-                Toast.makeText(this, "সঠিক ৬-ডিজিটের কোড দিন", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Please enter a valid 6-digit code", Toast.LENGTH_SHORT).show();
                 return;
             }
             prefs.edit().putString("pairing_code", code).apply();
-            Toast.makeText(this, "কোড সেভ হয়েছে!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Code saved successfully!", Toast.LENGTH_SHORT).show();
             updateStatus();
         });
 
@@ -58,7 +58,7 @@ public class MainActivity extends AppCompatActivity {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS}, 101);
             } else {
-                Toast.makeText(this, "SMS Permission আগেই দেওয়া আছে!", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "SMS Permission already granted!", Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -71,7 +71,7 @@ public class MainActivity extends AppCompatActivity {
                     intent.setData(Uri.parse("package:" + getPackageName()));
                     startActivity(intent);
                 } else {
-                    Toast.makeText(this, "Battery Optimization আগেই বন্ধ করা আছে!", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Battery Optimization already disabled!", Toast.LENGTH_SHORT).show();
                 }
             }
         });

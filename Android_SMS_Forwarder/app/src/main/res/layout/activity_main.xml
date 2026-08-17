@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="☁️ Cloud SMS Sync"
+        android:text="Cloud SMS Sync"
         android:textSize="24sp"
         android:textStyle="bold"
         android:textColor="#112240"
@@ -19,7 +19,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="ডেস্কটপ সফটওয়্যার থেকে ৬-ডিজিটের কোডটি এখানে লিখুন:"
+        android:text="Enter the 6-digit code from the Desktop App:"
         android:textSize="16sp"
         android:layout_marginBottom="10dp"/>
 
@@ -27,7 +27,7 @@
         android:id="@+id/pairingCodeInput"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:hint="যেমন: 123456"
+        android:hint="e.g. 123456"
         android:inputType="number"
         android:maxLength="6"
         android:textSize="20sp"
@@ -49,7 +49,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="পারমিশন চেকলিস্ট (অবশ্যই দিন):"
+        android:text="Permission Checklist (Required):"
         android:textSize="16sp"
         android:textStyle="bold"
         android:layout_marginBottom="10dp"/>
@@ -58,14 +58,14 @@
         android:id="@+id/btnPermSms"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="1. SMS Permission দিন"
+        android:text="1. Grant SMS Permission"
         android:layout_marginBottom="10dp"/>
 
     <Button
         android:id="@+id/btnPermBattery"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="2. Battery Optimization বন্ধ করুন"
+        android:text="2. Disable Battery Optimization"
         android:layout_marginBottom="10dp"/>
 
     <TextView
