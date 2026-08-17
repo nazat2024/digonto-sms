@@ -1,0 +1,23 @@
+{
+    "server": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "dashboard_port": 5001
+    },
+    "chrome": {
+        "user_data_dir": "C:\\Users\\Mustafizur Rahman\\AppData\\Local\\Google\\Chrome\\User Data",
+        "executable_path": "",
+        "headless": false,
+        "start_delay_seconds": 3
+    },
+    "profiles": [],
+    "ivac": {
+        "login_url": "https://appointment.ivacbd.com/signin",
+        "otp_url": "https://appointment.ivacbd.com/verify/login/phone_otp",
+        "sms_sender": "IVAC_BD"
+    },
+    "sms_method": "http",
+    "adb": {
+        "device_serials": []
+    }
+}

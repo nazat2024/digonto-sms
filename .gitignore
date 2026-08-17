@@ -1,0 +1,14 @@
+python_env/
+chrome_profiles/
+test_isolate/
+dist/
+build/
+obf_dist/
+*.pyc
+__pycache__/
+.env
+.DS_Store
+Android_SMS_Forwarder/.gradle/
+Android_SMS_Forwarder/local.properties
+Android_SMS_Forwarder/app/build/
+*.exe

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="bn" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IVAC OTP Auto-Fill Dashboard</title>
+    <meta name="description" content="IVAC Indian Visa Application Center OTP Auto-Fill Control Panel">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/dashboard/style.css">
+    <style>
+        .top-banner {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);
+        }
+        .top-banner-icon {
+            font-size: 2rem;
+        }
+        .top-banner-text h3 {
+            margin: 0 0 5px 0;
+            font-size: 1.1rem;
+        }
+        .top-banner-text p {
+            margin: 0;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header" id="main-header">
+        <div class="header-left">
+            <div class="logo">
+                <span class="logo-icon">🇮🇳</span>
+                <div class="logo-text">
+                    <h1>IVAC OTP Auto-Fill</h1>
+                    <span class="subtitle">Chrome Extension Edition</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="connection-status" id="connection-status">
+                <span class="status-dot disconnected"></span>
+                <span class="status-text">সংযোগ বিচ্ছিন্ন</span>
+            </div>
+            <div class="server-info" id="server-info" style="display: flex; gap: 8px; align-items: center;">
+                <span class="server-ip">📡 --</span>
+                <button class="btn btn-sm" id="btn-copy-ip" title="IP কপি করুন" style="background: #2563eb; color: white; padding: 4px 8px; font-size: 0.8rem;">📋 Copy IP</button>
+                <button class="btn btn-sm" id="btn-refresh-ip" title="IP রিফ্রেশ করুন" style="background: #059669; color: white; padding: 4px 8px; font-size: 0.8rem;">🔄 Refresh</button>
+            </div>
+            <button class="btn btn-danger btn-sm" id="btn-clear-all" title="সব রিসেট করুন">
+                🗑️ ডেটা রিসেট
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- NEW: MacroDroid URL Box -->
+        <div class="top-banner" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-left: 4px solid #3b82f6;">
+            <div class="top-banner-icon" style="font-size: 2rem;">📱</div>
+            <div class="top-banner-text" style="width: 100%;">
+                <h3 style="color: #60a5fa;">MacroDroid Setup (মোবাইলের জন্য)</h3>
+                <p>১. আপনার মোবাইলের MacroDroid-এ ঠিক এই লিংকটি কপি করে বসান:</p>
+                <code id="macrodroid-url" style="display: inline-block; background: #000; padding: 8px 15px; margin-top: 5px; border-radius: 5px; color: #10b981; font-size: 1.1rem; font-weight: bold; border: 1px solid #334155;">লোডিং...</code>
+                
+                <p style="margin-top: 15px;">২. MacroDroid-এর HTTP Request-এ 'Body' হিসেবে নিচের JSON টি কপি করে পেস্ট করুন:</p>
+                <div style="display: flex; align-items: flex-start; gap: 10px; margin-top: 5px;">
+                    <pre id="macrodroid-json" style="background: #000; padding: 10px 15px; border-radius: 5px; color: #60a5fa; font-size: 1rem; border: 1px solid #334155; margin: 0; line-height: 1.4;">{
+  "phone": "01XXXXXXXXX",
+  "body": "{msg}"
+}</pre>
+                    <button class="btn btn-sm" id="btn-copy-json" style="background: #059669; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; white-space: nowrap;">📋 কপি JSON</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="top-banner" style="background: linear-gradient(135deg, #475569 0%, #334155 100%);">
+            <div class="top-banner-icon">🧩</div>
+            <div class="top-banner-text">
+                <h3>আপনার Chrome Profile Number বের করবেন যেভাবে</h3>
+                <p>ব্রাউজারের অ্যাড্রেস বারে <code style="background: #000; padding: 2px 6px; border-radius: 4px;">chrome://version/</code> লিখে এন্টার চাপুন। 'Profile Path'-এর শেষের নামটিই আপনার প্রোফাইল নম্বর (যেমন: Profile 1)।</p>
+                <button class="btn btn-sm" id="btn-copy-chrome-url" style="margin-top: 8px; background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">📋 কপি chrome://version/</button>
+            </div>
+        </div>
+
+        <div class="top-banner">
+            <div class="top-banner-icon">🚀</div>
+            <div class="top-banner-text">
+                <h3>সিস্টেম চালু আছে!</h3>
+                <p>আপনি আপনার Chrome ব্রাউজারগুলো থেকে স্বাভাবিকভাবে লগইন করুন। লগইন করার পর OTP পেইজ আসলে আমাদের Chrome Extension নিজে থেকেই OTP টাইপ করে দেবে!</p>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <section class="stats-bar" id="stats-bar" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="stat-card stat-waiting" id="stat-waiting">
+                <div class="stat-value">0</div>
+                <div class="stat-label">OTP অপেক্ষমান (Unused)</div>
+            </div>
+            <div class="stat-card stat-received" id="stat-received">
+                <div class="stat-value">0</div>
+                <div class="stat-label">সর্বমোট OTP প্রাপ্ত</div>
+            </div>
+            <div class="stat-card stat-success" id="stat-success">
+                <div class="stat-value">0</div>
+                <div class="stat-label">ব্যবহৃত (Used)</div>
+            </div>
+        </section>
+
+        <!-- OTP Log & Manual Input -->
+        <section class="bottom-section" style="grid-template-columns: 1fr 1fr;">
+            <!-- Manual OTP Input -->
+            <div class="manual-otp-card" id="manual-otp-card">
+                <h3>✋ ম্যানুয়াল OTP ও বাটন ফোন</h3>
+                <div class="button-phone-tip">
+                    <span>💡 <b>বাটন ফোনের জন্য সমাধান:</b> বাটন ফোনের সিম স্মার্টফোনে (যেমন Dual SIM স্লটে) লাগিয়ে রাখলে অটোমেটিক কাজ করবে। যদি বাটন ফোনেই SMS আসে, তবে নিচের বক্সে SMS-এর শব্দ বা সংখ্যাগুলো লিখে Enter চাপলে সাথে সাথে Chrome-এ অটো ফিল হয়ে যাবে!</span>
+                </div>
+                <form id="manual-otp-form" class="manual-form">
+                    <div class="form-group">
+                        <label for="manual-phone">📱 ফোন নম্বর লিখুন</label>
+                        <input type="text" id="manual-phone" class="form-input" placeholder="013XXXXXXXX" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="manual-otp-input">🔢 সরাসরি OTP (৬ ডিজিট সংখ্যা)</label>
+                        <div class="otp-input-group">
+                            <input type="text" id="otp-d1" class="otp-box" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                            <input type="text" id="otp-d2" class="otp-box" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                            <input type="text" id="otp-d3" class="otp-box" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                            <span class="otp-dash">—</span>
+                            <input type="text" id="otp-d4" class="otp-box" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                            <input type="text" id="otp-d5" class="otp-box" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                            <input type="text" id="otp-d6" class="otp-box" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="manual-sms-text">📝 অথবা SMS টেক্সট পেস্ট করুন / লিখুন</label>
+                        <textarea id="manual-sms-text" class="form-input" rows="2" placeholder="(IVACBD) For security, type the following sequence when prompted Nine-Zero-Six..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-full" id="btn-submit-otp">
+                        ✅ OTP পাঠান (Auto Fill)
+                    </button>
+                </form>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="log-card" id="log-card">
+                <div class="log-header">
+                    <h3>📜 লাইভ কার্যকলাপ লগ</h3>
+                    <button class="btn btn-ghost btn-sm" id="btn-clear-log">মুছুন</button>
+                </div>
+                <div class="log-container" id="log-container">
+                    <div class="log-entry log-info">
+                        <span class="log-time">--:--:--</span>
+                        <span class="log-msg">সিস্টেম প্রস্তুত। আপনার নির্দেশনার অপেক্ষায়...</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="/dashboard/app.js"></script>
+</body>
+</html>
