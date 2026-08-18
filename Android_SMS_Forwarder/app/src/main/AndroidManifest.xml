@@ -45,6 +45,6 @@
             android:name=".HistoryActivity"
             android:exported="false"
             android:label="History"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+            android:theme="@style/Theme.SMSForwarder" />
     </application>
 </manifest>
