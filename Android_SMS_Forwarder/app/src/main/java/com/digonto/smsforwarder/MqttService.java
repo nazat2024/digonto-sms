@@ -3,9 +3,7 @@ package com.digonto.smsforwarder;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
@@ -18,13 +16,15 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
-import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.json.JSONObject;
+
+import java.util.HashSet;
+import java.util.Set;
 
 public class MqttService extends Service {
 
@@ -54,10 +54,19 @@ public class MqttService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String pairingCode = prefs.getString("pairing_code", "");
-        if (pairingCode.isEmpty()) {
-            stopSelf();
-            return START_NOT_STICKY;
+        Set<String> pairingCodes = prefs.getStringSet("pairing_codes", new HashSet<>());
+        
+        // Handle migration from old single code to set (in case it wasn't done by UI yet)
+        if (pairingCodes.isEmpty()) {
+            String oldCode = prefs.getString("pairing_code", "");
+            if (!oldCode.isEmpty()) {
+                pairingCodes = new HashSet<>();
+                pairingCodes.add(oldCode);
+                prefs.edit().putStringSet("pairing_codes", pairingCodes).apply();
+            } else {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
         }
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
@@ -68,11 +77,11 @@ public class MqttService extends Service {
 
         startForeground(NOTIFICATION_ID, notification);
 
-        connectToMqtt(pairingCode);
+        connectToMqtt(pairingCodes);
         return START_STICKY;
     }
 
-    private void connectToMqtt(String pairingCode) {
+    private void connectToMqtt(Set<String> pairingCodes) {
         new Thread(() -> {
             try {
                 if (mqttClient != null && mqttClient.isConnected()) {
@@ -93,9 +102,12 @@ public class MqttService extends Service {
                     public void connectComplete(boolean reconnect, String serverURI) {
                         isConnectedToBroker = true;
                         try {
-                            String sysTopic = "digonto_ivac_sms_" + prefs.getString("pairing_code", "") + "_sys";
-                            mqttClient.subscribe(sysTopic);
-                            Log.d(TAG, "Subscribed to sysTopic after connect/reconnect");
+                            Set<String> currentCodes = prefs.getStringSet("pairing_codes", new HashSet<>());
+                            for (String code : currentCodes) {
+                                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                                mqttClient.subscribe(sysTopic);
+                                Log.d(TAG, "Subscribed to sysTopic: " + sysTopic);
+                            }
                         } catch (Exception e) {
                             Log.e(TAG, "Error subscribing on connectComplete", e);
                         }
@@ -127,21 +139,18 @@ public class MqttService extends Service {
                 mqttClient.connect(options);
                 isConnectedToBroker = true;
                 
-                String sysTopic = "digonto_ivac_sms_" + pairingCode + "_sys";
-                // Subscription is now handled in connectComplete
-
-                startPingLoop(pairingCode, sysTopic);
+                startPingLoop();
 
             } catch (Exception e) {
                 isConnectedToBroker = false;
                 Log.e(TAG, "MQTT Connection error", e);
                 // Retry after 5 seconds
-                new Handler(Looper.getMainLooper()).postDelayed(() -> connectToMqtt(pairingCode), 5000);
+                new Handler(Looper.getMainLooper()).postDelayed(() -> connectToMqtt(pairingCodes), 5000);
             }
         }).start();
     }
 
-    private void startPingLoop(String pairingCode, String sysTopic) {
+    private void startPingLoop() {
         if (pingHandler != null) {
             pingHandler.removeCallbacksAndMessages(null);
         }
@@ -160,7 +169,16 @@ public class MqttService extends Service {
 
                         MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
                         msg.setQos(0);
-                        mqttClient.publish(sysTopic, msg);
+
+                        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+                        for (String code : codes) {
+                            String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                            try {
+                                mqttClient.publish(sysTopic, msg);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Error publishing ping to " + sysTopic, e);
+                            }
+                        }
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "Ping error", e);
@@ -183,26 +201,43 @@ public class MqttService extends Service {
                     return;
                 }
 
-                String pairingCode = prefs.getString("pairing_code", "");
-                String topic = "digonto_ivac_sms_" + pairingCode;
+                Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+                if (codes.isEmpty()) {
+                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    return;
+                }
 
                 JSONObject json = new JSONObject();
                 json.put("phone", phone);
                 json.put("sms", smsBody);
                 json.put("sim", simName);
-
                 String rawJson = json.toString();
-                byte[] xored = xorBytes(rawJson.getBytes(), pairingCode.getBytes());
-                String payload = Base64.encodeToString(xored, Base64.NO_WRAP);
 
-                MqttMessage message = new MqttMessage(payload.getBytes());
-                message.setQos(1);
-                mqttClient.publish(topic, message);
-                Log.d(TAG, "SMS Published Successfully via MQTT!");
+                boolean atLeastOneSuccess = false;
+
+                for (String code : codes) {
+                    String topic = "digonto_ivac_sms_" + code;
+                    try {
+                        byte[] xored = xorBytes(rawJson.getBytes(), code.getBytes());
+                        String payload = Base64.encodeToString(xored, Base64.NO_WRAP);
+
+                        MqttMessage message = new MqttMessage(payload.getBytes());
+                        message.setQos(1);
+                        mqttClient.publish(topic, message);
+                        atLeastOneSuccess = true;
+                        Log.d(TAG, "SMS Published Successfully to topic: " + topic);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error publishing SMS to topic " + topic, e);
+                    }
+                }
                 
-                SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_SUCCESS);
+                if (atLeastOneSuccess) {
+                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_SUCCESS);
+                } else {
+                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                }
             } catch (Exception e) {
-                Log.e(TAG, "Error publishing SMS", e);
+                Log.e(TAG, "Error processing SMS publishing", e);
                 if (logId != -1) {
                     SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
                 }

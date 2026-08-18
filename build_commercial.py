@@ -36,6 +36,12 @@ def clean():
     for d in [OBF_DIR, DIST_DIR, BUILD_DIR]:
         if os.path.exists(d):
             shutil.rmtree(d)
+    
+    # Delete __pycache__ to prevent PyInstaller from using stale bytecode
+    pycache_dir = os.path.join(BASE_DIR, "__pycache__")
+    if os.path.exists(pycache_dir):
+        shutil.rmtree(pycache_dir)
+        print("    🧹 __pycache__ পরিষ্কার করা হয়েছে।")
 def minify_and_obfuscate():
     import ast
     import shutil
@@ -127,7 +133,8 @@ def build_exe():
         "sms_server", "customtkinter",
         "license_system", "license_system.hwid",
         "license_system.crypto", "license_system.license_manager",
-        "customtkinter", "requests", "otp_parser", "tkinter", "gui_license"
+        "customtkinter", "requests", "otp_parser", "tkinter", "gui_license",
+        "paho", "paho.mqtt", "paho.mqtt.client"
     ]
     
     # We build from the obfuscated `gui_app.py`

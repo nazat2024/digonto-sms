@@ -1078,7 +1078,13 @@ class IVACApp(ctk.CTk):
     def on_closing(self):
         if hasattr(self, 'server_process') and self.server_process:
             try:
-                self.server_process.kill()
+                import subprocess
+                # Use taskkill to kill the entire process tree, avoiding orphan background processes
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(self.server_process.pid)],
+                    creationflags=0x08000000,
+                    check=False
+                )
             except:
                 pass
         self.destroy()

@@ -360,9 +360,8 @@ try:
     def on_mqtt_message(client, userdata, msg):
         try:
             if msg.topic == MQTT_SYS_TOPIC:
-                import json
                 payload = msg.payload.decode('utf-8')
-                sys_data = json.loads(payload)
+                sys_data = __import__('json').loads(payload)
                 if sys_data.get("type") == "ping":
                     dev_id = sys_data.get("device_id", "Unknown Device")
                     connected_devices[dev_id] = {
@@ -373,7 +372,7 @@ try:
                         "online": True
                     }
                     # Send pong
-                    pong = json.dumps({"type": "pong"}).encode('utf-8')
+                    pong = __import__('json').dumps({"type": "pong"}).encode('utf-8')
                     client.publish(MQTT_SYS_TOPIC, pong)
                 return
 
@@ -387,7 +386,7 @@ try:
             decrypted_bytes = bytes(b ^ key_bytes[i % len(key_bytes)] for i, b in enumerate(raw))
             decrypted = decrypted_bytes.decode('utf-8')
             
-            data = json.loads(decrypted)
+            data = __import__('json').loads(decrypted)
             
             phone = data.get("phone", "Unknown")
             sms_body = data.get("sms", "")
@@ -395,12 +394,38 @@ try:
             
             print(f"[Cloud Sync] Received SMS via {sim_name} from {phone}")
             
+            # Identify the actual destination Rocket Account number
+            # Android sends the sender's number in "phone" and the SIM name in "sim_name".
+            # The user names their SIM with the Rocket number (e.g., 01959166796).
+            import re
+            target_phones = []
+            
+            # Check if sim_name is a valid BD number
+            sim_nums = re.findall(r'\b(01[3-9]\d{8})\b', sim_name)
+            if sim_nums:
+                target_phones.extend(sim_nums)
+            
+            # Fallback: check if the sender number is somehow the mapped one
+            if not target_phones:
+                phone_nums = re.findall(r'\b(01[3-9]\d{8})\b', phone)
+                if phone_nums:
+                    target_phones.extend(phone_nums)
+                    
+            if not target_phones:
+                target_phones = [sim_name] if sim_name and sim_name != "Unknown SIM" else [phone]
+            
             # Parse OTP
             digits = parse_otp_from_sms(sms_body)
             if digits:
-                otp_store.add_otp(phone, digits, sms_body)
+                for target in set(target_phones):
+                    otp_store.add_otp(target, digits, sms_body)
         except Exception as e:
             print("[Cloud Sync] Error processing message:", e)
+            import traceback
+            import os
+            app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+            with open(os.path.join(app_data_dir, "mqtt_error.log"), "a", encoding="utf-8") as f:
+                f.write(f"{time.time()} Error processing message: {e}\n{traceback.format_exc()}\n")
 
     def start_mqtt_client():
         try:
@@ -418,4 +443,8 @@ except ImportError as e:
     print("[Cloud Sync] Dependency missing:", e)
 except Exception as e:
     print("[Cloud Sync] Init error:", e)
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+
 

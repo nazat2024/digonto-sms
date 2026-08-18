@@ -44,20 +44,24 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
             holder.tvSender.setText(log.getSender());
             holder.tvBody.setText(log.getBody());
             holder.tvTime.setText(dateFormat.format(new Date(log.getTimestamp())));
+            
+            // Set SIM Info
+            String simInfo = (log.getSimName() != null && !log.getSimName().isEmpty()) ? log.getSimName() : "Unknown SIM";
+            holder.tvDestination.setText(simInfo + " ➔ Forwarded to Desktop");
 
             if (log.getStatus() == SmsLog.STATUS_SUCCESS) {
                 holder.tvStatus.setText("Success");
                 holder.tvStatus.setTextColor(Color.parseColor("#10B981")); // Green
-                holder.btnRetry.setVisibility(View.GONE);
             } else if (log.getStatus() == SmsLog.STATUS_FAILED) {
                 holder.tvStatus.setText("Failed");
                 holder.tvStatus.setTextColor(Color.parseColor("#EF4444")); // Red
-                holder.btnRetry.setVisibility(View.VISIBLE);
             } else {
                 holder.tvStatus.setText("Sending...");
                 holder.tvStatus.setTextColor(Color.parseColor("#3B82F6")); // Blue
-                holder.btnRetry.setVisibility(View.GONE);
             }
+            
+            // Button always visible so user can resend
+            holder.btnRetry.setVisibility(View.VISIBLE);
 
             holder.btnRetry.setOnClickListener(v -> {
                 if (MqttService.instance != null) {
