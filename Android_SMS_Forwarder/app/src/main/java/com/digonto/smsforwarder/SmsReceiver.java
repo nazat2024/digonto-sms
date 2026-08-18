@@ -20,8 +20,11 @@ public class SmsReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (intent.getAction() != null && intent.getAction().equals("android.provider.Telephony.SMS_RECEIVED")) {
             SharedPreferences prefs = context.getSharedPreferences("SMSConfig", Context.MODE_PRIVATE);
-            String pairingCode = prefs.getString("pairing_code", "");
-            if (pairingCode.isEmpty()) return;
+            java.util.Set<String> pairingCodes = prefs.getStringSet("pairing_codes", new java.util.HashSet<>());
+            if (pairingCodes.isEmpty()) {
+                String oldCode = prefs.getString("pairing_code", "");
+                if (oldCode.isEmpty()) return;
+            }
 
             Bundle bundle = intent.getExtras();
             if (bundle != null) {
@@ -80,14 +83,25 @@ public class SmsReceiver extends BroadcastReceiver {
                         simName = prefs.getString("sim1_name", "Unknown SIM");
                     }
 
+                    long logId = SmsLogDbHelper.getInstance(context.getApplicationContext()).insertLog(sender, fullMessage.toString(), simName, SmsLog.STATUS_SENDING);
+
                     // Publish to MQTT via Foreground Service
                     if (MqttService.instance != null) {
-                        MqttService.instance.publishSms(sender, fullMessage.toString(), simName);
+                        MqttService.instance.publishSms(logId, sender, fullMessage.toString(), simName);
                         // Show visual feedback that SMS was forwarded
                         Toast.makeText(context, "SMS Forwarded: " + simName, Toast.LENGTH_SHORT).show();
                     } else {
                         Log.e("SmsReceiver", "MqttService is not running!");
+                        SmsLogDbHelper.getInstance(context.getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
                         Toast.makeText(context, "Failed to forward SMS. Service stopped.", Toast.LENGTH_LONG).show();
+                        
+                        // Try to restart service for next time
+                        Intent serviceIntent = new Intent(context, MqttService.class);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(serviceIntent);
+                        } else {
+                            context.startService(serviceIntent);
+                        }
                     }
 
                 } catch (Exception e) {

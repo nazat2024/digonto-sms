@@ -73,7 +73,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
                     SmsLogDbHelper.getInstance(context).updateStatus(log.getId(), SmsLog.STATUS_SENDING);
                     
                     // Attempt to publish again
-                    MqttService.instance.publishSms(log.getSender(), log.getBody(), log.getSimName());
+                    MqttService.instance.publishSms(log.getId(), log.getSender(), log.getBody(), log.getSimName());
                     Toast.makeText(context, "Retrying SMS...", Toast.LENGTH_SHORT).show();
                 } else {
                     Toast.makeText(context, "Service not running. Please reconnect.", Toast.LENGTH_SHORT).show();

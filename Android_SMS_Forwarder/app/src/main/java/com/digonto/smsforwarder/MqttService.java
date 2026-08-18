@@ -189,21 +189,22 @@ public class MqttService extends Service {
         pingHandler.post(pingRunnable);
     }
 
-    public void publishSms(String phone, String smsBody, String simName) {
+    public void publishSms(long logId, String phone, String smsBody, String simName) {
         new Thread(() -> {
-            long logId = -1;
             try {
-                logId = SmsLogDbHelper.getInstance(getApplicationContext()).insertLog(phone, smsBody, simName, SmsLog.STATUS_SENDING);
-
                 if (mqttClient == null || !mqttClient.isConnected()) {
                     Log.e(TAG, "Cannot publish SMS, not connected!");
-                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    if (logId != -1) {
+                        SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    }
                     return;
                 }
 
                 Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
                 if (codes.isEmpty()) {
-                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    if (logId != -1) {
+                        SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    }
                     return;
                 }
 
@@ -232,9 +233,13 @@ public class MqttService extends Service {
                 }
                 
                 if (atLeastOneSuccess) {
-                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_SUCCESS);
+                    if (logId != -1) {
+                        SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_SUCCESS);
+                    }
                 } else {
-                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    if (logId != -1) {
+                        SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error processing SMS publishing", e);
