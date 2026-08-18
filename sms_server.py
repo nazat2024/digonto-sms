@@ -407,7 +407,7 @@ try:
             client = mqtt.Client()
             client.on_connect = on_mqtt_connect
             client.on_message = on_mqtt_message
-            client.connect_async("broker.hivemq.com", 1883, 60)
+            client.connect_async("broker.emqx.io", 1883, 60)
             client.loop_start()
         except Exception as e:
             print("[Cloud Sync] Failed to start MQTT client:", e)
