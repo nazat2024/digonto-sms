@@ -251,15 +251,34 @@ public class MainActivity extends AppCompatActivity {
         }
         
         if (MqttService.isConnectedToBroker) {
-            long timeSinceLastPong = System.currentTimeMillis() - MqttService.lastPongReceivedTime;
-            if (timeSinceLastPong < 10000) { // 10 seconds timeout for pong
-                statusText.setText("Connected to Desktop (Online)");
+            StringBuilder sb = new StringBuilder();
+            int onlineCount = 0;
+            
+            for (String code : codes) {
+                long lastPong = MqttService.lastPongReceivedTimes.containsKey(code) ? MqttService.lastPongReceivedTimes.get(code) : 0;
+                long timeSinceLastPong = System.currentTimeMillis() - lastPong;
+                
+                if (sb.length() > 0) sb.append("\n");
+                
+                if (timeSinceLastPong < 10000) { // 10 seconds timeout for pong
+                    sb.append("Desktop ").append(code).append(": Online 🟢");
+                    onlineCount++;
+                } else {
+                    sb.append("Desktop ").append(code).append(": Waiting... 🟠");
+                }
+            }
+            
+            statusText.setText(sb.toString());
+            
+            if (onlineCount == codes.size()) {
                 statusText.setTextColor(0xFF059669); // Green
                 statusIcon.setColorFilter(0xFF059669);
-            } else {
-                statusText.setText("Waiting for Desktop...");
+            } else if (onlineCount > 0) {
                 statusText.setTextColor(0xFFF57F17); // Yellow
                 statusIcon.setColorFilter(0xFFF57F17);
+            } else {
+                statusText.setTextColor(0xFFD32F2F); // Red
+                statusIcon.setColorFilter(0xFFD32F2F);
             }
         } else {
             statusText.setText("Connecting to Server...");

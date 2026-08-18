@@ -25,6 +25,7 @@ import org.json.JSONObject;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MqttService extends Service {
 
@@ -42,7 +43,7 @@ public class MqttService extends Service {
     
     // Status tracking for MainActivity
     public static boolean isConnectedToBroker = false;
-    public static long lastPongReceivedTime = 0;
+    public static ConcurrentHashMap<String, Long> lastPongReceivedTimes = new ConcurrentHashMap<>();
 
     @Override
     public void onCreate() {
@@ -126,7 +127,8 @@ public class MqttService extends Service {
                             try {
                                 JSONObject sysData = new JSONObject(payload);
                                 if (sysData.optString("type").equals("pong")) {
-                                    lastPongReceivedTime = System.currentTimeMillis();
+                                    String code = topic.replace("digonto_ivac_sms_", "").replace("_sys", "");
+                                    lastPongReceivedTimes.put(code, System.currentTimeMillis());
                                 }
                             } catch (Exception ignored) {}
                         }
