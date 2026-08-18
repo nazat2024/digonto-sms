@@ -70,15 +70,23 @@ public class HistoryActivity extends AppCompatActivity {
     }
 
     private void loadHistory() {
-        List<SmsLog> logs = dbHelper.getAllLogs();
-        if (logs.isEmpty()) {
-            emptyView.setVisibility(View.VISIBLE);
-            recyclerView.setVisibility(View.GONE);
-        } else {
-            emptyView.setVisibility(View.GONE);
-            recyclerView.setVisibility(View.VISIBLE);
-            adapter.updateData(logs);
-        }
+        new Thread(() -> {
+            try {
+                List<SmsLog> logs = dbHelper.getAllLogs();
+                runOnUiThread(() -> {
+                    if (logs.isEmpty()) {
+                        emptyView.setVisibility(View.VISIBLE);
+                        recyclerView.setVisibility(View.GONE);
+                    } else {
+                        emptyView.setVisibility(View.GONE);
+                        recyclerView.setVisibility(View.VISIBLE);
+                        adapter.updateData(logs);
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     @Override
