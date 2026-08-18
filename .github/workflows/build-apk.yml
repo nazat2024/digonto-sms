@@ -26,10 +26,17 @@ jobs:
 
     - name: Build with Gradle
       working-directory: ./Android_SMS_Forwarder
-      run: gradle assembleDebug --stacktrace
+      run: gradle assembleRelease --stacktrace
 
+    - name: Generate Keystore and Sign APK
+      working-directory: ./Android_SMS_Forwarder
+      run: |
+        keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias my-alias -storepass digonto123 -keypass digonto123 -dname "CN=Digonto, OU=SMS, O=Digonto, L=Dhaka, S=Dhaka, C=BD"
+        APKSIGNER=$(find $ANDROID_HOME/build-tools/ -name apksigner | sort -r | head -n 1)
+        $APKSIGNER sign --ks my-release-key.jks --ks-pass pass:digonto123 --ks-key-alias my-alias --key-pass pass:digonto123 app/build/outputs/apk/release/app-release-unsigned.apk
+        
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: SMS-Forwarder-Debug
-        path: Android_SMS_Forwarder/app/build/outputs/apk/debug/app-debug.apk
+        name: SMS-Forwarder-Release
+        path: Android_SMS_Forwarder/app/build/outputs/apk/release/app-release-unsigned.apk
