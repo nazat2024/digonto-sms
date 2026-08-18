@@ -80,7 +80,7 @@ public class MqttService extends Service {
                 }
 
                 String clientId = "andr_" + (System.currentTimeMillis() % 1000000);
-                mqttClient = new MqttClient("ssl://broker.hivemq.com:8883", clientId, new MemoryPersistence());
+                mqttClient = new MqttClient("tcp://broker.hivemq.com:1883", clientId, new MemoryPersistence());
                 
                 MqttConnectOptions options = new MqttConnectOptions();
                 options.setCleanSession(true);
