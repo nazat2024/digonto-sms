@@ -348,6 +348,31 @@ try:
     MQTT_SYS_TOPIC = f"digonto_ivac_sms_{PAIRING_CODE}_sys"
     
     connected_devices = {}
+    
+    def load_device_config():
+        import json, os
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        config_path = os.path.join(app_data_dir, "devices.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                pass
+        return {}
+
+    def save_device_config(config_data):
+        import json, os
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        os.makedirs(app_data_dir, exist_ok=True)
+        config_path = os.path.join(app_data_dir, "devices.json")
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, indent=2)
+        except:
+            pass
+
+    saved_devices = load_device_config()
 
     def on_mqtt_connect(client, userdata, flags, rc):
         if rc == 0:
@@ -364,8 +389,20 @@ try:
                 sys_data = __import__('json').loads(payload)
                 if sys_data.get("type") == "ping":
                     dev_id = sys_data.get("device_id", "Unknown Device")
+                    dev_model = sys_data.get("device_name", "Unknown Model")
+                    
+                    if dev_id not in saved_devices:
+                        saved_devices[dev_id] = {
+                            "custom_name": dev_model,
+                            "is_active": True
+                        }
+                        save_device_config(saved_devices)
+                        
                     connected_devices[dev_id] = {
                         "device_id": dev_id,
+                        "device_name": dev_model,
+                        "custom_name": saved_devices[dev_id].get("custom_name", dev_model),
+                        "is_active": saved_devices[dev_id].get("is_active", True),
                         "sim1_name": sys_data.get("sim1_name", ""),
                         "sim2_name": sys_data.get("sim2_name", ""),
                         "last_seen": time.time(),
@@ -388,6 +425,12 @@ try:
             
             data = __import__('json').loads(decrypted)
             
+            dev_id = data.get("device_id", "Unknown")
+            # If the device is explicitly turned off by the user, ignore the SMS
+            if dev_id in saved_devices and not saved_devices[dev_id].get("is_active", True):
+                print(f"[Cloud Sync] Ignored SMS from disabled device: {dev_id}")
+                return
+                
             phone = data.get("phone", "Unknown")
             sms_body = data.get("sms", "")
             sim_name = data.get("sim", "")

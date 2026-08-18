@@ -25,6 +25,7 @@ import org.json.JSONObject;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MqttService extends Service {
@@ -50,6 +51,11 @@ public class MqttService extends Service {
         super.onCreate();
         instance = this;
         prefs = getSharedPreferences("SMSConfig", MODE_PRIVATE);
+        
+        if (prefs.getString("device_id", "").isEmpty()) {
+            prefs.edit().putString("device_id", UUID.randomUUID().toString()).apply();
+        }
+        
         createNotificationChannel();
     }
 
@@ -164,7 +170,8 @@ public class MqttService extends Service {
                     if (mqttClient != null && mqttClient.isConnected()) {
                         JSONObject pingData = new JSONObject();
                         pingData.put("type", "ping");
-                        pingData.put("device_id", Build.MODEL);
+                        pingData.put("device_id", prefs.getString("device_id", "Unknown"));
+                        pingData.put("device_name", Build.MODEL);
                         pingData.put("sim1_name", prefs.getString("sim1_name", "Unknown SIM 1"));
                         pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
                         pingData.put("timestamp", System.currentTimeMillis());
@@ -211,6 +218,7 @@ public class MqttService extends Service {
                 }
 
                 JSONObject json = new JSONObject();
+                json.put("device_id", prefs.getString("device_id", "Unknown"));
                 json.put("phone", phone);
                 json.put("sms", smsBody);
                 json.put("sim", simName);

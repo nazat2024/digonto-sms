@@ -202,74 +202,37 @@ class IVACApp(ctk.CTk):
     def _build_home_tab(self):
         tab = self.tab_home
         
-        # Server Status Card
-        server_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
-        server_card.pack(fill="x", padx=5, pady=(5, 5))
-        
-        card_header = ctk.CTkFrame(server_card, fg_color="transparent")
-        card_header.pack(fill="x", padx=15, pady=(10, 5))
+        # Cloud SMS Sync
+        cloud_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        cloud_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
-            card_header, text="📡 SMS Server",
+            cloud_card, text="☁️ Cloud SMS Forwarder",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
-        ).pack(side="left")
+            text_color="#00d2ff"
+        ).pack(anchor="w", padx=15, pady=(10, 5))
         
-        self.server_status_label = ctk.CTkLabel(
-            card_header,
-            text="🟢 Running",
-            font=ctk.CTkFont(size=12, weight="bold"),
+        import hashlib
+        from license_system.hwid import generate_hwid
+        hwid = generate_hwid()
+        hash_hex = hashlib.md5(hwid.encode('utf-8')).hexdigest()
+        nums = "".join(filter(str.isdigit, hash_hex))
+        pairing_code = (nums + "123456")[:6]
+        
+        ctk.CTkLabel(
+            cloud_card, 
+            text=f"আপনার মোবাইলে 'SMS Forwarder' অ্যাপটি ওপেন করে নিচের কোডটি দিন:\nযেকোনো নেটওয়ার্ক থেকে অটোমেটিক মেসেজ আসবে।",
+            font=ctk.CTkFont(size=12), text_color="#8892b0", justify="left"
+        ).pack(anchor="w", padx=15, pady=(0, 5))
+        
+        code_frame = ctk.CTkFrame(cloud_card, fg_color="#0a192f", corner_radius=5)
+        code_frame.pack(anchor="w", padx=15, pady=(5, 15))
+        
+        ctk.CTkLabel(
+            code_frame, text=f"Pairing Code: {pairing_code}",
+            font=ctk.CTkFont(family="Consolas", size=18, weight="bold"),
             text_color="#64ffda"
-        )
-        self.server_status_label.pack(side="right")
-        
-        server_details = ctk.CTkFrame(server_card, fg_color="transparent")
-        server_details.pack(fill="x", padx=15, pady=(0, 10))
-        
-        self.server_info_label = ctk.CTkLabel(
-            server_details,
-            text=f"Port: 5000  |  SMS Endpoint: POST http://{get_local_ip()}:5000/api/sms",
-            font=ctk.CTkFont(size=11),
-            text_color="#8892b0"
-        )
-        self.server_info_label.pack(side="left")
-        
-        ctk.CTkButton(
-            server_details, text="📋 Copy", width=50, height=24,
-            font=ctk.CTkFont(size=10), fg_color="#233554", hover_color="#2a4365",
-            command=self._copy_ip
-        ).pack(side="right", padx=(5, 0))
-        
-        ctk.CTkButton(
-            server_details, text="🔄 Refresh", width=50, height=24,
-            font=ctk.CTkFont(size=10), fg_color="#233554", hover_color="#2a4365",
-            command=self._refresh_ip
-        ).pack(side="right")
-        
-        # JSON Payload Info
-        payload_frame = ctk.CTkFrame(server_card, fg_color="#0a192f", corner_radius=6)
-        payload_frame.pack(fill="x", padx=15, pady=(0, 10))
-        
-        ctk.CTkLabel(
-            payload_frame, text="📱 MacroDroid JSON Payload:",
-            font=ctk.CTkFont(size=11, weight="bold"), text_color="#ccd6f6"
-        ).pack(anchor="w", padx=10, pady=(5, 0))
-        
-        # Container for text and button side-by-side
-        payload_inner = ctk.CTkFrame(payload_frame, fg_color="transparent")
-        payload_inner.pack(fill="x", padx=10, pady=(0, 5))
-        
-        self.payload_text = '{\n  "phone": "01XXXXXXXXX",\n  "body": "{msg}"\n}'
-        ctk.CTkLabel(
-            payload_inner, text=self.payload_text,
-            font=ctk.CTkFont(family="Consolas", size=12), text_color="#64ffda", justify="left"
-        ).pack(side="left", pady=5)
-        
-        ctk.CTkButton(
-            payload_inner, text="📋 Copy Code", width=80, height=24,
-            font=ctk.CTkFont(size=11, weight="bold"), fg_color="#059669", hover_color="#047857",
-            command=self._copy_payload
-        ).pack(side="right", anchor="s", pady=5)
+        ).pack(padx=15, pady=10)
         
         # Connected Devices Card
         device_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
@@ -722,38 +685,6 @@ class IVACApp(ctk.CTk):
     # ===== SETTINGS TAB =====
     def _build_settings_tab(self):
         tab = self.tab_settings
-        
-        # Cloud SMS Sync
-        cloud_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
-        cloud_card.pack(fill="x", padx=5, pady=(5, 5))
-        
-        ctk.CTkLabel(
-            cloud_card, text="☁️ Cloud SMS Forwarder",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#00d2ff"
-        ).pack(anchor="w", padx=15, pady=(10, 5))
-        
-        import hashlib
-        from license_system.hwid import generate_hwid
-        hwid = generate_hwid()
-        hash_hex = hashlib.md5(hwid.encode('utf-8')).hexdigest()
-        nums = "".join(filter(str.isdigit, hash_hex))
-        pairing_code = (nums + "123456")[:6]
-        
-        ctk.CTkLabel(
-            cloud_card, 
-            text=f"আপনার মোবাইলে 'SMS Forwarder' অ্যাপটি ওপেন করে নিচের কোডটি দিন:\nযেকোনো নেটওয়ার্ক থেকে অটোমেটিক মেসেজ আসবে।",
-            font=ctk.CTkFont(size=12), text_color="#8892b0", justify="left"
-        ).pack(anchor="w", padx=15, pady=(0, 5))
-        
-        code_frame = ctk.CTkFrame(cloud_card, fg_color="#0a192f", corner_radius=5)
-        code_frame.pack(anchor="w", padx=15, pady=(5, 15))
-        
-        ctk.CTkLabel(
-            code_frame, text=f"Pairing Code: {pairing_code}",
-            font=ctk.CTkFont(family="Consolas", size=18, weight="bold"),
-            text_color="#64ffda"
-        ).pack(padx=15, pady=10)
         
         # Rocket Config (Moved from Extension Tab)
         rocket_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)

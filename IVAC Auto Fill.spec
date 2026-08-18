@@ -32,6 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='D:/Ivac Auto Fill/icon.ico',
 )
 coll = COLLECT(
     exe,
