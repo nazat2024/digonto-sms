@@ -38,42 +38,46 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        SmsLog log = logs.get(position);
-        
-        holder.tvSender.setText(log.getSender());
-        holder.tvBody.setText(log.getBody());
-        holder.tvTime.setText(dateFormat.format(new Date(log.getTimestamp())));
+        try {
+            SmsLog log = logs.get(position);
+            
+            holder.tvSender.setText(log.getSender());
+            holder.tvBody.setText(log.getBody());
+            holder.tvTime.setText(dateFormat.format(new Date(log.getTimestamp())));
 
-        if (log.getStatus() == SmsLog.STATUS_SUCCESS) {
-            holder.tvStatus.setText("Success");
-            holder.tvStatus.setTextColor(Color.parseColor("#10B981")); // Green
-            holder.btnRetry.setVisibility(View.GONE);
-        } else if (log.getStatus() == SmsLog.STATUS_FAILED) {
-            holder.tvStatus.setText("Failed");
-            holder.tvStatus.setTextColor(Color.parseColor("#EF4444")); // Red
-            holder.btnRetry.setVisibility(View.VISIBLE);
-        } else {
-            holder.tvStatus.setText("Sending...");
-            holder.tvStatus.setTextColor(Color.parseColor("#3B82F6")); // Blue
-            holder.btnRetry.setVisibility(View.GONE);
-        }
-
-        holder.btnRetry.setOnClickListener(v -> {
-            if (MqttService.instance != null) {
-                holder.tvStatus.setText("Retrying...");
-                holder.tvStatus.setTextColor(Color.parseColor("#F59E0B")); // Orange
+            if (log.getStatus() == SmsLog.STATUS_SUCCESS) {
+                holder.tvStatus.setText("Success");
+                holder.tvStatus.setTextColor(Color.parseColor("#10B981")); // Green
                 holder.btnRetry.setVisibility(View.GONE);
-                
-                // Set status in DB to sending
-                SmsLogDbHelper.getInstance(context).updateStatus(log.getId(), SmsLog.STATUS_SENDING);
-                
-                // Attempt to publish again
-                MqttService.instance.publishSms(log.getSender(), log.getBody(), log.getSimName());
-                Toast.makeText(context, "Retrying SMS...", Toast.LENGTH_SHORT).show();
+            } else if (log.getStatus() == SmsLog.STATUS_FAILED) {
+                holder.tvStatus.setText("Failed");
+                holder.tvStatus.setTextColor(Color.parseColor("#EF4444")); // Red
+                holder.btnRetry.setVisibility(View.VISIBLE);
             } else {
-                Toast.makeText(context, "Service not running. Please reconnect.", Toast.LENGTH_SHORT).show();
+                holder.tvStatus.setText("Sending...");
+                holder.tvStatus.setTextColor(Color.parseColor("#3B82F6")); // Blue
+                holder.btnRetry.setVisibility(View.GONE);
             }
-        });
+
+            holder.btnRetry.setOnClickListener(v -> {
+                if (MqttService.instance != null) {
+                    holder.tvStatus.setText("Retrying...");
+                    holder.tvStatus.setTextColor(Color.parseColor("#F59E0B")); // Orange
+                    holder.btnRetry.setVisibility(View.GONE);
+                    
+                    // Set status in DB to sending
+                    SmsLogDbHelper.getInstance(context).updateStatus(log.getId(), SmsLog.STATUS_SENDING);
+                    
+                    // Attempt to publish again
+                    MqttService.instance.publishSms(log.getSender(), log.getBody(), log.getSimName());
+                    Toast.makeText(context, "Retrying SMS...", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(context, "Service not running. Please reconnect.", Toast.LENGTH_SHORT).show();
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override

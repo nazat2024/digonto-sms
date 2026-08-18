@@ -74,13 +74,18 @@ public class HistoryActivity extends AppCompatActivity {
             try {
                 List<SmsLog> logs = dbHelper.getAllLogs();
                 runOnUiThread(() -> {
-                    if (logs.isEmpty()) {
-                        emptyView.setVisibility(View.VISIBLE);
-                        recyclerView.setVisibility(View.GONE);
-                    } else {
-                        emptyView.setVisibility(View.GONE);
-                        recyclerView.setVisibility(View.VISIBLE);
-                        adapter.updateData(logs);
+                    try {
+                        if (isDestroyed() || isFinishing()) return;
+                        if (logs.isEmpty()) {
+                            emptyView.setVisibility(View.VISIBLE);
+                            recyclerView.setVisibility(View.GONE);
+                        } else {
+                            emptyView.setVisibility(View.GONE);
+                            recyclerView.setVisibility(View.VISIBLE);
+                            adapter.updateData(logs);
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
                 });
             } catch (Exception e) {
