@@ -1,82 +1,244 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="20dp"
-    android:background="#f4f4f9">
+    android:fillViewport="true"
+    android:background="#F8F9FA">
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Cloud SMS Sync"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:textColor="#112240"
-        android:gravity="center"
-        android:layout_marginBottom="20dp"/>
+        android:orientation="vertical"
+        android:padding="20dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Enter the 6-digit code from the Desktop App:"
-        android:textSize="16sp"
-        android:layout_marginBottom="10dp"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Digonto SMS Sync"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="#112240"
+            android:gravity="center"
+            android:layout_marginBottom="5dp"/>
+            
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Fast, Secure &amp; Background Supported"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:gravity="center"
+            android:layout_marginBottom="25dp"/>
 
-    <EditText
-        android:id="@+id/pairingCodeInput"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:hint="e.g. 123456"
-        android:inputType="number"
-        android:maxLength="6"
-        android:textSize="20sp"
-        android:gravity="center"
-        android:background="#ffffff"
-        android:elevation="2dp"
-        android:layout_marginBottom="20dp"/>
+        <!-- Connection Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            android:layout_marginBottom="20dp">
 
-    <Button
-        android:id="@+id/btnSave"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="Save &amp; Connect"
-        android:backgroundTint="#00d2ff"
-        android:textColor="#ffffff"
-        android:textSize="18sp"
-        android:layout_marginBottom="30dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:background="#FFFFFF">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Permission Checklist (Required):"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="10dp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Desktop Connection"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#333333"
+                    android:layout_marginBottom="15dp"/>
 
-    <Button
-        android:id="@+id/btnPermSms"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="1. Grant SMS Permission"
-        android:layout_marginBottom="10dp"/>
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:hint="6-Digit Pairing Code"
+                    android:layout_marginBottom="15dp">
 
-    <Button
-        android:id="@+id/btnPermBattery"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="2. Disable Battery Optimization"
-        android:layout_marginBottom="10dp"/>
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/pairingCodeInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        android:maxLength="6"
+                        android:textSize="20sp"
+                        android:gravity="center"
+                        android:textColor="#000000" />
+                </com.google.android.material.textfield.TextInputLayout>
 
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Status: Disconnected"
-        android:textSize="16sp"
-        android:textColor="#d32f2f"
-        android:gravity="center"
-        android:layout_marginTop="20dp"
-        android:textStyle="bold"/>
+                <Button
+                    android:id="@+id/btnSave"
+                    android:layout_width="match_parent"
+                    android:layout_height="60dp"
+                    android:text="SAVE &amp; CONNECT"
+                    android:backgroundTint="#00d2ff"
+                    android:textColor="#ffffff"
+                    android:textStyle="bold"
+                    android:textSize="16sp"/>
 
-</LinearLayout>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- SIM Configuration Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            android:layout_marginBottom="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:background="#FFFFFF">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="SIM Configuration"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#333333"
+                    android:layout_marginBottom="5dp"/>
+                    
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Name your SIMs so you can identify them on Desktop."
+                    android:textSize="12sp"
+                    android:textColor="#666666"
+                    android:layout_marginBottom="15dp"/>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:hint="SIM 1 Name (e.g. Grameenphone 017...)"
+                    android:layout_marginBottom="10dp">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/sim1Input"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:hint="SIM 2 Name (e.g. Banglalink 019...)">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/sim2Input"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text" />
+                </com.google.android.material.textfield.TextInputLayout>
+                
+                <Button
+                    android:id="@+id/btnSaveSim"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Save SIM Names"
+                    android:layout_marginTop="10dp"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"/>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Permissions Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            android:layout_marginBottom="30dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:background="#FFFFFF">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="System Permissions"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#333333"
+                    android:layout_marginBottom="15dp"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSms"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Allow SMS Reading"
+                    android:textSize="14sp"
+                    android:paddingBottom="10dp"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchPhone"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Allow Phone State (For SIM Detect)"
+                    android:textSize="14sp"
+                    android:paddingBottom="10dp"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchBattery"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Disable Battery Optimization"
+                    android:textSize="14sp"
+                    android:paddingBottom="10dp"/>
+                    
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchNotification"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Allow Notifications (Background)"
+                    android:textSize="14sp"/>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Live Status Display -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="30dp"
+            android:background="@drawable/status_bg"
+            android:padding="15dp">
+            
+            <ImageView
+                android:id="@+id/statusIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@android:drawable/presence_offline"
+                android:layout_marginEnd="10dp"
+                app:tint="#D32F2F"/>
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Disconnected"
+                android:textSize="18sp"
+                android:textColor="#D32F2F"
+                android:textStyle="bold"/>
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

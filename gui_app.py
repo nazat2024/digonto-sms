@@ -271,6 +271,30 @@ class IVACApp(ctk.CTk):
             command=self._copy_payload
         ).pack(side="right", anchor="s", pady=5)
         
+        # Connected Devices Card
+        device_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        device_card.pack(fill="x", padx=5, pady=(0, 10))
+        
+        device_header = ctk.CTkFrame(device_card, fg_color="transparent")
+        device_header.pack(fill="x", padx=15, pady=(10, 5))
+        
+        ctk.CTkLabel(
+            device_header, text="📱 Connected Mobiles",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#ccd6f6"
+        ).pack(side="left")
+        
+        self.device_list_frame = ctk.CTkFrame(device_card, fg_color="transparent")
+        self.device_list_frame.pack(fill="x", padx=15, pady=(0, 10))
+        
+        self.device_placeholder = ctk.CTkLabel(
+            self.device_list_frame,
+            text="⏳ Waiting for mobile connection...",
+            font=ctk.CTkFont(size=11),
+            text_color="#495670"
+        )
+        self.device_placeholder.pack(pady=5)
+        
         # Recent OTPs Card
         otp_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
         otp_card.pack(fill="both", expand=True, padx=5, pady=5)
@@ -351,8 +375,25 @@ class IVACApp(ctk.CTk):
             if resp.ok:
                 data = resp.json()
                 otps = data.get("otps", [])
+                devices = data.get("devices", [])
                 
-                # Clear old
+                # Update Devices
+                for widget in self.device_list_frame.winfo_children():
+                    widget.destroy()
+                    
+                if devices:
+                    for dev in devices:
+                        self._add_device_row(dev)
+                else:
+                    self.device_placeholder = ctk.CTkLabel(
+                        self.device_list_frame,
+                        text="⏳ Waiting for mobile connection...",
+                        font=ctk.CTkFont(size=11),
+                        text_color="#495670"
+                    )
+                    self.device_placeholder.pack(pady=5)
+                
+                # Clear old OTPs
                 for widget in self.otp_list_frame.winfo_children():
                     widget.destroy()
                 
@@ -399,6 +440,32 @@ class IVACApp(ctk.CTk):
             row, text=f"  {display}  ",
             font=ctk.CTkFont(size=14, weight="bold", family="Consolas"),
             text_color=color
+        ).pack(side="right", padx=10)
+        
+    def _add_device_row(self, dev_data):
+        row = ctk.CTkFrame(self.device_list_frame, fg_color="#1a1a2e", corner_radius=6, height=30)
+        row.pack(fill="x", pady=2)
+        row.pack_propagate(False)
+        
+        is_online = dev_data.get("online", False)
+        status_icon = "🟢" if is_online else "⚪"
+        color = "#059669" if is_online else "#495670"
+        
+        sims = []
+        if dev_data.get("sim1_name"): sims.append(dev_data["sim1_name"])
+        if dev_data.get("sim2_name"): sims.append(dev_data["sim2_name"])
+        sim_text = " | ".join(sims) if sims else "No SIM set"
+        
+        ctk.CTkLabel(
+            row, text=f"  {status_icon}  {dev_data.get('device_id', 'Device')}",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=color
+        ).pack(side="left", padx=5)
+        
+        ctk.CTkLabel(
+            row, text=f"SIMs: {sim_text}  ",
+            font=ctk.CTkFont(size=10),
+            text_color="#8892b0"
         ).pack(side="right", padx=10)
     
     # ===== PROFILES TAB =====

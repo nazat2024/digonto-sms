@@ -4,57 +4,21 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Bundle;
 import android.telephony.SmsMessage;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
 import android.util.Log;
+import android.widget.Toast;
 
-import org.eclipse.paho.client.mqttv3.MqttClient;
-import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
-import org.eclipse.paho.client.mqttv3.MqttMessage;
-import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
-
-import org.json.JSONObject;
-
-import java.security.MessageDigest;
-import javax.crypto.Cipher;
-import javax.crypto.spec.SecretKeySpec;
-import javax.crypto.spec.IvParameterSpec;
-import android.util.Base64;
+import java.util.List;
 
 public class SmsReceiver extends BroadcastReceiver {
     
-    // We replicate the exact XOR logic from Python for AES equivalence, 
-    // but the python crypto.py actually uses a custom XOR cipher.
-    // To keep this extremely simple, we will encrypt the JSON using standard AES, 
-    // and we will update the Python side to also accept standard AES OR we write a simple XOR here.
-    
-    // Let's implement the EXACT XOR cipher from Python `crypto.py`:
-    private byte[] deriveKey(String password, byte[] salt) {
-        try {
-            // Python uses PBKDF2 with HMAC-SHA256, but since we want zero-dependency,
-            // we will just send it as simple AES encrypted if we modify Python, OR 
-            // since we added `pycryptodome` (or standard `crypto`) task, we will just send Base64 JSON and encrypt on MQTT level?
-            // Actually, the Python MQTT listener receives it. We can just modify the Python MQTT listener 
-            // to use standard Base64 because the 6-digit code makes the TOPIC unique and random!
-            // HiveMQ is secure. But let's do a simple XOR.
-            return null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    // Python _xor_bytes logic:
-    private byte[] xorBytes(byte[] data, byte[] key) {
-        byte[] result = new byte[data.length];
-        for (int i = 0; i < data.length; i++) {
-            result[i] = (byte) (data[i] ^ key[i % key.length]);
-        }
-        return result;
-    }
-
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (intent.getAction().equals("android.provider.Telephony.SMS_RECEIVED")) {
+        if (intent.getAction() != null && intent.getAction().equals("android.provider.Telephony.SMS_RECEIVED")) {
             SharedPreferences prefs = context.getSharedPreferences("SMSConfig", Context.MODE_PRIVATE);
             String pairingCode = prefs.getString("pairing_code", "");
             if (pairingCode.isEmpty()) return;
@@ -76,39 +40,55 @@ public class SmsReceiver extends BroadcastReceiver {
 
                     Log.d("SmsReceiver", "SMS From: " + sender);
 
-                    // Send to MQTT in background thread
-                    String finalSender = sender;
-                    String finalMessage = fullMessage.toString();
+                    // Determine which SIM slot received the SMS
+                    int subId = bundle.getInt("subscription", -1);
+                    int slotIndex = -1;
                     
-                    new Thread(() -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 && subId != -1) {
+                        SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
                         try {
-                            // Format JSON
-                            JSONObject json = new JSONObject();
-                            json.put("phone", finalSender);
-                            json.put("sms", finalMessage);
-                            
-                            // Basic security: XOR with pairing code and Base64 encode
-                            String rawJson = json.toString();
-                            byte[] xored = xorBytes(rawJson.getBytes(), pairingCode.getBytes());
-                            String payload = Base64.encodeToString(xored, Base64.NO_WRAP);
-                            
-                            MqttClient client = new MqttClient("tcp://broker.hivemq.com:1883", MqttClient.generateClientId(), new MemoryPersistence());
-                            MqttConnectOptions options = new MqttConnectOptions();
-                            options.setCleanSession(true);
-                            options.setConnectionTimeout(10);
-                            client.connect(options);
-                            
-                            String topic = "digonto_ivac_sms_" + pairingCode;
-                            MqttMessage message = new MqttMessage(payload.getBytes());
-                            message.setQos(1);
-                            client.publish(topic, message);
-                            
-                            client.disconnect();
-                            Log.d("SmsReceiver", "Published to MQTT!");
-                        } catch (Exception e) {
-                            Log.e("SmsReceiver", "MQTT Error", e);
+                            // Suppress permission check because we might not have READ_PHONE_STATE,
+                            // but we can sometimes still read active subscription info if the OS allows.
+                            List<SubscriptionInfo> activeSubscriptionInfoList = subscriptionManager.getActiveSubscriptionInfoList();
+                            if (activeSubscriptionInfoList != null) {
+                                for (SubscriptionInfo info : activeSubscriptionInfoList) {
+                                    if (info.getSubscriptionId() == subId) {
+                                        slotIndex = info.getSimSlotIndex();
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (SecurityException e) {
+                            Log.e("SmsReceiver", "No permission to read subscription info", e);
                         }
-                    }).start();
+                    }
+
+                    // Fallback to extras if SubscriptionManager fails
+                    if (slotIndex == -1) {
+                        slotIndex = bundle.getInt("phone", -1);
+                        if (slotIndex == -1) {
+                            slotIndex = bundle.getInt("slot", -1);
+                        }
+                    }
+
+                    String simName;
+                    if (slotIndex == 0) {
+                        simName = prefs.getString("sim1_name", "SIM 1");
+                    } else if (slotIndex == 1) {
+                        simName = prefs.getString("sim2_name", "SIM 2");
+                    } else {
+                        simName = prefs.getString("sim1_name", "Unknown SIM");
+                    }
+
+                    // Publish to MQTT via Foreground Service
+                    if (MqttService.instance != null) {
+                        MqttService.instance.publishSms(sender, fullMessage.toString(), simName);
+                        // Show visual feedback that SMS was forwarded
+                        Toast.makeText(context, "SMS Forwarded: " + simName, Toast.LENGTH_SHORT).show();
+                    } else {
+                        Log.e("SmsReceiver", "MqttService is not running!");
+                        Toast.makeText(context, "Failed to forward SMS. Service stopped.", Toast.LENGTH_LONG).show();
+                    }
 
                 } catch (Exception e) {
                     Log.e("SmsReceiver", "Error", e);

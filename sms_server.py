@@ -198,8 +198,16 @@ def mark_otp_used(phone):
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
+    devices = []
+    current_time = time.time()
+    for dev_id, data in list(connected_devices.items()):
+        if current_time - data["last_seen"] > 10:
+            data["online"] = False
+        devices.append(data)
+        
     return jsonify({
-        "otps": otp_store.get_all_status()
+        "otps": otp_store.get_all_status(),
+        "devices": devices
     }), 200
 
 @app.route("/api/ip", methods=["GET"])
@@ -337,16 +345,38 @@ try:
 
     PAIRING_CODE = get_pairing_code()
     MQTT_TOPIC = f"digonto_ivac_sms_{PAIRING_CODE}"
+    MQTT_SYS_TOPIC = f"digonto_ivac_sms_{PAIRING_CODE}_sys"
+    
+    connected_devices = {}
 
     def on_mqtt_connect(client, userdata, flags, rc):
         if rc == 0:
-            print(f"[Cloud Sync] Connected. Listening on topic: {MQTT_TOPIC}")
+            print(f"[Cloud Sync] Connected. Listening on topics...")
             client.subscribe(MQTT_TOPIC)
+            client.subscribe(MQTT_SYS_TOPIC)
         else:
             print(f"[Cloud Sync] Connect failed with code {rc}")
 
     def on_mqtt_message(client, userdata, msg):
         try:
+            if msg.topic == MQTT_SYS_TOPIC:
+                import json
+                payload = msg.payload.decode('utf-8')
+                sys_data = json.loads(payload)
+                if sys_data.get("type") == "ping":
+                    dev_id = sys_data.get("device_id", "Unknown Device")
+                    connected_devices[dev_id] = {
+                        "device_id": dev_id,
+                        "sim1_name": sys_data.get("sim1_name", ""),
+                        "sim2_name": sys_data.get("sim2_name", ""),
+                        "last_seen": time.time(),
+                        "online": True
+                    }
+                    # Send pong
+                    pong = json.dumps({"type": "pong"}).encode('utf-8')
+                    client.publish(MQTT_SYS_TOPIC, pong)
+                return
+
             import base64
             payload = msg.payload.decode('utf-8')
             
@@ -361,8 +391,9 @@ try:
             
             phone = data.get("phone", "Unknown")
             sms_body = data.get("sms", "")
+            sim_name = data.get("sim", "")
             
-            print(f"[Cloud Sync] Received SMS from {phone}")
+            print(f"[Cloud Sync] Received SMS via {sim_name} from {phone}")
             
             # Parse OTP
             digits = parse_otp_from_sms(sms_body)
