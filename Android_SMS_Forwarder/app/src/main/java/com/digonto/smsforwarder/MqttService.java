@@ -79,14 +79,14 @@ public class MqttService extends Service {
                     return; // Already connected
                 }
 
-                String clientId = "android_client_" + System.currentTimeMillis();
-                mqttClient = new MqttClient("tcp://broker.hivemq.com:1883", clientId, new MemoryPersistence());
+                String clientId = "andr_" + (System.currentTimeMillis() % 1000000);
+                mqttClient = new MqttClient("ssl://broker.hivemq.com:8883", clientId, new MemoryPersistence());
                 
                 MqttConnectOptions options = new MqttConnectOptions();
                 options.setCleanSession(true);
                 options.setAutomaticReconnect(true);
-                options.setConnectionTimeout(10);
-                options.setKeepAliveInterval(20); // Keep alive
+                options.setConnectionTimeout(15);
+                options.setKeepAliveInterval(30); // Keep alive
 
                 mqttClient.setCallback(new MqttCallback() {
                     @Override
