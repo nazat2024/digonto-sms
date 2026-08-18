@@ -88,7 +88,19 @@ public class MqttService extends Service {
                 options.setConnectionTimeout(15);
                 options.setKeepAliveInterval(30); // Keep alive
 
-                mqttClient.setCallback(new MqttCallback() {
+                mqttClient.setCallback(new org.eclipse.paho.client.mqttv3.MqttCallbackExtended() {
+                    @Override
+                    public void connectComplete(boolean reconnect, String serverURI) {
+                        isConnectedToBroker = true;
+                        try {
+                            String sysTopic = "digonto_ivac_sms_" + prefs.getString("pairing_code", "") + "_sys";
+                            mqttClient.subscribe(sysTopic);
+                            Log.d(TAG, "Subscribed to sysTopic after connect/reconnect");
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error subscribing on connectComplete", e);
+                        }
+                    }
+
                     @Override
                     public void connectionLost(Throwable cause) {
                         isConnectedToBroker = false;
@@ -116,7 +128,7 @@ public class MqttService extends Service {
                 isConnectedToBroker = true;
                 
                 String sysTopic = "digonto_ivac_sms_" + pairingCode + "_sys";
-                mqttClient.subscribe(sysTopic);
+                // Subscription is now handled in connectComplete
 
                 startPingLoop(pairingCode, sysTopic);
 
