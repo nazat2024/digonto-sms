@@ -41,6 +41,10 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
-
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:label="History"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
     </application>
 </manifest>

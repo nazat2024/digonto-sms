@@ -27,7 +27,7 @@ import com.google.android.material.textfield.TextInputEditText;
 public class MainActivity extends AppCompatActivity {
 
     private TextInputEditText pairingCodeInput, sim1Input, sim2Input;
-    private Button btnSave, btnSaveSim;
+    private Button btnSave, btnSaveSim, btnHistory;
     private SwitchMaterial switchSms, switchPhone, switchBattery, switchNotification;
     private TextView statusText;
     private ImageView statusIcon;
@@ -45,6 +45,12 @@ public class MainActivity extends AppCompatActivity {
         sim2Input = findViewById(R.id.sim2Input);
         btnSave = findViewById(R.id.btnSave);
         btnSaveSim = findViewById(R.id.btnSaveSim);
+        btnHistory = findViewById(R.id.btnHistory);
+
+        // History Button Click Listener
+        btnHistory.setOnClickListener(v -> {
+            startActivity(new Intent(MainActivity.this, HistoryActivity.class));
+        });
         
         switchSms = findViewById(R.id.switchSms);
         switchPhone = findViewById(R.id.switchPhone);

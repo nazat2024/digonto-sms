@@ -237,8 +237,24 @@
                 android:text="Disconnected"
                 android:textSize="18sp"
                 android:textColor="#D32F2F"
-                android:textStyle="bold"/>
+                android:textStyle="bold" />
         </LinearLayout>
+
+        <!-- History Button -->
+        <Button
+            android:id="@+id/btnHistory"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="VIEW SMS HISTORY"
+            android:backgroundTint="#8B5CF6"
+            android:textColor="#ffffff"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="30dp"
+            app:cornerRadius="12dp"
+            app:icon="@android:drawable/ic_menu_recent_history"
+            app:iconGravity="textStart"
+            app:iconPadding="12dp" />
 
     </LinearLayout>
 </ScrollView>

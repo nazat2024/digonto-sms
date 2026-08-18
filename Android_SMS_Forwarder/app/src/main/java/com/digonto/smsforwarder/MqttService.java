@@ -172,13 +172,17 @@ public class MqttService extends Service {
     }
 
     public void publishSms(String phone, String smsBody, String simName) {
-        if (mqttClient == null || !mqttClient.isConnected()) {
-            Log.e(TAG, "Cannot publish SMS, not connected!");
-            return;
-        }
-        
         new Thread(() -> {
+            long logId = -1;
             try {
+                logId = SmsLogDbHelper.getInstance(getApplicationContext()).insertLog(phone, smsBody, simName, SmsLog.STATUS_SENDING);
+
+                if (mqttClient == null || !mqttClient.isConnected()) {
+                    Log.e(TAG, "Cannot publish SMS, not connected!");
+                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    return;
+                }
+
                 String pairingCode = prefs.getString("pairing_code", "");
                 String topic = "digonto_ivac_sms_" + pairingCode;
 
@@ -195,8 +199,13 @@ public class MqttService extends Service {
                 message.setQos(1);
                 mqttClient.publish(topic, message);
                 Log.d(TAG, "SMS Published Successfully via MQTT!");
+                
+                SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_SUCCESS);
             } catch (Exception e) {
                 Log.e(TAG, "Error publishing SMS", e);
+                if (logId != -1) {
+                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                }
             }
         }).start();
     }
