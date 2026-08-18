@@ -32,22 +32,6 @@
             android:gravity="center"
             android:layout_marginBottom="24dp"/>
 
-        <!-- History Button (Moved up) -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnHistory"
-            android:layout_width="match_parent"
-            android:layout_height="64dp"
-            android:text="VIEW SMS HISTORY"
-            android:backgroundTint="#8B5CF6"
-            android:textColor="#ffffff"
-            android:textStyle="bold"
-            android:textSize="16sp"
-            android:layout_marginBottom="20dp"
-            app:cornerRadius="12dp"
-            app:icon="@android:drawable/ic_menu_recent_history"
-            app:iconGravity="textStart"
-            app:iconPadding="12dp" />
-
         <!-- Desktop Connection Card -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
@@ -115,7 +99,7 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Live Status Display (Moved below Desktop Connection) -->
+        <!-- Live Status Display -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -138,7 +122,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Disconnected"
-                android:textSize="18sp"
+                android:textSize="16sp"
                 android:textColor="#DC2626"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -149,7 +133,8 @@
             android:layout_height="wrap_content"
             app:cardCornerRadius="16dp"
             app:cardElevation="2dp"
-            android:layout_marginBottom="20dp">
+            android:layout_marginBottom="24dp"
+            android:layout_weight="1">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -206,70 +191,34 @@
                     android:id="@+id/btnSaveSim"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Save SIM Names"
+                    android:text="SAVE SIM NAMES"
                     android:layout_marginTop="12dp"
                     style="@style/Widget.MaterialComponents.Button.TextButton"/>
 
             </LinearLayout>
         </androidx.cardview.widget.CardView>
-
-        <!-- Permissions Card -->
-        <androidx.cardview.widget.CardView
+        
+        <!-- Push everything above to top, History button to bottom -->
+        <View
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="2dp"
-            android:layout_marginBottom="32dp">
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp"
-                android:background="#FFFFFF">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="System Permissions"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="#1F2937"
-                    android:layout_marginBottom="16dp"/>
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchSms"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Allow SMS Reading"
-                    android:textSize="15sp"
-                    android:paddingBottom="12dp"/>
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchPhone"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Allow Phone State (For SIM Detect)"
-                    android:textSize="15sp"
-                    android:paddingBottom="12dp"/>
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchBattery"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Disable Battery Optimization"
-                    android:textSize="15sp"
-                    android:paddingBottom="12dp"/>
-                    
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchNotification"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Allow Notifications (Background)"
-                    android:textSize="15sp"/>
-
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        <!-- History Button (Moved to bottom) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnHistory"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:text="VIEW SMS HISTORY"
+            android:backgroundTint="#2563EB"
+            android:textColor="#ffffff"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="16dp"
+            app:cornerRadius="12dp"
+            app:icon="@android:drawable/ic_menu_recent_history"
+            app:iconGravity="textStart"
+            app:iconPadding="12dp" />
 
     </LinearLayout>
 </ScrollView>

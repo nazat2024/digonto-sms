@@ -1,30 +1,20 @@
 package com.digonto.smsforwarder;
 
-import android.Manifest;
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.PowerManager;
-import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
-import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.HashSet;
@@ -35,14 +25,24 @@ public class MainActivity extends AppCompatActivity {
     private TextInputEditText pairingCodeInput, sim1Input, sim2Input;
     private Button btnAddDesktop, btnSaveSim, btnHistory;
     private ChipGroup chipGroupDesktops;
-    private SwitchMaterial switchSms, switchPhone, switchBattery, switchNotification;
     private TextView statusText;
     private ImageView statusIcon;
     private SharedPreferences prefs;
 
+    private boolean isSimLocked = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        // This check acts as a fallback. 
+        // PermissionsActivity is the real launcher, but just in case MainActivity is started directly:
+        if (!hasAllPermissions()) {
+            startActivity(new Intent(this, PermissionsActivity.class));
+            finish();
+            return;
+        }
+        
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences("SMSConfig", MODE_PRIVATE);
@@ -54,23 +54,41 @@ public class MainActivity extends AppCompatActivity {
         btnSaveSim = findViewById(R.id.btnSaveSim);
         btnHistory = findViewById(R.id.btnHistory);
         chipGroupDesktops = findViewById(R.id.chipGroupDesktops);
+        
+        statusText = findViewById(R.id.statusText);
+        statusIcon = findViewById(R.id.statusIcon);
 
         // History Button Click Listener
         btnHistory.setOnClickListener(v -> {
             startActivity(new Intent(MainActivity.this, HistoryActivity.class));
         });
-        
-        switchSms = findViewById(R.id.switchSms);
-        switchPhone = findViewById(R.id.switchPhone);
-        switchBattery = findViewById(R.id.switchBattery);
-        switchNotification = findViewById(R.id.switchNotification);
-        
-        statusText = findViewById(R.id.statusText);
-        statusIcon = findViewById(R.id.statusIcon);
 
-        // Load saved data
-        sim1Input.setText(prefs.getString("sim1_name", ""));
-        sim2Input.setText(prefs.getString("sim2_name", ""));
+        // Load saved SIM names and lock if they exist
+        String savedSim1 = prefs.getString("sim1_name", "");
+        String savedSim2 = prefs.getString("sim2_name", "");
+        sim1Input.setText(savedSim1);
+        sim2Input.setText(savedSim2);
+        
+        if (!savedSim1.isEmpty() || !savedSim2.isEmpty()) {
+            lockSimInputs();
+        } else {
+            unlockSimInputs();
+        }
+
+        btnSaveSim.setOnClickListener(v -> {
+            if (isSimLocked) {
+                // Currently locked, so unlock it
+                unlockSimInputs();
+            } else {
+                // Currently unlocked, so save and lock it
+                prefs.edit()
+                    .putString("sim1_name", sim1Input.getText().toString().trim())
+                    .putString("sim2_name", sim2Input.getText().toString().trim())
+                    .apply();
+                Toast.makeText(this, "SIM Names Saved!", Toast.LENGTH_SHORT).show();
+                lockSimInputs();
+            }
+        });
         
         loadChips();
         updateStatusUI();
@@ -99,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
             codes.add(code);
             prefs.edit().putStringSet("pairing_codes", codes).apply();
             
-            // For backwards compatibility (if needed by other parts temporarily)
+            // For backwards compatibility
             prefs.edit().putString("pairing_code", code).apply();
             
             pairingCodeInput.setText("");
@@ -108,16 +126,41 @@ public class MainActivity extends AppCompatActivity {
             updateStatusUI();
             startMqttService();
         });
+    }
 
-        btnSaveSim.setOnClickListener(v -> {
-            prefs.edit()
-                .putString("sim1_name", sim1Input.getText().toString().trim())
-                .putString("sim2_name", sim2Input.getText().toString().trim())
-                .apply();
-            Toast.makeText(this, "SIM Names Saved!", Toast.LENGTH_SHORT).show();
-        });
+    private void lockSimInputs() {
+        isSimLocked = true;
+        sim1Input.setEnabled(false);
+        sim2Input.setEnabled(false);
+        btnSaveSim.setText("EDIT SIM NAMES");
+        btnSaveSim.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#9CA3AF"))); // Gray
+    }
 
-        setupPermissionSwitches();
+    private void unlockSimInputs() {
+        isSimLocked = false;
+        sim1Input.setEnabled(true);
+        sim2Input.setEnabled(true);
+        sim1Input.requestFocus();
+        btnSaveSim.setText("SAVE SIM NAMES");
+        btnSaveSim.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#3B82F6"))); // Blue
+    }
+
+    private boolean hasAllPermissions() {
+        boolean hasSms = androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        boolean hasPhone = androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        
+        boolean hasBattery = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+            hasBattery = pm.isIgnoringBatteryOptimizations(getPackageName());
+        }
+        
+        boolean hasNotif = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasNotif = androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        }
+        
+        return hasSms && hasPhone && hasBattery && hasNotif;
     }
 
     private void loadChips() {
@@ -141,7 +184,6 @@ public class MainActivity extends AppCompatActivity {
                 currentCodes.remove(code);
                 prefs.edit().putStringSet("pairing_codes", currentCodes).apply();
                 
-                // If we removed the last one, also clear the legacy key
                 if (currentCodes.isEmpty()) {
                     prefs.edit().remove("pairing_code").apply();
                 } else if (code.equals(prefs.getString("pairing_code", ""))) {
@@ -159,75 +201,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        checkPermissionsAndUpdateSwitches();
-        startMqttService(); // Ensure service is running
-    }
-
-    private void setupPermissionSwitches() {
-        switchSms.setOnClickListener(v -> {
-            if (switchSms.isChecked()) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS}, 101);
-            } else {
-                Toast.makeText(this, "Cannot disable from here. Go to App Settings.", Toast.LENGTH_SHORT).show();
-                switchSms.setChecked(true); // Revert
-            }
-        });
-
-        switchPhone.setOnClickListener(v -> {
-            if (switchPhone.isChecked()) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_PHONE_STATE}, 102);
-            } else {
-                Toast.makeText(this, "Cannot disable from here. Go to App Settings.", Toast.LENGTH_SHORT).show();
-                switchPhone.setChecked(true);
-            }
-        });
-
-        switchBattery.setOnClickListener(v -> {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Intent intent = new Intent();
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
-                    intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
-                }
-            }
-        });
-
-        switchNotification.setOnClickListener(v -> {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (switchNotification.isChecked()) {
-                    ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 103);
-                } else {
-                    Toast.makeText(this, "Cannot disable from here. Go to App Settings.", Toast.LENGTH_SHORT).show();
-                    switchNotification.setChecked(true);
-                }
-            } else {
-                Toast.makeText(this, "Not required for your Android version", Toast.LENGTH_SHORT).show();
-                switchNotification.setChecked(true);
-            }
-        });
-    }
-
-    private void checkPermissionsAndUpdateSwitches() {
-        boolean hasSms = ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
-        switchSms.setChecked(hasSms);
-
-        boolean hasPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
-        switchPhone.setChecked(hasPhone);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            switchBattery.setChecked(pm.isIgnoringBatteryOptimizations(getPackageName()));
+        if (hasAllPermissions()) {
+            startMqttService();
         } else {
-            switchBattery.setChecked(true);
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            boolean hasNotif = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
-            switchNotification.setChecked(hasNotif);
-        } else {
-            switchNotification.setChecked(true);
+            startActivity(new Intent(this, PermissionsActivity.class));
+            finish();
         }
     }
 
