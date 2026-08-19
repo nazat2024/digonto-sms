@@ -50,6 +50,11 @@ public class MainActivity extends AppCompatActivity {
         
         setContentView(R.layout.activity_main);
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            getWindow().setStatusBarColor(android.graphics.Color.parseColor("#F8FAFC"));
+        }
+
         prefs = getSharedPreferences("SMSConfig", MODE_PRIVATE);
 
         pairingCodeInput = findViewById(R.id.pairingCodeInput);

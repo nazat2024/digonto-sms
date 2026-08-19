@@ -35,6 +35,11 @@ public class PermissionsActivity extends AppCompatActivity {
         
         setContentView(R.layout.activity_permissions);
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            getWindow().setStatusBarColor(android.graphics.Color.parseColor("#F8FAFC"));
+        }
+
         switchSms = findViewById(R.id.switchSms);
         switchPhone = findViewById(R.id.switchPhone);
         switchBattery = findViewById(R.id.switchBattery);
