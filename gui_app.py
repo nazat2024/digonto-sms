@@ -121,9 +121,11 @@ class IVACApp(ctk.CTk):
     def _load_config(self):
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                self.config = json.load(f)
+                return self.config
         except Exception:
-            return {"profiles": [], "sim_mapping": {}}
+            self.config = {"profiles": [], "sim_mapping": {}}
+            return self.config
     
     def _save_config(self):
         try:

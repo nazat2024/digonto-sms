@@ -335,7 +335,11 @@ def license_status():
         
     return jsonify({"active": last_license_status}), 200
 
-active_profile_data = {}
+def _normalize_prof(p_str):
+    if not p_str: return ""
+    s = str(p_str).strip().lower()
+    if s.startswith("profile "): s = s.replace("profile ", "")
+    return s
 
 @app.route("/api/profile/active", methods=["POST", "GET"])
 def active_profile_endpoint():
@@ -359,21 +363,42 @@ def active_profile_endpoint():
                     
                     cfg["active_profile"] = active_profile_data
                     
-                    # Also update matching profile in profiles list if present
-                    prof_dir = active_profile_data.get("chrome_profile")
-                    if "profiles" in cfg and isinstance(cfg["profiles"], list):
-                        for p in cfg["profiles"]:
-                            if prof_dir and p.get("chrome_profile") == prof_dir:
-                                if "phone" in active_profile_data:
-                                    p["phone"] = active_profile_data["phone"]
-                                if "password" in active_profile_data:
-                                    p["password"] = active_profile_data["password"]
-                            elif not prof_dir and active_profile_data.get("phone") and p.get("phone") == active_profile_data.get("phone"):
-                                if "password" in active_profile_data:
-                                    p["password"] = active_profile_data["password"]
+                    # Also update matching profile in profiles list
+                    prof_dir = active_profile_data.get("chrome_profile", "")
+                    norm_prof = _normalize_prof(prof_dir)
+                    
+                    updated = False
+                    if "profiles" in cfg and isinstance(cfg["profiles"], list) and len(cfg["profiles"]) > 0:
+                        # 1. Match by chrome_profile if known
+                        if norm_prof:
+                            for p in cfg["profiles"]:
+                                if _normalize_prof(p.get("chrome_profile")) == norm_prof:
+                                    if "phone" in active_profile_data:
+                                        p["phone"] = active_profile_data["phone"]
+                                    if "password" in active_profile_data:
+                                        p["password"] = active_profile_data["password"]
+                                    updated = True
+                        
+                        # 2. If not updated and only 1 profile exists, update it
+                        if not updated and len(cfg["profiles"]) == 1:
+                            if "phone" in active_profile_data:
+                                cfg["profiles"][0]["phone"] = active_profile_data["phone"]
+                            if "password" in active_profile_data:
+                                cfg["profiles"][0]["password"] = active_profile_data["password"]
+                            updated = True
+                            
+                        # 3. If multiple profiles and no prof_dir matched, update first enabled profile
+                        if not updated:
+                            for p in cfg["profiles"]:
+                                if p.get("enabled", True):
+                                    if "phone" in active_profile_data:
+                                        p["phone"] = active_profile_data["phone"]
+                                    if "password" in active_profile_data:
+                                        p["password"] = active_profile_data["password"]
+                                    break
                     
                     with open(config_path, "w", encoding="utf-8") as f:
-                        json.dump(cfg, f, indent=2)
+                        json.dump(cfg, f, ensure_ascii=False, indent=2)
                 except Exception as e:
                     print(f"Error persisting profile to config.json: {e}")
                     
