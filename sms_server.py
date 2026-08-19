@@ -229,8 +229,11 @@ def update_device():
         return jsonify({"success": True})
     return jsonify({"success": False})
 
+last_config_ts = time.time()
+
 @app.route("/api/status", methods=["GET"])
 def get_status():
+    global last_config_ts, active_profile_data
     devices = []
     current_time = time.time()
     for dev_id, data in list(connected_devices.items()):
@@ -240,7 +243,9 @@ def get_status():
         
     return jsonify({
         "otps": otp_store.get_all_status(),
-        "devices": devices
+        "devices": devices,
+        "config_version": last_config_ts,
+        "active_profile": active_profile_data
     }), 200
 
 @app.route("/api/ip", methods=["GET"])
@@ -334,13 +339,14 @@ active_profile_data = {}
 
 @app.route("/api/profile/active", methods=["POST", "GET"])
 def active_profile_endpoint():
-    global active_profile_data
+    global active_profile_data, last_config_ts
     if request.method == "POST":
         data = request.get_json(force=True, silent=True) or {}
         if data:
             if not isinstance(active_profile_data, dict):
                 active_profile_data = {}
             active_profile_data.update(data)
+            last_config_ts = time.time()
             
             # Save updated profile data to config.json
             import json, os
@@ -371,12 +377,12 @@ def active_profile_endpoint():
                 except Exception as e:
                     print(f"Error persisting profile to config.json: {e}")
                     
-        return jsonify({"success": True, "active_profile": active_profile_data}), 200
-    return jsonify({"active_profile": active_profile_data}), 200
+        return jsonify({"success": True, "active_profile": active_profile_data, "config_version": last_config_ts}), 200
+    return jsonify({"active_profile": active_profile_data, "config_version": last_config_ts}), 200
 
 @app.route("/api/config", methods=["GET"])
 def get_extension_config():
-    global active_profile_data
+    global active_profile_data, last_config_ts
     import json, os
     app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
     config_path = os.path.join(app_data_dir, "config.json")
@@ -403,7 +409,8 @@ def get_extension_config():
     return jsonify({
         "rocket_accounts": rocket_accounts,
         "profiles": profiles,
-        "active_profile": active_profile_data
+        "active_profile": active_profile_data,
+        "config_version": last_config_ts
     }), 200
 
 @socketio.on("connect")

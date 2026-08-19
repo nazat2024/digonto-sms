@@ -454,11 +454,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== Fetch SMS and Server Status =====
     async function updateStatus() {
+        let statusData = null;
         try {
             const statusRes = await fetch('http://127.0.0.1:5000/api/status');
             if (statusRes.ok) {
                 serverDot.className = "dot green";
                 serverText.innerText = "সংযুক্ত";
+                statusData = await statusRes.json();
+                
+                // Real-time 2-way sync credentials with desktop app
+                if (statusData && statusData.active_profile) {
+                    const servPhone = statusData.active_profile.phone || '';
+                    const servPass = statusData.active_profile.password || '';
+                    const isPhoneFocused = document.activeElement === phoneInput;
+                    const isPassFocused = document.activeElement === passInput;
+                    
+                    if (!isPhoneFocused && servPhone && servPhone !== phoneInput.value) {
+                        currentPhone = servPhone;
+                        phoneInput.value = currentPhone;
+                        chrome.storage.local.set({ ivac_phone: currentPhone });
+                    }
+                    if (!isPassFocused && servPass !== undefined && servPass !== passInput.value) {
+                        passInput.value = servPass;
+                        chrome.storage.local.set({ ivac_password: servPass });
+                    }
+                }
             } else {
                 throw new Error("Bad status");
             }
@@ -527,5 +547,5 @@ document.addEventListener('DOMContentLoaded', () => {
         if (extToggle.checked) {
             updateStatus();
         }
-    }, 2000);
+    }, 1000);
 });

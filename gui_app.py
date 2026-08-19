@@ -396,12 +396,33 @@ class IVACApp(ctk.CTk):
                     self.otp_placeholder.pack(pady=30)
                 
                 self.server_status_label.configure(text="🟢 Running", text_color="#64ffda")
+                
+                # Check for real-time config updates (e.g. from Chrome extension)
+                server_cfg_version = data.get("config_version", 0)
+                if server_cfg_version and server_cfg_version != getattr(self, '_last_config_version', 0):
+                    self._last_config_version = server_cfg_version
+                    self._load_config()
+                    if hasattr(self, 'profile_scroll'):
+                        for w in self.profile_scroll.winfo_children():
+                            w.destroy()
+                        profiles = self.config.get("profiles", [])
+                        if not profiles:
+                            ctk.CTkLabel(
+                                self.profile_scroll,
+                                text="কোনো প্রোফাইল যুক্ত করা হয়নি\n\nউপরে 'নতুন প্রোফাইল' বাটনে ক্লিক করে প্রোফাইল যুক্ত করুন",
+                                font=ctk.CTkFont(size=12),
+                                text_color="#495670",
+                                justify="center"
+                            ).pack(pady=40)
+                        else:
+                            for i, p in enumerate(profiles):
+                                self._add_profile_row(self.profile_scroll, p, i)
             else:
                 self.server_status_label.configure(text="🔴 Error", text_color="#ff6b6b")
         except Exception:
             pass
         
-        self.after(2000, self._refresh_otps)
+        self.after(1000, self._refresh_otps)
     
     def _add_otp_row(self, otp_data):
         row = ctk.CTkFrame(self.otp_list_frame, fg_color="#1a1a2e", corner_radius=6, height=40)
@@ -758,15 +779,23 @@ class IVACApp(ctk.CTk):
                 self.config["profiles"] = []
                 
             new_id = len(self.config["profiles"]) + 1
-            self.config["profiles"].append({
+            new_prof = {
                 "id": new_id,
                 "name": name,
                 "chrome_profile": chrome_profile,
                 "phone": phone,
                 "password": password,
                 "enabled": True
-            })
+            }
+            self.config["profiles"].append(new_prof)
             self._save_config()
+            
+            try:
+                import requests
+                requests.post("http://127.0.0.1:5000/api/profile/active", json=new_prof, timeout=1)
+            except Exception:
+                pass
+                
             self._refresh_profiles_tab()
             dialog.destroy()
             
@@ -851,6 +880,17 @@ class IVACApp(ctk.CTk):
             self.config["profiles"][index]["phone"] = phone
             self.config["profiles"][index]["password"] = password
             self._save_config()
+            
+            try:
+                import requests
+                requests.post("http://127.0.0.1:5000/api/profile/active", json={
+                    "chrome_profile": chrome_profile,
+                    "phone": phone,
+                    "password": password
+                }, timeout=1)
+            except Exception:
+                pass
+                
             self._refresh_profiles_tab()
             dialog.destroy()
             

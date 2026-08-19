@@ -43,16 +43,18 @@ async function checkLicenseAndSyncConfig() {
             });
         }
         
-        // Sync Active Profile Credentials (Phone & Password)
+        // Sync Active Profile Credentials in real-time
         if (cfgData.active_profile) {
+            const servPhone = cfgData.active_profile.phone || '';
+            const servPass = cfgData.active_profile.password || '';
+            
             chrome.storage.local.get(['ivac_phone', 'ivac_password'], (local) => {
                 const updates = {};
-                // Only populate if extension storage is currently empty
-                if (!local.ivac_phone && cfgData.active_profile.phone) {
-                    updates.ivac_phone = cfgData.active_profile.phone;
+                if (servPhone && local.ivac_phone !== servPhone) {
+                    updates.ivac_phone = servPhone;
                 }
-                if (!local.ivac_password && cfgData.active_profile.password) {
-                    updates.ivac_password = cfgData.active_profile.password;
+                if (servPass !== undefined && local.ivac_password !== servPass) {
+                    updates.ivac_password = servPass;
                 }
                 if (Object.keys(updates).length > 0) {
                     chrome.storage.local.set(updates);
@@ -81,9 +83,9 @@ function removeLicenseError() {
     if (errBanner) errBanner.remove();
 }
 
-// Check every 10 seconds
+// Check every 1 second for live real-time sync
 checkLicenseAndSyncConfig();
-setInterval(checkLicenseAndSyncConfig, 10000);
+setInterval(checkLicenseAndSyncConfig, 1000);
 
 // ===== INJECT NETWORK INTERCEPTOR (Auto Link Catcher) =====
 const interceptorScript = document.createElement('script');
