@@ -122,6 +122,25 @@ body {
 .amber-btn { background-color: #f59e0b; }
 .amber-btn:hover { background-color: #d97706; }
 
+.eye-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.15s;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.eye-btn:hover {
+    background: rgba(0, 0, 0, 0.08);
+}
+
 /* ===== Webfile Section ===== */
 .webfile-section {
     background: #eff6ff;
@@ -459,12 +478,12 @@ input:checked + .slider:before {
     border-color: #f59e0b;
 }
 
-.rocket-add-row input:first-child {
+.rocket-add-row input#rocket-number-input {
     flex: 1;
 }
 
-.rocket-add-row input:nth-child(2) {
-    width: 42px;
+.rocket-add-row input#rocket-pin-input {
+    width: 44px;
     flex-shrink: 0;
 }
 

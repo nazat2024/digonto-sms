@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const extToggle = document.getElementById('ext-toggle');
     const phoneInput = document.getElementById('manual-phone-input');
     const passInput = document.getElementById('manual-pass-input');
+    const toggleIvacPassBtn = document.getElementById('toggle-ivac-pass-btn');
     const savePhoneBtn = document.getElementById('save-phone-btn');
     const smsDisplay = document.getElementById('latest-sms');
     const serverDot = document.getElementById('server-dot');
@@ -13,7 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const webfileModeBtn = document.getElementById('webfile-mode-btn');
 
     // Rocket elements
+    const rocketNumberInput = document.getElementById('rocket-number-input');
     const rocketPinInput = document.getElementById('rocket-pin-input');
+    const toggleRocketPinBtn = document.getElementById('toggle-rocket-pin-btn');
     const addRocketBtn = document.getElementById('add-rocket-btn');
     const rocketListEl = document.getElementById('rocket-list');
     const paymentEnabledToggle = document.getElementById('payment-enabled-toggle');
@@ -302,7 +305,15 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const pinSpan = document.createElement('span');
             pinSpan.className = 'ri-pin';
-            pinSpan.textContent = '🔑 ' + acc.pin;
+            let isRevealed = false;
+            pinSpan.textContent = '🔑 ' + '•'.repeat(acc.pin ? acc.pin.length : 4);
+            pinSpan.title = 'PIN দেখতে ক্লিক করুন';
+            pinSpan.style.cursor = 'pointer';
+            pinSpan.addEventListener('click', (e) => {
+                e.stopPropagation();
+                isRevealed = !isRevealed;
+                pinSpan.textContent = isRevealed ? ('🔑 ' + acc.pin) : ('🔑 ' + '•'.repeat(acc.pin ? acc.pin.length : 4));
+            });
             
             const delBtn = document.createElement('button');
             delBtn.className = 'ri-del';
@@ -336,6 +347,33 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.set({
             rocket_accounts: rocketAccounts,
             active_rocket_id: activeRocketId
+        });
+    }
+
+    // ===== EYE TOGGLE BUTTONS =====
+    // 1. IVAC Password Eye Button (Default: Unhide / text)
+    if (toggleIvacPassBtn && passInput) {
+        toggleIvacPassBtn.addEventListener('click', () => {
+            if (passInput.type === 'text') {
+                passInput.type = 'password';
+                toggleIvacPassBtn.textContent = '🙈';
+            } else {
+                passInput.type = 'text';
+                toggleIvacPassBtn.textContent = '👁️';
+            }
+        });
+    }
+
+    // 2. Rocket PIN Eye Button (Default: Hide / password)
+    if (toggleRocketPinBtn && rocketPinInput) {
+        toggleRocketPinBtn.addEventListener('click', () => {
+            if (rocketPinInput.type === 'password') {
+                rocketPinInput.type = 'text';
+                toggleRocketPinBtn.textContent = '👁️';
+            } else {
+                rocketPinInput.type = 'password';
+                toggleRocketPinBtn.textContent = '🙈';
+            }
         });
     }
 
