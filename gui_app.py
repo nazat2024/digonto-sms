@@ -1074,59 +1074,9 @@ class IVACApp(ctk.CTk):
             command=self._export_extension
         ).pack(fill="x", padx=15, pady=(0, 15))
 
-    def _add_rocket_account(self):
-        num = self.rocket_num_entry.get().strip()
-        pin = self.rocket_pin_entry.get().strip()
-        if len(num) != 12 or not num.isdigit():
-            messagebox.showerror("Error", "Rocket নম্বর ১২ ডিজিটের হতে হবে!")
-            return
-        if not pin:
-            messagebox.showerror("Error", "PIN দিতে হবে!")
-            return
-        
-        accounts = self.config.get("rocket_accounts", [])
-        if any(a.get("number") == num for a in accounts):
-            messagebox.showerror("Error", "এই নম্বরটি আগেই যোগ করা হয়েছে!")
-            return
-            
-        import uuid
-        accounts.append({
-            "id": str(uuid.uuid4()),
-            "number": num,
-            "pin": pin
-        })
-        self.config["rocket_accounts"] = accounts
-        self._save_config()
-        self.rocket_num_entry.delete(0, 'end')
-        self.rocket_pin_entry.delete(0, 'end')
-        self._refresh_rocket_list()
-        
-    def _delete_rocket_account(self, acc_id):
-        accounts = self.config.get("rocket_accounts", [])
-        self.config["rocket_accounts"] = [a for a in accounts if a.get("id") != acc_id]
-        self._save_config()
-        self._refresh_rocket_list()
-        
-    def _refresh_rocket_list(self):
-        for w in self.rocket_list_frame.winfo_children():
-            w.destroy()
-        
-        accounts = self.config.get("rocket_accounts", [])
-        if not accounts:
-            ctk.CTkLabel(self.rocket_list_frame, text="No accounts added yet", text_color="#495670").pack(pady=10)
-            return
-            
-        for acc in accounts:
-            row = ctk.CTkFrame(self.rocket_list_frame, fg_color="transparent")
-            row.pack(fill="x", pady=2)
-            ctk.CTkLabel(row, text=f"{acc['number']} (***)", text_color="#ccd6f6").pack(side="left", padx=5)
-            ctk.CTkButton(
-                row, text="Delete", width=50, fg_color="#ef4444", hover_color="#dc2626", height=24,
-                command=lambda aid=acc['id']: self._delete_rocket_account(aid)
-            ).pack(side="right", padx=5)
-
     def _export_extension(self):
         import shutil, os
+        from tkinter import messagebox
         from customtkinter import filedialog
         dest_dir = filedialog.askdirectory(title="এক্সটেনশন সেভ করার ফোল্ডার বেছে নিন")
         if not dest_dir:
@@ -1143,139 +1093,59 @@ class IVACApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export extension: {e}")
     
-    # ===== UPDATE TAB =====
-    def _build_update_tab(self):
-        tab = self.tab_update
-        
-        # Current Version
-        ver_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
-        ver_card.pack(fill="x", padx=5, pady=(5, 5))
-        
-        ctk.CTkLabel(
-            ver_card, text="🔄 Software Update",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
-        ).pack(anchor="w", padx=15, pady=(10, 5))
-        
-        self.update_version_label = ctk.CTkLabel(
-            ver_card,
-            text=f"বর্তমান ভার্সন: v{APP_VERSION}",
-            font=ctk.CTkFont(size=12),
-            text_color="#8892b0"
-        )
-        self.update_version_label.pack(anchor="w", padx=15, pady=(0, 5))
-        
-        self.update_status_label = ctk.CTkLabel(
-            ver_card,
-            text="আপডেট চেক করতে নিচের বাটনে ক্লিক করুন",
-            font=ctk.CTkFont(size=11),
-            text_color="#495670"
-        )
-        self.update_status_label.pack(anchor="w", padx=15, pady=(0, 10))
-        
-        # Check Update Button
-        self.check_update_btn = ctk.CTkButton(
-            tab, text="🔍 Check for Update",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            height=42,
-            fg_color="#059669", hover_color="#047857",
-            command=self._check_update
-        )
-        self.check_update_btn.pack(fill="x", padx=5, pady=5)
-        
-        # Update Progress
-        self.update_progress = ctk.CTkProgressBar(tab, mode="indeterminate")
-        self.update_progress.pack(fill="x", padx=5, pady=5)
-        self.update_progress.pack_forget()  # Hide initially
-        
-        # Changelog
-        changelog_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
-        changelog_card.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        ctk.CTkLabel(
-            changelog_card, text="📋 Changelog",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#8892b0"
-        ).pack(anchor="w", padx=15, pady=(10, 5))
-        
-        self.changelog_text = ctk.CTkTextbox(
-            changelog_card, font=ctk.CTkFont(size=11),
-            fg_color="#0a192f", text_color="#8892b0",
-            corner_radius=5, height=120
-        )
-        self.changelog_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self.changelog_text.insert("end", "আপডেট চেক করলে এখানে পরিবর্তনের তালিকা দেখাবে।")
-        self.changelog_text.configure(state="disabled")
-    
-    def _check_update(self):
-        self.check_update_btn.configure(state="disabled", text="⏳ চেক করা হচ্ছে...")
-        self.update_progress.pack(fill="x", padx=5, pady=5)
-        self.update_progress.start()
-        
-        def check():
-            try:
-                import requests
-                resp = requests.get(UPDATE_URL, timeout=10)
-                if resp.ok:
-                    data = resp.json()
-                    latest = data.get("version", APP_VERSION)
-                    changelog = data.get("changelog", "কোনো তথ্য নেই")
-                    download_url = data.get("download_url", "")
-                    
-                    self.after(0, lambda: self._show_update_result(latest, changelog, download_url))
-                else:
-                    self.after(0, lambda: self._show_update_error("সার্ভার থেকে তথ্য আনা যায়নি।"))
-            except Exception as e:
-                self.after(0, lambda: self._show_update_error(f"আপডেট সার্ভারে সংযোগ করা যায়নি।\n({str(e)})"))
-        
-        threading.Thread(target=check, daemon=True).start()
-    
-    def _show_update_result(self, latest, changelog, download_url):
-        self.update_progress.stop()
-        self.update_progress.pack_forget()
-        self.check_update_btn.configure(state="normal", text="🔍 Check for Update")
-        
-        if latest > APP_VERSION:
-            self.update_status_label.configure(
-                text=f"⬆️ নতুন ভার্সন পাওয়া গেছে: v{latest}",
-                text_color="#64ffda"
-            )
-            if download_url:
-                self.check_update_btn.configure(
-                    text="📥 Download Update",
-                    command=lambda: webbrowser.open(download_url)
-                )
-        else:
-            self.update_status_label.configure(
-                text="✅ আপনি সর্বশেষ ভার্সন ব্যবহার করছেন!",
-                text_color="#059669"
-            )
-        
-        self.changelog_text.configure(state="normal")
-        self.changelog_text.delete("1.0", "end")
-        self.changelog_text.insert("end", changelog)
-        self.changelog_text.configure(state="disabled")
-    
-    def _show_update_error(self, msg):
-        self.update_progress.stop()
-        self.update_progress.pack_forget()
-        self.check_update_btn.configure(state="normal", text="🔍 Check for Update")
-        self.update_status_label.configure(text=f"❌ {msg}", text_color="#ff6b6b")
-    
     # ===== SERVER =====
     def _start_server(self):
         """Flask SMS সার্ভার ব্যাকগ্রাউন্ডে চালু করে।"""
         if self.server_running:
             return
         
-        import subprocess, sys
-        # sys.executable is the PyInstaller .exe
+        # Check if server is already running and healthy
+        try:
+            import requests
+            r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.5)
+            if r.ok:
+                self.server_running = True
+                return
+        except Exception:
+            pass
+            
+        import subprocess, sys, os
         CREATE_NO_WINDOW = 0x08000000
-        self.server_process = subprocess.Popen(
-            [sys.executable, "--run-server"],
-            creationflags=CREATE_NO_WINDOW
-        )
-        self.server_running = True
+        
+        if getattr(sys, 'frozen', False):
+            cmd = [sys.executable, "--run-server"]
+        else:
+            cmd = [sys.executable, os.path.abspath(__file__), "--run-server"]
+            
+        try:
+            self.server_process = subprocess.Popen(
+                cmd,
+                creationflags=CREATE_NO_WINDOW
+            )
+            self.server_running = True
+        except Exception as e:
+            print(f"Subprocess start failed: {e}")
+            
+        # Fail-safe background thread check
+        def ensure_server():
+            import time, requests, threading
+            time.sleep(1.5)
+            try:
+                r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.5)
+                if not r.ok:
+                    raise Exception("Server not responding")
+            except Exception:
+                try:
+                    from sms_server import socketio, app
+                    threading.Thread(
+                        target=lambda: socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True, log_output=False),
+                        daemon=True
+                    ).start()
+                except Exception as ex:
+                    print(f"Fallback thread failed: {ex}")
+
+        import threading
+        threading.Thread(target=ensure_server, daemon=True).start()
 
     def on_closing(self):
         if hasattr(self, 'server_process') and self.server_process:

@@ -16,7 +16,7 @@ let isLicenseValid = true;
 
 async function checkLicenseAndSyncConfig() {
     try {
-        const res = await fetch('http://localhost:5000/api/license-status');
+        const res = await fetch('http://127.0.0.1:5000/api/license-status');
         const data = await res.json();
         if (!data.active) {
             showLicenseError("আপনার Digonto QuickFill লাইসেন্সের মেয়াদ শেষ হয়ে গেছে! দয়া করে সফটওয়্যার থেকে রিনিউ করুন।");
@@ -27,7 +27,7 @@ async function checkLicenseAndSyncConfig() {
         }
         
         // Sync Rocket Accounts
-        const cfgRes = await fetch('http://localhost:5000/api/config');
+        const cfgRes = await fetch('http://127.0.0.1:5000/api/config');
         const cfgData = await cfgRes.json();
         if (cfgData.rocket_accounts && cfgData.rocket_accounts.length > 0) {
             chrome.storage.local.get(['active_rocket_id'], (st) => {
@@ -1089,7 +1089,7 @@ setInterval(() => {
                                     const amountMatch = payBtn.textContent.match(/[\d,]+\.?\d*/);
                                     const amount = amountMatch ? parseFloat(amountMatch[0].replace(/,/g, '')) : 0;
                                     
-                                    fetch('http://localhost:5000/api/payment', {
+                                    fetch('http://127.0.0.1:5000/api/payment', {
                                         method: 'POST',
                                         headers: {'Content-Type': 'application/json'},
                                         body: JSON.stringify({
@@ -1255,7 +1255,7 @@ setInterval(() => {
                                 // NEW: Track Stage Update
                                 chrome.storage.local.get(['current_payment_id'], (res) => {
                                     if (res.current_payment_id) {
-                                        fetch('http://localhost:5000/api/payment/update', {
+                                        fetch('http://127.0.0.1:5000/api/payment/update', {
                                             method: 'POST',
                                             headers: {'Content-Type': 'application/json'},
                                             body: JSON.stringify({
@@ -1337,7 +1337,7 @@ setInterval(() => {
                                     // Track final success
                                     chrome.storage.local.get(['current_payment_id'], (res) => {
                                         if (res.current_payment_id) {
-                                            fetch('http://localhost:5000/api/payment/update', {
+                                            fetch('http://127.0.0.1:5000/api/payment/update', {
                                                 method: 'POST',
                                                 headers: {'Content-Type': 'application/json'},
                                                 body: JSON.stringify({
@@ -1358,7 +1358,7 @@ setInterval(() => {
                                                     extractedAmount = parseFloat(pageTextMatch[1].replace(/,/g, ''));
                                                 }
                                                 
-                                                fetch('http://localhost:5000/api/payment-success', { 
+                                                fetch('http://127.0.0.1:5000/api/payment-success', { 
                                                     method: 'POST',
                                                     headers: {'Content-Type': 'application/json'},
                                                     body: JSON.stringify({

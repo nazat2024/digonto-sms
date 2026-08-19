@@ -399,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatus();
             
             // Sync with local desktop app backend so it stays permanently saved in config
-            fetch('http://localhost:5000/api/profile/active', {
+            fetch('http://127.0.0.1:5000/api/profile/active', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
