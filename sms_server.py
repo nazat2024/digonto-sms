@@ -19,6 +19,9 @@ app = Flask(__name__, static_folder="dashboard", static_url_path="/dashboard")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
+saved_devices = {}
+connected_devices = {}
+
 class OTPStore:
     def __init__(self):
         self._store: Dict[str, dict] = {}
@@ -196,6 +199,36 @@ def mark_otp_used(phone):
     otp_store.mark_used(phone)
     return jsonify({"success": True}), 200
 
+@app.route("/api/device/update", methods=["POST"])
+def update_device():
+    data = request.get_json(force=True, silent=True) or {}
+    dev_id = data.get("device_id")
+    custom_name = data.get("custom_name")
+    is_active = data.get("is_active")
+    
+    if dev_id and dev_id in saved_devices:
+        if custom_name is not None:
+            saved_devices[dev_id]["custom_name"] = custom_name
+            if dev_id in connected_devices:
+                connected_devices[dev_id]["custom_name"] = custom_name
+        if is_active is not None:
+            saved_devices[dev_id]["is_active"] = is_active
+            if dev_id in connected_devices:
+                connected_devices[dev_id]["is_active"] = is_active
+                
+        # To avoid circular import/local scoping issues, we save it here
+        import json, os
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        config_path = os.path.join(app_data_dir, "devices.json")
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(saved_devices, f, indent=2)
+        except:
+            pass
+            
+        return jsonify({"success": True})
+    return jsonify({"success": False})
+
 @app.route("/api/status", methods=["GET"])
 def get_status():
     devices = []
@@ -347,8 +380,7 @@ try:
     MQTT_TOPIC = f"digonto_ivac_sms_{PAIRING_CODE}"
     MQTT_SYS_TOPIC = f"digonto_ivac_sms_{PAIRING_CODE}_sys"
     
-    connected_devices = {}
-    
+
     def load_device_config():
         import json, os
         app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
@@ -372,7 +404,7 @@ try:
         except:
             pass
 
-    saved_devices = load_device_config()
+    saved_devices.update(load_device_config())
 
     def on_mqtt_connect(client, userdata, flags, rc):
         if rc == 0:
@@ -383,10 +415,11 @@ try:
             print(f"[Cloud Sync] Connect failed with code {rc}")
 
     def on_mqtt_message(client, userdata, msg):
+        import json
         try:
             if msg.topic == MQTT_SYS_TOPIC:
                 payload = msg.payload.decode('utf-8')
-                sys_data = __import__('json').loads(payload)
+                sys_data = json.loads(payload)
                 if sys_data.get("type") == "ping":
                     dev_id = sys_data.get("device_id", "Unknown Device")
                     dev_model = sys_data.get("device_name", "Unknown Model")
@@ -409,7 +442,7 @@ try:
                         "online": True
                     }
                     # Send pong
-                    pong = __import__('json').dumps({"type": "pong"}).encode('utf-8')
+                    pong = json.dumps({"type": "pong"}).encode('utf-8')
                     client.publish(MQTT_SYS_TOPIC, pong)
                 return
 
@@ -423,7 +456,7 @@ try:
             decrypted_bytes = bytes(b ^ key_bytes[i % len(key_bytes)] for i, b in enumerate(raw))
             decrypted = decrypted_bytes.decode('utf-8')
             
-            data = __import__('json').loads(decrypted)
+            data = json.loads(decrypted)
             
             dev_id = data.get("device_id", "Unknown")
             # If the device is explicitly turned off by the user, ignore the SMS

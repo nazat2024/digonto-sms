@@ -3,7 +3,7 @@ from tkinter import messagebox
 from license_system.license_manager import activate_license, LicenseStatus, LicenseInfo
 from license_system.hwid import get_hwid_display
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "4.0.0"
 APP_AUTHOR = "DiGonto Tech"
 
 class LicenseActivationWindow(ctk.CTkToplevel):
@@ -36,7 +36,7 @@ class LicenseActivationWindow(ctk.CTkToplevel):
         header.pack_propagate(False)
         
         ctk.CTkLabel(
-            header, text="🇮🇳 IVAC Auto Fill Assistant",
+            header, text="🇮🇳 Digonto QuickFill",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color="#00d2ff"
         ).pack(pady=(15, 2))

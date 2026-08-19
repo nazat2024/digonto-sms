@@ -1,11 +1,11 @@
 [Setup]
-AppName=IVAC Auto Fill Assistant
-AppVersion=3.0.0
+AppName=Digonto QuickFill
+AppVersion=4.0.0
 AppPublisher=DiGonto Tech
 AppPublisherURL=https://digontoedu.com
-DefaultDirName={autopf}\IVAC Auto Fill Assistant
-DefaultGroupName=IVAC Auto Fill Assistant
-OutputBaseFilename=IVAC_Auto_Fill_Setup_v3.0.0
+DefaultDirName={autopf}\Digonto QuickFill
+DefaultGroupName=Digonto QuickFill
+OutputBaseFilename=Digonto_QuickFill_Setup_v4.0.0
 Compression=lzma2/ultra64
 SolidCompression=yes
 ArchitecturesAllowed=x64
@@ -16,12 +16,12 @@ PrivilegesRequired=admin
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "dist\IVAC Auto Fill\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\Digonto QuickFill\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\IVAC Auto Fill Assistant"; Filename: "{app}\IVAC Auto Fill.exe"
-Name: "{group}\{cm:UninstallProgram,IVAC Auto Fill Assistant}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\IVAC Auto Fill Assistant"; Filename: "{app}\IVAC Auto Fill.exe"; Tasks: desktopicon
+Name: "{group}\Digonto QuickFill"; Filename: "{app}\Digonto QuickFill.exe"; IconFilename: "{app}\_internal\icon_v5.ico"
+Name: "{group}\{cm:UninstallProgram,Digonto QuickFill}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Digonto QuickFill"; Filename: "{app}\Digonto QuickFill.exe"; IconFilename: "{app}\_internal\icon_v5.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\IVAC Auto Fill.exe"; Description: "{cm:LaunchProgram,IVAC Auto Fill Assistant}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Digonto QuickFill.exe"; Description: "{cm:LaunchProgram,Digonto QuickFill}"; Flags: nowait postinstall skipifsilent

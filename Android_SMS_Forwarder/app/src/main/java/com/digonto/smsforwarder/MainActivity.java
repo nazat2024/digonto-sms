@@ -8,8 +8,10 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -25,7 +27,9 @@ import java.util.Set;
 public class MainActivity extends AppCompatActivity {
 
     private TextInputEditText pairingCodeInput, sim1Input, sim2Input;
-    private Button btnAddDesktop, btnSaveSim, btnHistory;
+    private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnHistory;
+    private TextView btnCancelAddDesktop, tvDesktopCount;
+    private LinearLayout layoutPairingInputBox;
     private ChipGroup chipGroupDesktops;
     private TextView statusText;
     private ImageView statusIcon;
@@ -37,8 +41,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // This check acts as a fallback. 
-        // PermissionsActivity is the real launcher, but just in case MainActivity is started directly:
+        // Permissions check fallback
         if (!hasAllPermissions()) {
             startActivity(new Intent(this, PermissionsActivity.class));
             finish();
@@ -53,6 +56,10 @@ public class MainActivity extends AppCompatActivity {
         sim1Input = findViewById(R.id.sim1Input);
         sim2Input = findViewById(R.id.sim2Input);
         btnAddDesktop = findViewById(R.id.btnAddDesktop);
+        btnAddAnotherDesktop = findViewById(R.id.btnAddAnotherDesktop);
+        btnCancelAddDesktop = findViewById(R.id.btnCancelAddDesktop);
+        tvDesktopCount = findViewById(R.id.tvDesktopCount);
+        layoutPairingInputBox = findViewById(R.id.layoutPairingInputBox);
         btnSaveSim = findViewById(R.id.btnSaveSim);
         btnHistory = findViewById(R.id.btnHistory);
         chipGroupDesktops = findViewById(R.id.chipGroupDesktops);
@@ -63,6 +70,29 @@ public class MainActivity extends AppCompatActivity {
         // History Button Click Listener
         btnHistory.setOnClickListener(v -> {
             startActivity(new Intent(MainActivity.this, HistoryActivity.class));
+        });
+
+        // "+ Add Another Desktop" click
+        btnAddAnotherDesktop.setOnClickListener(v -> {
+            layoutPairingInputBox.setVisibility(View.VISIBLE);
+            btnAddAnotherDesktop.setVisibility(View.GONE);
+            btnCancelAddDesktop.setVisibility(View.VISIBLE);
+            pairingCodeInput.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(pairingCodeInput, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+
+        // "Cancel" click
+        btnCancelAddDesktop.setOnClickListener(v -> {
+            layoutPairingInputBox.setVisibility(View.GONE);
+            btnAddAnotherDesktop.setVisibility(View.VISIBLE);
+            pairingCodeInput.setText("");
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(pairingCodeInput.getWindowToken(), 0);
+            }
         });
 
         // Load saved SIM names and lock if they exist
@@ -79,10 +109,8 @@ public class MainActivity extends AppCompatActivity {
 
         btnSaveSim.setOnClickListener(v -> {
             if (isSimLocked) {
-                // Currently locked, so unlock it
                 unlockSimInputs();
             } else {
-                // Currently unlocked, so save and lock it
                 prefs.edit()
                     .putString("sim1_name", sim1Input.getText().toString().trim())
                     .putString("sim2_name", sim2Input.getText().toString().trim())
@@ -95,13 +123,13 @@ public class MainActivity extends AppCompatActivity {
         loadChips();
         updateStatusUI();
 
-        // Start checking connection status periodically
+        // Check connection status periodically
         Handler statusHandler = new Handler(android.os.Looper.getMainLooper());
         statusHandler.post(new Runnable() {
             @Override
             public void run() {
                 updateConnectionStatusLive();
-                statusHandler.postDelayed(this, 1000); // Check every second
+                statusHandler.postDelayed(this, 1000);
             }
         });
 
@@ -123,8 +151,13 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit().putString("pairing_code", code).apply();
             
             pairingCodeInput.setText("");
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(pairingCodeInput.getWindowToken(), 0);
+            }
+            
             loadChips();
-            Toast.makeText(this, "Desktop added! Restarting service...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Desktop added successfully!", Toast.LENGTH_SHORT).show();
             updateStatusUI();
             startMqttService();
         });
@@ -134,8 +167,8 @@ public class MainActivity extends AppCompatActivity {
         isSimLocked = true;
         sim1Input.setEnabled(false);
         sim2Input.setEnabled(false);
-        btnSaveSim.setText("EDIT SIM NAMES");
-        btnSaveSim.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#9CA3AF"))); // Gray
+        btnSaveSim.setText("EDIT");
+        btnSaveSim.setTextColor(android.graphics.Color.parseColor("#0284C7"));
     }
 
     private void unlockSimInputs() {
@@ -143,8 +176,8 @@ public class MainActivity extends AppCompatActivity {
         sim1Input.setEnabled(true);
         sim2Input.setEnabled(true);
         sim1Input.requestFocus();
-        btnSaveSim.setText("SAVE SIM NAMES");
-        btnSaveSim.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#3B82F6"))); // Blue
+        btnSaveSim.setText("SAVE");
+        btnSaveSim.setTextColor(android.graphics.Color.parseColor("#10B981"));
     }
 
     private boolean hasAllPermissions() {
@@ -177,10 +210,29 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit().putStringSet("pairing_codes", codes).apply();
         }
 
+        int count = codes.size();
+        if (count == 0) {
+            tvDesktopCount.setText("No Desktops");
+            layoutPairingInputBox.setVisibility(View.VISIBLE);
+            btnAddAnotherDesktop.setVisibility(View.GONE);
+            btnCancelAddDesktop.setVisibility(View.GONE);
+        } else {
+            tvDesktopCount.setText(count + (count == 1 ? " Desktop" : " Desktops"));
+            layoutPairingInputBox.setVisibility(View.GONE);
+            btnAddAnotherDesktop.setVisibility(View.VISIBLE);
+            btnCancelAddDesktop.setVisibility(View.GONE);
+        }
+
         for (String code : codes) {
             Chip chip = new Chip(this);
-            chip.setText("Desktop: " + code);
+            chip.setText("🖥️ Desktop: " + code);
+            chip.setChipBackgroundColorResource(android.R.color.white);
+            chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#E2E8F0")));
+            chip.setChipStrokeWidth(2f);
+            chip.setTextColor(android.graphics.Color.parseColor("#0F172A"));
+            chip.setTextSize(13f);
             chip.setCloseIconVisible(true);
+            chip.setCloseIconTint(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#EF4444")));
             chip.setOnCloseIconClickListener(v -> {
                 Set<String> currentCodes = new HashSet<>(prefs.getStringSet("pairing_codes", new HashSet<>()));
                 currentCodes.remove(code);
@@ -214,56 +266,52 @@ public class MainActivity extends AppCompatActivity {
     private void updateStatusUI() {
         Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
         if (!codes.isEmpty()) {
-            statusText.setText("Ready to Connect");
-            statusText.setTextColor(0xFFF57F17); // Yellow/Orange
-            statusIcon.setColorFilter(0xFFF57F17);
+            statusText.setText("Ready");
+            statusText.setTextColor(0xFF0284C7); // Sky blue
+            statusIcon.setColorFilter(0xFF0284C7);
         } else {
-            statusText.setText("Disconnected");
-            statusText.setTextColor(0xFFD32F2F); // Red
-            statusIcon.setColorFilter(0xFFD32F2F);
+            statusText.setText("Offline");
+            statusText.setTextColor(0xFFDC2626); // Red
+            statusIcon.setColorFilter(0xFFDC2626);
         }
     }
 
     private void updateConnectionStatusLive() {
         Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
         if (codes.isEmpty()) {
+            statusText.setText("Offline");
+            statusText.setTextColor(0xFFDC2626);
+            statusIcon.setColorFilter(0xFFDC2626);
             return;
         }
         
         if (MqttService.isConnectedToBroker) {
-            StringBuilder sb = new StringBuilder();
             int onlineCount = 0;
-            
             for (String code : codes) {
                 long lastPong = MqttService.lastPongReceivedTimes.containsKey(code) ? MqttService.lastPongReceivedTimes.get(code) : 0;
                 long timeSinceLastPong = System.currentTimeMillis() - lastPong;
-                
-                if (sb.length() > 0) sb.append("\n");
-                
-                if (timeSinceLastPong < 10000) { // 10 seconds timeout for pong
-                    sb.append("Desktop ").append(code).append(": Online 🟢");
+                if (timeSinceLastPong < 10000) {
                     onlineCount++;
-                } else {
-                    sb.append("Desktop ").append(code).append(": Waiting... 🟠");
                 }
             }
             
-            statusText.setText(sb.toString());
-            
             if (onlineCount == codes.size()) {
-                statusText.setTextColor(0xFF059669); // Green
-                statusIcon.setColorFilter(0xFF059669);
+                statusText.setText("Live Sync (" + onlineCount + ")");
+                statusText.setTextColor(0xFF10B981); // Emerald Green
+                statusIcon.setColorFilter(0xFF10B981);
             } else if (onlineCount > 0) {
-                statusText.setTextColor(0xFFF57F17); // Yellow
-                statusIcon.setColorFilter(0xFFF57F17);
+                statusText.setText("Partial (" + onlineCount + "/" + codes.size() + ")");
+                statusText.setTextColor(0xFFF59E0B); // Amber
+                statusIcon.setColorFilter(0xFFF59E0B);
             } else {
-                statusText.setTextColor(0xFFD32F2F); // Red
-                statusIcon.setColorFilter(0xFFD32F2F);
+                statusText.setText("Waiting...");
+                statusText.setTextColor(0xFF0284C7); // Blue
+                statusIcon.setColorFilter(0xFF0284C7);
             }
         } else {
-            statusText.setText("Connecting to Server...");
-            statusText.setTextColor(0xFFD32F2F); // Red
-            statusIcon.setColorFilter(0xFFD32F2F);
+            statusText.setText("Connecting...");
+            statusText.setTextColor(0xFFDC2626); // Red
+            statusIcon.setColorFilter(0xFFDC2626);
         }
     }
 
@@ -277,7 +325,6 @@ public class MainActivity extends AppCompatActivity {
                 startService(serviceIntent);
             }
         } else {
-            // Stop service if no codes are available
             Intent serviceIntent = new Intent(this, MqttService.class);
             stopService(serviceIntent);
         }

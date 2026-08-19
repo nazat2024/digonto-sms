@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "IVAC Auto Fill Assistant",
-  "version": "3.0",
+  "name": "Digonto QuickFill",
+  "version": "4.0",
   "description": "Automatically fills OTP from local server for IVAC website.",
   "permissions": [
     "storage",
@@ -14,7 +14,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "IVAC Auto Fill Assistant"
+    "default_title": "Digonto QuickFill"
   },
   "background": {
     "service_worker": "background.js"

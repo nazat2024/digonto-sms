@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#F3F4F6">
+    android:background="#F8FAFC">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -12,213 +12,342 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <TextView
+        <!-- Top Header: Logo & Title -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Digonto SMS Sync"
-            android:textSize="26sp"
-            android:textStyle="bold"
-            android:textColor="#111827"
-            android:gravity="center"
-            android:layout_marginBottom="4dp"
-            android:layout_marginTop="8dp"/>
-            
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Fast, Secure &amp; Background Supported"
-            android:textSize="14sp"
-            android:textColor="#6B7280"
-            android:gravity="center"
-            android:layout_marginBottom="24dp"/>
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp">
 
-        <!-- Desktop Connection Card -->
+            <LinearLayout
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_status_badge"
+                android:backgroundTint="#0284C7"
+                android:gravity="center"
+                android:layout_marginEnd="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="D"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:textSize="22sp"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Digonto QuickFill"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="#0F172A"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Real-time SMS &amp; OTP Sync"
+                    android:textSize="12sp"
+                    android:textColor="#64748B"/>
+            </LinearLayout>
+
+            <!-- Live Status Pill -->
+            <LinearLayout
+                android:id="@+id/layoutStatusBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/status_bg"
+                android:paddingStart="10dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="5dp"
+                android:paddingBottom="5dp">
+
+                <ImageView
+                    android:id="@+id/statusIcon"
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:src="@android:drawable/presence_offline"
+                    android:layout_marginEnd="6dp"
+                    app:tint="#DC2626"/>
+
+                <TextView
+                    android:id="@+id/statusText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Offline"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="#DC2626"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Card 1: Desktop Connection -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="2dp"
-            android:layout_marginBottom="16dp">
+            app:cardCornerRadius="14dp"
+            app:cardElevation="1dp"
+            app:cardBackgroundColor="#FFFFFF"
+            android:layout_marginBottom="12dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="20dp"
-                android:background="#FFFFFF">
+                android:padding="16dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Desktop Connection"
-                    android:textSize="18sp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="💻 Connected Desktops"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="#1E293B"/>
+
+                    <TextView
+                        android:id="@+id/tvDesktopCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 Paired"
+                        android:textSize="11sp"
+                        android:textColor="#64748B"
+                        android:background="#F1F5F9"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"/>
+                </LinearLayout>
+
+                <!-- Paired Desktops Chip Group -->
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupDesktops"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:chipSpacing="6dp"
+                    android:layout_marginBottom="6dp"/>
+
+                <!-- Add Another Desktop Button (Visible when 1+ desktops exist and input box is collapsed) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddAnotherDesktop"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:text="+ Add Another Desktop"
+                    android:textSize="13sp"
                     android:textStyle="bold"
-                    android:textColor="#1F2937"
-                    android:layout_marginBottom="12dp"/>
+                    android:textColor="#0284C7"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="#0284C7"
+                    app:strokeWidth="1dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_marginTop="4dp"
+                    android:visibility="gone"/>
+
+                <!-- Input Box Layout for 6-Digit Pairing Code (Expandable / Collapsible) -->
+                <LinearLayout
+                    android:id="@+id/layoutPairingInputBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#F8FAFC"
+                    android:padding="12dp"
+                    android:layout_marginTop="6dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Enter 6-Digit Code from Desktop App:"
+                        android:textSize="12sp"
+                        android:textColor="#475569"
+                        android:layout_marginBottom="8dp"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                            android:hint="e.g. 656892"
+                            android:layout_marginEnd="8dp">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/pairingCodeInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:maxLength="6"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:textColor="#0F172A" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnAddDesktop"
+                            android:layout_width="wrap_content"
+                            android:layout_height="52dp"
+                            android:text="PAIR"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:backgroundTint="#0284C7"
+                            android:textColor="#FFFFFF"
+                            app:cornerRadius="8dp"/>
+                    </LinearLayout>
+
+                    <!-- Cancel button when adding additional desktop -->
+                    <TextView
+                        android:id="@+id/btnCancelAddDesktop"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✕ Cancel"
+                        android:textSize="12sp"
+                        android:textColor="#94A3B8"
+                        android:layout_gravity="end"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="2dp"
+                        android:visibility="gone"/>
+                </LinearLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Card 2: SIM Configuration -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="1dp"
+            app:cardBackgroundColor="#FFFFFF"
+            android:layout_marginBottom="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="📱 SIM Names (Optional)"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="#1E293B"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSaveSim"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="EDIT"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:textColor="#0284C7"/>
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
-                    
+
                     <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
                         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                        android:hint="6-Digit Pairing Code"
-                        android:layout_marginEnd="8dp">
-
+                        android:hint="SIM 1 Name"
+                        android:layout_marginEnd="6dp">
                         <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/pairingCodeInput"
+                            android:id="@+id/sim1Input"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:maxLength="6"
-                            android:textSize="18sp"
-                            android:textColor="#111827" />
+                            android:textSize="13sp"
+                            android:textColor="#0F172A"
+                            android:inputType="text" />
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnAddDesktop"
-                        android:layout_width="wrap_content"
-                        android:layout_height="match_parent"
-                        android:text="ADD"
-                        android:backgroundTint="#3B82F6"
-                        android:textColor="#ffffff"
-                        app:cornerRadius="8dp"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                        android:hint="SIM 2 Name"
+                        android:layout_marginStart="6dp">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/sim2Input"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textSize="13sp"
+                            android:textColor="#0F172A"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chipGroupDesktops"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    app:chipSpacing="8dp"/>
-
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Live Status Display -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginBottom="20dp"
-            android:background="@drawable/status_bg"
-            android:padding="16dp">
-            
-            <ImageView
-                android:id="@+id/statusIcon"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@android:drawable/presence_offline"
-                android:layout_marginEnd="12dp"
-                app:tint="#DC2626"/>
-
-            <TextView
-                android:id="@+id/statusText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Disconnected"
-                android:textSize="16sp"
-                android:textColor="#DC2626"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- SIM Configuration Card -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="2dp"
-            android:layout_marginBottom="24dp"
-            android:layout_weight="1">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp"
-                android:background="#FFFFFF">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="SIM Configuration"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="#1F2937"
-                    android:layout_marginBottom="6dp"/>
-                    
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Name your SIMs so you can identify them on Desktop."
-                    android:textSize="13sp"
-                    android:textColor="#6B7280"
-                    android:layout_marginBottom="16dp"/>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                    android:hint="SIM 1"
-                    android:layout_marginBottom="12dp">
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/sim1Input"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:textColor="#111827"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                    android:hint="SIM 2">
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/sim2Input"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:textColor="#111827"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
-                
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSaveSim"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="SAVE SIM NAMES"
-                    android:layout_marginTop="12dp"
-                    style="@style/Widget.MaterialComponents.Button.TextButton"/>
-
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
-        
-        <!-- Push everything above to top, History button to bottom -->
+        <!-- Spacer -->
         <View
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"/>
 
-        <!-- History Button (Moved to bottom) -->
+        <!-- Action Button: SMS History -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnHistory"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
-            android:text="VIEW SMS HISTORY"
-            android:backgroundTint="#2563EB"
-            android:textColor="#ffffff"
+            android:layout_height="50dp"
+            android:text="View SMS History"
+            android:backgroundTint="#0F172A"
+            android:textColor="#FFFFFF"
             android:textStyle="bold"
-            android:textSize="16sp"
-            android:layout_marginBottom="16dp"
-            app:cornerRadius="12dp"
+            android:textSize="14sp"
+            android:layout_marginBottom="8dp"
+            app:cornerRadius="10dp"
             app:icon="@android:drawable/ic_menu_recent_history"
             app:iconGravity="textStart"
-            app:iconPadding="12dp" />
+            app:iconPadding="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Digonto Tech • Background Service Active"
+            android:textSize="11sp"
+            android:textColor="#94A3B8"
+            android:gravity="center"
+            android:layout_marginBottom="4dp"/>
 
     </LinearLayout>
 </ScrollView>

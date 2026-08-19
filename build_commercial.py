@@ -1,5 +1,5 @@
 """
-🔒 IVAC Auto Fill — Commercial Build Script
+🔒 Digonto QuickFill — Commercial Build Script
 এই স্ক্রিপ্টটি পুরো প্রজেক্টকে বাণিজ্যিক বিতরণের জন্য প্রস্তুত করে।
 এটি পর্যায়ক্রমে ৩টি কাজ করে:
   ১. PyArmor দিয়ে কোড Obfuscate (লুকানো) করে
@@ -27,7 +27,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OBF_DIR = os.path.join(BASE_DIR, "obf_dist")
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 BUILD_DIR = os.path.join(BASE_DIR, "build")
-OUTPUT_NAME = "IVAC Auto Fill"
+OUTPUT_NAME = "Digonto QuickFill"
 
 
 def clean():
@@ -76,7 +76,7 @@ def minify_and_obfuscate():
         print("\n  🔒 [2/4] PyArmor দিয়ে সোর্স কোড Obfuscate করা হচ্ছে...")
         
         # Obfuscate only specific core components to avoid Trial Limit on gui_app.py
-        cmd = f"{sys.executable} -m pyarmor.cli gen -O obf_dist license_system sms_server.py gui_license.py"
+        cmd = f'"{sys.executable}" -m pyarmor.cli gen -O obf_dist license_system sms_server.py gui_license.py'
         result = subprocess.run(cmd, shell=True, cwd=BASE_DIR, capture_output=True, text=True)
         
         if result.returncode != 0:
@@ -125,6 +125,8 @@ def build_exe():
         (os.path.join(OBF_DIR, "chrome_extension"), "chrome_extension"),
         (os.path.join(BASE_DIR, "config.json"), "."),
         (os.path.join(BASE_DIR, "sim_mapping.json"), "."),
+        (os.path.join(BASE_DIR, "icon.ico"), "."),
+        (os.path.join(BASE_DIR, "icon_v5.ico"), "."),
     ]
     
     hidden_imports = [
@@ -133,7 +135,7 @@ def build_exe():
         "sms_server", "customtkinter",
         "license_system", "license_system.hwid",
         "license_system.crypto", "license_system.license_manager",
-        "customtkinter", "requests", "otp_parser", "tkinter", "gui_license",
+        "customtkinter", "requests", "otp_parser", "tkinter", "tkinter.simpledialog", "tkinter.messagebox", "gui_license",
         "paho", "paho.mqtt", "paho.mqtt.client"
     ]
     
@@ -147,6 +149,7 @@ def build_exe():
         "--windowed",
         "--noconfirm",
         "--clean",
+        "--icon", os.path.join(BASE_DIR, "icon_v5.ico"),
         "--distpath", DIST_DIR,
         "--workpath", BUILD_DIR,
         "-p", BASE_DIR,
@@ -198,7 +201,7 @@ def create_installer():
 
 def main():
     print("=" * 60)
-    print("  🚀 IVAC Auto Fill — Commercial Build System")
+    print("  🚀 Digonto QuickFill — Commercial Build System")
     print("=" * 60)
     
     clean()
@@ -218,7 +221,7 @@ def main():
     print("\n" + "=" * 60)
     print("  🎉 সমস্ত ধাপ সফলভাবে সম্পন্ন হয়েছে!")
     print("  ✅ আপনার সফটওয়্যার এখন বিক্রির জন্য সম্পূর্ণ প্রস্তুত।")
-    print(f"  📦 Installer File: {os.path.join(BASE_DIR, 'Output', 'IVAC_Auto_Fill_Setup_v3.0.0.exe')}")
+    print(f"  📦 Installer File: {os.path.join(BASE_DIR, 'Output', 'Digonto_QuickFill_Setup_v4.0.0.exe')}")
     print("=" * 60 + "\n")
 
 

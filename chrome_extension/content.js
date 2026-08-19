@@ -19,7 +19,7 @@ async function checkLicenseAndSyncConfig() {
         const res = await fetch('http://localhost:5000/api/license-status');
         const data = await res.json();
         if (!data.active) {
-            showLicenseError("আপনার IVAC Auto Fill লাইসেন্সের মেয়াদ শেষ হয়ে গেছে! দয়া করে সফটওয়্যার থেকে রিনিউ করুন।");
+            showLicenseError("আপনার Digonto QuickFill লাইসেন্সের মেয়াদ শেষ হয়ে গেছে! দয়া করে সফটওয়্যার থেকে রিনিউ করুন।");
             isLicenseValid = false;
         } else {
             isLicenseValid = true;
@@ -43,7 +43,7 @@ async function checkLicenseAndSyncConfig() {
             });
         }
     } catch (e) {
-        showLicenseError("IVAC Auto Fill কাজ করছে না! দয়া করে IVAC Desktop সফটওয়্যারটি ব্যাকগ্রাউন্ডে চালু রাখুন।");
+        showLicenseError("Digonto QuickFill কাজ করছে না! দয়া করে IVAC Desktop সফটওয়্যারটি ব্যাকগ্রাউন্ডে চালু রাখুন।");
         isLicenseValid = false;
     }
 }

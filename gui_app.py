@@ -1,5 +1,5 @@
 """
-🖥️ IVAC Auto Fill Assistant — Desktop GUI Application
+🖥️ Digonto QuickFill — Desktop GUI Application
 CustomTkinter দিয়ে তৈরি প্রফেশনাল Windows সফটওয়্যার।
 
 এটিই সফটওয়্যারের মূল এন্ট্রি পয়েন্ট।
@@ -16,6 +16,13 @@ from datetime import datetime
 
 # Windows console UTF-8
 if sys.platform == "win32":
+    import ctypes
+    try:
+        myappid = 'digontotech.digontoquickfill.v4'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
+        
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -34,12 +41,15 @@ from license_system.license_manager import (
 from license_system.hwid import generate_hwid, get_hwid_display
 
 # ===== App Constants =====
-APP_NAME = "IVAC Auto Fill Assistant"
-APP_VERSION = "3.0.0"
+APP_NAME = "Digonto QuickFill"
+APP_VERSION = "4.0.0"
 APP_AUTHOR = "DiGonto Tech"
 UPDATE_URL = "https://digontoedu.com/api/update"
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 import shutil
 APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
 os.makedirs(APP_DATA_DIR, exist_ok=True)
@@ -80,6 +90,18 @@ class IVACApp(ctk.CTk):
         self.geometry("700x580")
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        for ico in ['icon_v5.ico', 'icon.ico', 'icon_v4.ico']:
+            icon_path = os.path.join(BASE_DIR, ico)
+            if os.path.exists(icon_path):
+                try:
+                    self.iconbitmap(icon_path)
+                    self.after(100, lambda p=icon_path: self.iconbitmap(p))
+                    self.after(300, lambda p=icon_path: self.iconbitmap(p))
+                    self.after(1000, lambda p=icon_path: self.iconbitmap(p))
+                except Exception:
+                    pass
+                break
+            
         # Center on screen
         self.update_idletasks()
         x = (self.winfo_screenwidth() - 700) // 2
@@ -405,6 +427,38 @@ class IVACApp(ctk.CTk):
             text_color=color
         ).pack(side="right", padx=10)
         
+    def _toggle_device_status(self, dev_id, is_active):
+        import requests
+        try:
+            requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "is_active": is_active}, timeout=1)
+        except:
+            pass
+            
+    def _rename_device(self, dev_id):
+        from tkinter import simpledialog
+        import requests
+        
+        # Get current name from the UI labels implicitly, or just default
+        current = "Device"
+        try:
+            resp = requests.get("http://127.0.0.1:5000/api/status", timeout=1)
+            if resp.ok:
+                devices = resp.json().get("devices", [])
+                for d in devices:
+                    if d.get("device_id") == dev_id:
+                        current = d.get("custom_name", "Device")
+                        break
+        except:
+            pass
+            
+        new_name = simpledialog.askstring("Rename Device", "Enter new name for mobile:", initialvalue=current)
+        if new_name:
+            try:
+                requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "custom_name": new_name}, timeout=1)
+            except:
+                pass
+            self._refresh_otps()
+
     def _add_device_row(self, dev_data):
         row = ctk.CTkFrame(self.device_list_frame, fg_color="#1a1a2e", corner_radius=6, height=30)
         row.pack(fill="x", pady=2)
@@ -419,11 +473,32 @@ class IVACApp(ctk.CTk):
         if dev_data.get("sim2_name"): sims.append(dev_data["sim2_name"])
         sim_text = " | ".join(sims) if sims else "No SIM set"
         
-        ctk.CTkLabel(
-            row, text=f"  {status_icon}  {dev_data.get('device_id', 'Device')}",
+        dev_id = dev_data.get('device_id')
+        dev_name = dev_data.get('custom_name', dev_data.get('device_name', 'Device'))
+        is_active = dev_data.get('is_active', True)
+        
+        # Name and Status Label
+        name_label = ctk.CTkLabel(
+            row, text=f"  {status_icon}  {dev_name}",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=color
-        ).pack(side="left", padx=5)
+        )
+        name_label.pack(side="left", padx=5)
+        
+        # Switch to turn ON/OFF
+        switch = ctk.CTkSwitch(
+            row, text="", width=40,
+            command=lambda: self._toggle_device_status(dev_id, switch.get())
+        )
+        if is_active: switch.select()
+        switch.pack(side="right", padx=(5, 10))
+        
+        # Edit Button
+        ctk.CTkButton(
+            row, text="✏️ Edit Name", width=50, height=22,
+            font=ctk.CTkFont(size=10), fg_color="#233554", hover_color="#2a4365",
+            command=lambda: self._rename_device(dev_id)
+        ).pack(side="right", padx=5)
         
         ctk.CTkLabel(
             row, text=f"SIMs: {sim_text}  ",

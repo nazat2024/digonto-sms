@@ -1,5 +1,5 @@
 """
-🔨 IVAC Auto Fill — EXE Build Script
+🔨 Digonto QuickFill — EXE Build Script
 এই স্ক্রিপ্ট PyInstaller দিয়ে সফটওয়্যারকে .exe ফাইলে রূপান্তর করে।
 
 ব্যবহার: python build_exe.py
@@ -22,7 +22,7 @@ if sys.platform == "win32":
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 BUILD_DIR = os.path.join(BASE_DIR, "build")
-OUTPUT_NAME = "IVAC Auto Fill"
+OUTPUT_NAME = "Digonto QuickFill"
 
 def clean():
     """আগের বিল্ড ফাইল মুছে ফেলে।"""
@@ -38,7 +38,7 @@ def clean():
 def build():
     """PyInstaller দিয়ে EXE বিল্ড করে।"""
     print("\n" + "=" * 55)
-    print("  🔨 IVAC Auto Fill — EXE Builder")
+    print("  🔨 Digonto QuickFill — EXE Builder")
     print("=" * 55)
     
     # Clean
