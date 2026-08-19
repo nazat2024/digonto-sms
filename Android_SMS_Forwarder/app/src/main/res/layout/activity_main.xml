@@ -249,10 +249,22 @@
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:text="📱 SIM Names (Optional)"
+                        android:text="📱 SIM Numbers"
                         android:textSize="15sp"
                         android:textStyle="bold"
                         android:textColor="#1E293B"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAutoDetectSim"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="⚡ AUTO DETECT"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:textColor="#10B981"/>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSaveSim"
@@ -261,8 +273,8 @@
                         android:text="EDIT"
                         android:textSize="11sp"
                         android:textStyle="bold"
-                        android:paddingStart="12dp"
-                        android:paddingEnd="12dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
                         style="@style/Widget.MaterialComponents.Button.TextButton"
                         android:textColor="#0284C7"/>
                 </LinearLayout>

@@ -4,9 +4,12 @@ import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -16,18 +19,20 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
 
     private TextInputEditText pairingCodeInput, sim1Input, sim2Input;
-    private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnHistory;
+    private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnAutoDetectSim, btnHistory;
     private TextView btnCancelAddDesktop, tvDesktopCount;
     private LinearLayout layoutPairingInputBox;
     private ChipGroup chipGroupDesktops;
@@ -66,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
         tvDesktopCount = findViewById(R.id.tvDesktopCount);
         layoutPairingInputBox = findViewById(R.id.layoutPairingInputBox);
         btnSaveSim = findViewById(R.id.btnSaveSim);
+        btnAutoDetectSim = findViewById(R.id.btnAutoDetectSim);
         btnHistory = findViewById(R.id.btnHistory);
         chipGroupDesktops = findViewById(R.id.chipGroupDesktops);
         
@@ -109,8 +115,14 @@ public class MainActivity extends AppCompatActivity {
         if (!savedSim1.isEmpty() || !savedSim2.isEmpty()) {
             lockSimInputs();
         } else {
-            unlockSimInputs();
+            // Auto detect SIMs on first launch if empty
+            autoDetectSims(false);
         }
+
+        // Manual Auto Detect Button Click
+        btnAutoDetectSim.setOnClickListener(v -> {
+            autoDetectSims(true);
+        });
 
         btnSaveSim.setOnClickListener(v -> {
             if (isSimLocked) {
@@ -166,6 +178,102 @@ public class MainActivity extends AppCompatActivity {
             updateStatusUI();
             startMqttService();
         });
+    }
+
+    /**
+     * Auto detects SIM phone numbers or carrier names from the device hardware.
+     */
+    private void autoDetectSims(boolean showToast) {
+        try {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                if (showToast) Toast.makeText(this, "Permission required to read SIM details", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+            if (sm == null) {
+                if (showToast) Toast.makeText(this, "SubscriptionManager unavailable", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            List<SubscriptionInfo> subList = sm.getActiveSubscriptionInfoList();
+            if (subList == null || subList.isEmpty()) {
+                if (showToast) Toast.makeText(this, "No active SIM cards detected", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String detectedSim1 = "";
+            String detectedSim2 = "";
+
+            for (SubscriptionInfo info : subList) {
+                int slot = info.getSimSlotIndex();
+                String number = "";
+
+                // Android 13+ (Tiramisu) specific phone number getter
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    try {
+                        number = sm.getPhoneNumber(info.getSubscriptionId());
+                    } catch (Exception ignored) {}
+                }
+
+                if (number == null || number.isEmpty()) {
+                    try {
+                        number = info.getNumber();
+                    } catch (Exception ignored) {}
+                }
+
+                String simLabel;
+                if (number != null && !number.trim().isEmpty() && !number.equals("null")) {
+                    simLabel = number.trim();
+                } else {
+                    // Fallback to Carrier Name (Grameenphone, Robi, Banglalink, Teletalk, etc.)
+                    CharSequence carrier = info.getCarrierName();
+                    CharSequence displayName = info.getDisplayName();
+                    if (carrier != null && !carrier.toString().trim().isEmpty()) {
+                        simLabel = carrier.toString().trim();
+                    } else if (displayName != null && !displayName.toString().trim().isEmpty()) {
+                        simLabel = displayName.toString().trim();
+                    } else {
+                        simLabel = "SIM " + (slot + 1);
+                    }
+                }
+
+                if (slot == 0) {
+                    detectedSim1 = simLabel;
+                } else if (slot == 1) {
+                    detectedSim2 = simLabel;
+                }
+            }
+
+            boolean updated = false;
+            if (!detectedSim1.isEmpty()) {
+                sim1Input.setText(detectedSim1);
+                updated = true;
+            }
+            if (!detectedSim2.isEmpty()) {
+                sim2Input.setText(detectedSim2);
+                updated = true;
+            }
+
+            if (updated) {
+                prefs.edit()
+                    .putString("sim1_name", sim1Input.getText().toString().trim())
+                    .putString("sim2_name", sim2Input.getText().toString().trim())
+                    .apply();
+                lockSimInputs();
+                if (showToast) {
+                    Toast.makeText(this, "SIMs auto-detected and saved!", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                if (showToast) {
+                    Toast.makeText(this, "Could not determine SIM numbers", Toast.LENGTH_SHORT).show();
+                }
+            }
+        } catch (Exception e) {
+            if (showToast) {
+                Toast.makeText(this, "Error detecting SIMs: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void lockSimInputs() {
