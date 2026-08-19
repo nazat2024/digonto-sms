@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 
