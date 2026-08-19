@@ -953,6 +953,60 @@ class IVACApp(ctk.CTk):
             self._launch_profile(p)
             time.sleep(1)
     
+    def _add_rocket_account(self):
+        num = self.rocket_num_entry.get().strip()
+        pin = self.rocket_pin_entry.get().strip()
+        if len(num) != 12 or not num.isdigit():
+            from tkinter import messagebox
+            messagebox.showerror("Error", "Rocket নম্বর ১২ ডিজিটের হতে হবে!")
+            return
+        if not pin:
+            from tkinter import messagebox
+            messagebox.showerror("Error", "PIN দিতে হবে!")
+            return
+        
+        accounts = self.config.get("rocket_accounts", [])
+        if any(a.get("number") == num for a in accounts):
+            from tkinter import messagebox
+            messagebox.showerror("Error", "এই নম্বরটি আগেই যোগ করা হয়েছে!")
+            return
+            
+        import uuid
+        accounts.append({
+            "id": str(uuid.uuid4()),
+            "number": num,
+            "pin": pin
+        })
+        self.config["rocket_accounts"] = accounts
+        self._save_config()
+        self.rocket_num_entry.delete(0, 'end')
+        self.rocket_pin_entry.delete(0, 'end')
+        self._refresh_rocket_list()
+        
+    def _delete_rocket_account(self, acc_id):
+        accounts = self.config.get("rocket_accounts", [])
+        self.config["rocket_accounts"] = [a for a in accounts if a.get("id") != acc_id]
+        self._save_config()
+        self._refresh_rocket_list()
+        
+    def _refresh_rocket_list(self):
+        for w in self.rocket_list_frame.winfo_children():
+            w.destroy()
+        
+        accounts = self.config.get("rocket_accounts", [])
+        if not accounts:
+            ctk.CTkLabel(self.rocket_list_frame, text="No accounts added yet", text_color="#495670").pack(pady=10)
+            return
+            
+        for acc in accounts:
+            row = ctk.CTkFrame(self.rocket_list_frame, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=f"{acc['number']} (***)", text_color="#ccd6f6").pack(side="left", padx=5)
+            ctk.CTkButton(
+                row, text="Delete", width=50, fg_color="#ef4444", hover_color="#dc2626", height=24,
+                command=lambda aid=acc['id']: self._delete_rocket_account(aid)
+            ).pack(side="right", padx=5)
+
     # ===== SETTINGS TAB =====
     def _build_settings_tab(self):
         tab = self.tab_settings
