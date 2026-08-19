@@ -565,8 +565,10 @@ class IVACApp(ctk.CTk):
         enabled = profile.get("enabled", True)
         name = profile.get("name", f"Profile {index + 1}")
         chrome_profile = profile.get("chrome_profile", "")
+        phone = profile.get("phone", "")
+        password = profile.get("password", "")
         
-        row = ctk.CTkFrame(parent, fg_color="#112240", corner_radius=8, height=50)
+        row = ctk.CTkFrame(parent, fg_color="#112240", corner_radius=8, height=54)
         row.pack(fill="x", pady=3)
         row.pack_propagate(False)
         
@@ -578,7 +580,7 @@ class IVACApp(ctk.CTk):
             command=lambda: self._toggle_profile(index, var.get())
         ).pack(side="left", padx=(10, 5))
         
-        # Name & Profile Dir
+        # Name & Profile Dir & Mobile/Pass
         info_frame = ctk.CTkFrame(row, fg_color="transparent")
         info_frame.pack(side="left", fill="x", expand=True, padx=5)
         
@@ -588,30 +590,45 @@ class IVACApp(ctk.CTk):
             text_color="#ccd6f6"
         ).pack(anchor="w")
         
+        details_text = f"📁 {chrome_profile}"
+        if phone:
+            details_text += f"  •  📱 {phone}"
+        if password:
+            details_text += f"  •  🔒 {'•' * min(len(password), 8)}"
+            
         ctk.CTkLabel(
-            info_frame, text=chrome_profile,
+            info_frame, text=details_text,
             font=ctk.CTkFont(size=10),
-            text_color="#495670"
+            text_color="#8892b0"
         ).pack(anchor="w")
         
         # Actions Frame
         actions_frame = ctk.CTkFrame(row, fg_color="transparent")
         actions_frame.pack(side="right", padx=10)
         
+        # Edit Button
+        ctk.CTkButton(
+            actions_frame, text="✏️ Edit",
+            width=55, height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color="#1e3a8a", hover_color="#2563eb",
+            command=lambda p=profile, i=index: self._open_edit_profile_dialog(p, i)
+        ).pack(side="left", padx=(0, 5))
+        
         # Launch Button
         ctk.CTkButton(
             actions_frame, text="🚀 Open",
-            width=70, height=30,
-            font=ctk.CTkFont(size=11),
-            fg_color="#233554", hover_color="#059669",
+            width=65, height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#059669", hover_color="#047857",
             command=lambda p=profile: self._launch_profile(p)
         ).pack(side="left", padx=(0, 5))
         
         # Delete Button
         ctk.CTkButton(
             actions_frame, text="🗑️",
-            width=30, height=30,
-            font=ctk.CTkFont(size=14),
+            width=28, height=28,
+            font=ctk.CTkFont(size=13),
             fg_color="#991b1b", hover_color="#7f1d1d",
             command=lambda i=index: self._delete_profile(i)
         ).pack(side="left")
@@ -635,7 +652,7 @@ class IVACApp(ctk.CTk):
     def _open_add_profile_dialog(self):
         dialog = ctk.CTkToplevel(self)
         dialog.title("নতুন প্রোফাইল যুক্ত করুন")
-        dialog.geometry("450x380")
+        dialog.geometry("460x520")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -643,38 +660,71 @@ class IVACApp(ctk.CTk):
         ctk.CTkLabel(
             dialog, text="গ্রাহকের নাম (Profile Name):",
             font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(20, 5))
+        ).pack(anchor="w", padx=20, pady=(15, 2))
         
-        name_entry = ctk.CTkEntry(dialog, width=400, placeholder_text="যেমন: MD REZHANUL HAQUE")
-        name_entry.pack(padx=20, pady=5)
+        name_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: MD REZHANUL HAQUE")
+        name_entry.pack(padx=20, pady=(0, 8))
         
         ctk.CTkLabel(
             dialog, text="Chrome Profile ফোল্ডারের নাম:",
             font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(15, 5))
+        ).pack(anchor="w", padx=20, pady=(0, 2))
         
-        dir_entry = ctk.CTkEntry(dialog, width=400, placeholder_text="যেমন: Profile 1, Profile 2, Default")
-        dir_entry.pack(padx=20, pady=5)
+        dir_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: Profile 1, Profile 2, Default")
+        dir_entry.pack(padx=20, pady=(0, 6))
+        
+        # IVAC Login Mobile Number
+        ctk.CTkLabel(
+            dialog, text="📱 IVAC মোবাইল নম্বর (Login Mobile Number):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        
+        phone_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 01604686192")
+        phone_entry.pack(padx=20, pady=(0, 8))
+        
+        # IVAC Login Password
+        ctk.CTkLabel(
+            dialog, text="🔒 IVAC পাসওয়ার্ড (Login Password):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        
+        pass_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="IVAC সাইন-ইন পাসওয়ার্ড দিন", show="*")
+        pass_entry.pack(padx=20, pady=(0, 8))
+        
+        def toggle_pass_vis():
+            if pass_entry.cget("show") == "*":
+                pass_entry.configure(show="")
+                show_pass_btn.configure(text="🙈 Hide Password")
+            else:
+                pass_entry.configure(show="*")
+                show_pass_btn.configure(text="👁️ Show Password")
+                
+        show_pass_btn = ctk.CTkButton(
+            dialog, text="👁️ Show Password", width=120, height=22,
+            font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
+            command=toggle_pass_vis
+        )
+        show_pass_btn.pack(anchor="w", padx=20, pady=(0, 8))
         
         tip_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        tip_frame.pack(fill="x", padx=20, pady=(10, 5))
+        tip_frame.pack(fill="x", padx=20, pady=(0, 5))
         
         ctk.CTkLabel(
             tip_frame, 
             text="💡 সঠিক Profile Name জানতে ক্রোম ব্রাউজারে নিচের\nURL টি ওপেন করুন এবং 'Profile Path' এর শেষের নাম দিন:",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=10),
             text_color="#9ca3af",
             justify="left"
-        ).pack(anchor="w", pady=(0, 5))
+        ).pack(anchor="w", pady=(0, 2))
         
         url_frame = ctk.CTkFrame(tip_frame, fg_color="#112240", corner_radius=5)
         url_frame.pack(fill="x", pady=2)
         
         ctk.CTkLabel(
             url_frame, text="chrome://version/",
-            font=ctk.CTkFont(family="Consolas", size=12),
+            font=ctk.CTkFont(family="Consolas", size=11),
             text_color="#64ffda"
-        ).pack(side="left", padx=10, pady=5)
+        ).pack(side="left", padx=10, pady=3)
         
         def copy_url():
             dialog.clipboard_clear()
@@ -683,17 +733,20 @@ class IVACApp(ctk.CTk):
             dialog.after(2000, lambda: copy_btn.configure(text="📋 Copy", fg_color="#233554"))
             
         copy_btn = ctk.CTkButton(
-            url_frame, text="📋 Copy", width=60, height=24,
-            font=ctk.CTkFont(size=11), fg_color="#233554", hover_color="#059669",
+            url_frame, text="📋 Copy", width=60, height=22,
+            font=ctk.CTkFont(size=10), fg_color="#233554", hover_color="#059669",
             command=copy_url
         )
-        copy_btn.pack(side="right", padx=5, pady=5)
+        copy_btn.pack(side="right", padx=5, pady=3)
         
         def save_new():
             name = name_entry.get().strip()
             chrome_profile = dir_entry.get().strip()
+            phone = phone_entry.get().strip()
+            password = pass_entry.get().strip()
+            
             if not name or not chrome_profile:
-                messagebox.showwarning("Warning", "সবগুলো ফিল্ড পূরণ করুন!")
+                messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!")
                 return
             
             if "profiles" not in self.config:
@@ -704,19 +757,104 @@ class IVACApp(ctk.CTk):
                 "id": new_id,
                 "name": name,
                 "chrome_profile": chrome_profile,
-                "enabled": True,
-                "phone": "",
-                "password": ""
+                "phone": phone,
+                "password": password,
+                "enabled": True
             })
             self._save_config()
             self._refresh_profiles_tab()
             dialog.destroy()
             
         ctk.CTkButton(
-            dialog, text="✅ সেভ করুন",
+            dialog, text="✅ সেভ করুন", height=32,
             fg_color="#059669", hover_color="#047857",
+            font=ctk.CTkFont(size=12, weight="bold"),
             command=save_new
-        ).pack(pady=25)
+        ).pack(pady=(12, 10))
+
+    def _open_edit_profile_dialog(self, profile, index):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("প্রোফাইল এডিট করুন")
+        dialog.geometry("460x520")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ctk.CTkLabel(
+            dialog, text="গ্রাহকের নাম (Profile Name):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(15, 2))
+        
+        name_entry = ctk.CTkEntry(dialog, width=420)
+        name_entry.insert(0, profile.get("name", ""))
+        name_entry.pack(padx=20, pady=(0, 8))
+        
+        ctk.CTkLabel(
+            dialog, text="Chrome Profile ফোল্ডারের নাম:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        
+        dir_entry = ctk.CTkEntry(dialog, width=420)
+        dir_entry.insert(0, profile.get("chrome_profile", ""))
+        dir_entry.pack(padx=20, pady=(0, 8))
+        
+        ctk.CTkLabel(
+            dialog, text="📱 IVAC মোবাইল নম্বর (Login Mobile Number):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        
+        phone_entry = ctk.CTkEntry(dialog, width=420)
+        phone_entry.insert(0, profile.get("phone", ""))
+        phone_entry.pack(padx=20, pady=(0, 8))
+        
+        ctk.CTkLabel(
+            dialog, text="🔒 IVAC পাসওয়ার্ড (Login Password):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        
+        pass_entry = ctk.CTkEntry(dialog, width=420, show="*")
+        pass_entry.insert(0, profile.get("password", ""))
+        pass_entry.pack(padx=20, pady=(0, 8))
+        
+        def toggle_pass_vis():
+            if pass_entry.cget("show") == "*":
+                pass_entry.configure(show="")
+                show_pass_btn.configure(text="🙈 Hide Password")
+            else:
+                pass_entry.configure(show="*")
+                show_pass_btn.configure(text="👁️ Show Password")
+                
+        show_pass_btn = ctk.CTkButton(
+            dialog, text="👁️ Show Password", width=120, height=22,
+            font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
+            command=toggle_pass_vis
+        )
+        show_pass_btn.pack(anchor="w", padx=20, pady=(0, 8))
+        
+        def save_edit():
+            name = name_entry.get().strip()
+            chrome_profile = dir_entry.get().strip()
+            phone = phone_entry.get().strip()
+            password = pass_entry.get().strip()
+            
+            if not name or not chrome_profile:
+                messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!")
+                return
+            
+            self.config["profiles"][index]["name"] = name
+            self.config["profiles"][index]["chrome_profile"] = chrome_profile
+            self.config["profiles"][index]["phone"] = phone
+            self.config["profiles"][index]["password"] = password
+            self._save_config()
+            self._refresh_profiles_tab()
+            dialog.destroy()
+            
+        ctk.CTkButton(
+            dialog, text="💾 আপডেট করুন", height=32,
+            fg_color="#059669", hover_color="#047857",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=save_edit
+        ).pack(pady=(12, 10))
         
     def _format_profile_dir(self, p_dir):
         p_dir = str(p_dir).strip()
@@ -729,9 +867,24 @@ class IVACApp(ctk.CTk):
         return p_dir
 
     def _launch_profile(self, profile):
-        import subprocess
+        import subprocess, requests
         ext_path = os.path.join(BASE_DIR, "chrome_extension")
         profile_dir = profile.get("chrome_profile", "")
+        phone = profile.get("phone", "")
+        password = profile.get("password", "")
+        
+        # Notify local server about active launch credentials
+        try:
+            requests.post("http://127.0.0.1:5000/api/profile/active", json={
+                "chrome_profile": profile_dir,
+                "phone": phone,
+                "password": password
+            }, timeout=1)
+        except Exception:
+            pass
+            
+        self.config["active_profile"] = profile
+        self._save_config()
         
         if profile_dir:
             profile_dir = self._format_profile_dir(profile_dir)
@@ -750,12 +903,8 @@ class IVACApp(ctk.CTk):
         ext_path = os.path.join(BASE_DIR, "chrome_extension")
         
         for p in active:
-            profile_dir = p.get("chrome_profile", "")
-            if profile_dir:
-                profile_dir = self._format_profile_dir(profile_dir)
-                cmd = f'start chrome.exe --profile-directory="{profile_dir}" --load-extension="{ext_path}" "https://appointment.ivacbd.com/signin"'
-                subprocess.Popen(cmd, shell=True)
-                time.sleep(1)
+            self._launch_profile(p)
+            time.sleep(1)
     
     # ===== SETTINGS TAB =====
     def _build_settings_tab(self):

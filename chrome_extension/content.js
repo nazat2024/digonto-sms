@@ -42,6 +42,20 @@ async function checkLicenseAndSyncConfig() {
                 });
             });
         }
+        
+        // Sync Active Profile Credentials (Phone & Password)
+        if (cfgData.active_profile) {
+            const updates = {};
+            if (cfgData.active_profile.phone) {
+                updates.ivac_phone = cfgData.active_profile.phone;
+            }
+            if (cfgData.active_profile.password) {
+                updates.ivac_password = cfgData.active_profile.password;
+            }
+            if (Object.keys(updates).length > 0) {
+                chrome.storage.local.set(updates);
+            }
+        }
     } catch (e) {
         showLicenseError("Digonto QuickFill কাজ করছে না! দয়া করে IVAC Desktop সফটওয়্যারটি ব্যাকগ্রাউন্ডে চালু রাখুন।");
         isLicenseValid = false;
@@ -135,6 +149,84 @@ setInterval(() => {
         inputs.forEach(inp => checkInputForPhone(inp));
     } catch (e) {}
 }, 2000);
+
+// ===== AUTO-FILL SIGN-IN CREDENTIALS (Mobile Number & Password) =====
+function setNativeInputValue(element, value) {
+    if (!element || value === undefined || value === null) return;
+    try {
+        const valueSetter = Object.getOwnPropertyDescriptor(element, 'value') ? Object.getOwnPropertyDescriptor(element, 'value').set : null;
+        const prototype = Object.getPrototypeOf(element);
+        const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value') ? Object.getOwnPropertyDescriptor(prototype, 'value').set : null;
+        
+        if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+            prototypeValueSetter.call(element, value);
+        } else if (valueSetter) {
+            valueSetter.call(element, value);
+        } else {
+            element.value = value;
+        }
+        
+        element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+        element.dispatchEvent(new Event('blur', { bubbles: true, cancelable: true }));
+    } catch (e) {
+        element.value = value;
+    }
+}
+
+function autoFillLoginCredentials() {
+    const url = window.location.href.toLowerCase();
+    if (!url.includes('/signin') && !url.includes('signin') && !url.includes('login')) return;
+
+    chrome.storage.local.get(['ivac_phone', 'ivac_password', 'ext_enabled'], (st) => {
+        if (st.ext_enabled === false) return;
+        
+        let phone = st.ivac_phone;
+        let pass = st.ivac_password;
+
+        if (!phone && !pass) return;
+
+        // 1. Find and fill Contact Number input
+        if (phone) {
+            const inputs = Array.from(document.querySelectorAll('input'));
+            const phoneInputs = inputs.filter(inp => {
+                const type = (inp.type || 'text').toLowerCase();
+                const name = (inp.name || '').toLowerCase();
+                const id = (inp.id || '').toLowerCase();
+                const ph = (inp.placeholder || '').toLowerCase();
+                if (type === 'password' || type === 'hidden' || type === 'checkbox' || type === 'radio') return false;
+                return ph.includes('01') || ph.includes('contact') || ph.includes('phone') || ph.includes('mobile') ||
+                       name.includes('phone') || name.includes('mobile') || name.includes('contact') ||
+                       id.includes('phone') || id.includes('mobile') || id.includes('contact') ||
+                       type === 'tel';
+            });
+            
+            const phoneInput = phoneInputs.length > 0 ? phoneInputs[0] : document.querySelector('input:not([type="password"]):not([type="hidden"]):not([type="checkbox"])');
+            if (phoneInput) {
+                const cleanVal = (phoneInput.value || '').replace(/[^0-9]/g, '');
+                const cleanPhone = phone.replace(/[^0-9]/g, '');
+                if (cleanVal !== cleanPhone) {
+                    setNativeInputValue(phoneInput, phone);
+                }
+            }
+        }
+
+        // 2. Find and fill Password input
+        if (pass) {
+            const passInput = document.querySelector('input[type="password"], input[placeholder*="password" i], input[name*="password" i], input[id*="password" i]');
+            if (passInput) {
+                if (!passInput.value || passInput.value !== pass) {
+                    setNativeInputValue(passInput, pass);
+                }
+            }
+        }
+    });
+}
+
+// Continuously auto-fill login credentials while on signin page
+setInterval(autoFillLoginCredentials, 600);
+document.addEventListener('DOMContentLoaded', autoFillLoginCredentials);
+window.addEventListener('load', autoFillLoginCredentials);
 
 // ===== FLOATING PIN WIDGET (injected into the webpage DOM) =====
 let pinWidgetEl = null;

@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const extToggle = document.getElementById('ext-toggle');
     const phoneInput = document.getElementById('manual-phone-input');
+    const passInput = document.getElementById('manual-pass-input');
     const savePhoneBtn = document.getElementById('save-phone-btn');
     const smsDisplay = document.getElementById('latest-sms');
     const serverDot = document.getElementById('server-dot');
@@ -35,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== 1. Load initial state =====
     chrome.storage.local.get([
-        'ext_enabled', 'ivac_phone',
+        'ext_enabled', 'ivac_phone', 'ivac_password',
         'saved_webfiles', 'webfile_enabled', 'webfile_mode',
         'rocket_accounts', 'active_rocket_id', 'payment_enabled', 'payment_link'
     ], (result) => {
@@ -45,6 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (result.ivac_phone) {
             currentPhone = result.ivac_phone;
             phoneInput.value = currentPhone;
+        }
+        if (result.ivac_password && passInput) {
+            passInput.value = result.ivac_password;
         }
 
         if (result.saved_webfiles) {
@@ -335,12 +339,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ===== Save IVAC phone =====
+    // ===== Save IVAC phone & password =====
     savePhoneBtn.addEventListener('click', () => {
         const phone = phoneInput.value.replace(/[^0-9]/g, '');
+        const pass = passInput ? passInput.value.trim() : '';
+        const dataToSave = {};
+        
         if (phone.length >= 11) {
             currentPhone = phone;
-            chrome.storage.local.set({ ivac_phone: currentPhone }, () => {
+            dataToSave.ivac_phone = currentPhone;
+        }
+        if (pass) {
+            dataToSave.ivac_password = pass;
+        }
+        
+        if (Object.keys(dataToSave).length > 0) {
+            chrome.storage.local.set(dataToSave, () => {
                 savePhoneBtn.innerText = "✓";
                 setTimeout(() => { savePhoneBtn.innerText = "সেভ"; }, 1000);
                 updateStatus();
@@ -378,10 +392,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== Listen for storage changes =====
     chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'local' && changes.ivac_phone) {
-            currentPhone = changes.ivac_phone.newValue;
-            phoneInput.value = currentPhone;
-            updateStatus();
+        if (namespace === 'local') {
+            if (changes.ivac_phone) {
+                currentPhone = changes.ivac_phone.newValue;
+                phoneInput.value = currentPhone;
+                updateStatus();
+            }
+            if (changes.ivac_password && passInput) {
+                passInput.value = changes.ivac_password.newValue || '';
+            }
         }
     });
 

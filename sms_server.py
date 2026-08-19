@@ -330,8 +330,20 @@ def license_status():
         
     return jsonify({"active": last_license_status}), 200
 
+active_profile_data = {}
+
+@app.route("/api/profile/active", methods=["POST", "GET"])
+def active_profile_endpoint():
+    global active_profile_data
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        active_profile_data = data
+        return jsonify({"success": True, "active_profile": active_profile_data}), 200
+    return jsonify({"active_profile": active_profile_data}), 200
+
 @app.route("/api/config", methods=["GET"])
 def get_extension_config():
+    global active_profile_data
     import json, os
     app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
     config_path = os.path.join(app_data_dir, "config.json")
@@ -344,14 +356,22 @@ def get_extension_config():
             with open(config_path, 'w', encoding='utf-8') as f: f.write("{}")
     
     rocket_accounts = []
+    profiles = []
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
                 rocket_accounts = cfg.get("rocket_accounts", [])
+                profiles = cfg.get("profiles", [])
+                if not active_profile_data and cfg.get("active_profile"):
+                    active_profile_data = cfg.get("active_profile")
         except Exception:
             pass
-    return jsonify({"rocket_accounts": rocket_accounts}), 200
+    return jsonify({
+        "rocket_accounts": rocket_accounts,
+        "profiles": profiles,
+        "active_profile": active_profile_data
+    }), 200
 
 @socketio.on("connect")
 def handle_connect():
