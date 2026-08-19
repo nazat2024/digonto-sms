@@ -180,7 +180,7 @@
                             android:layout_weight="1"
                             android:layout_height="wrap_content"
                             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                            android:hint="e.g. 656892"
+                            android:hint="6-Digit Code"
                             android:layout_marginEnd="8dp">
 
                             <com.google.android.material.textfield.TextInputEditText
