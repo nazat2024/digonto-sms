@@ -337,7 +337,40 @@ def active_profile_endpoint():
     global active_profile_data
     if request.method == "POST":
         data = request.get_json(force=True, silent=True) or {}
-        active_profile_data = data
+        if data:
+            if not isinstance(active_profile_data, dict):
+                active_profile_data = {}
+            active_profile_data.update(data)
+            
+            # Save updated profile data to config.json
+            import json, os
+            app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+            config_path = os.path.join(app_data_dir, "config.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    
+                    cfg["active_profile"] = active_profile_data
+                    
+                    # Also update matching profile in profiles list if present
+                    prof_dir = active_profile_data.get("chrome_profile")
+                    if "profiles" in cfg and isinstance(cfg["profiles"], list):
+                        for p in cfg["profiles"]:
+                            if prof_dir and p.get("chrome_profile") == prof_dir:
+                                if "phone" in active_profile_data:
+                                    p["phone"] = active_profile_data["phone"]
+                                if "password" in active_profile_data:
+                                    p["password"] = active_profile_data["password"]
+                            elif not prof_dir and active_profile_data.get("phone") and p.get("phone") == active_profile_data.get("phone"):
+                                if "password" in active_profile_data:
+                                    p["password"] = active_profile_data["password"]
+                    
+                    with open(config_path, "w", encoding="utf-8") as f:
+                        json.dump(cfg, f, indent=2)
+                except Exception as e:
+                    print(f"Error persisting profile to config.json: {e}")
+                    
         return jsonify({"success": True, "active_profile": active_profile_data}), 200
     return jsonify({"active_profile": active_profile_data}), 200
 

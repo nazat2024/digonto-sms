@@ -545,6 +545,11 @@ class IVACApp(ctk.CTk):
         self._refresh_profiles_tab()
         
     def _refresh_profiles_tab(self):
+        try:
+            self._load_config()
+        except Exception:
+            pass
+            
         for widget in self.profile_scroll.winfo_children():
             widget.destroy()
             

@@ -386,18 +386,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (phone.length >= 11) {
             currentPhone = phone;
             dataToSave.ivac_phone = currentPhone;
-        }
-        if (pass) {
-            dataToSave.ivac_password = pass;
+        } else if (phone.length === 0) {
+            currentPhone = "";
+            dataToSave.ivac_phone = "";
         }
         
-        if (Object.keys(dataToSave).length > 0) {
-            chrome.storage.local.set(dataToSave, () => {
-                savePhoneBtn.innerText = "✓";
-                setTimeout(() => { savePhoneBtn.innerText = "সেভ"; }, 1000);
-                updateStatus();
-            });
-        }
+        dataToSave.ivac_password = pass;
+        
+        chrome.storage.local.set(dataToSave, () => {
+            savePhoneBtn.innerText = "✓";
+            setTimeout(() => { savePhoneBtn.innerText = "সেভ"; }, 1000);
+            updateStatus();
+            
+            // Sync with local desktop app backend so it stays permanently saved in config
+            fetch('http://localhost:5000/api/profile/active', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    phone: currentPhone,
+                    password: pass
+                })
+            }).catch(() => {});
+        });
     });
 
     // ===== Handle toggle changes =====

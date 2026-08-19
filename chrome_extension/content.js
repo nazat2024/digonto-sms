@@ -45,16 +45,19 @@ async function checkLicenseAndSyncConfig() {
         
         // Sync Active Profile Credentials (Phone & Password)
         if (cfgData.active_profile) {
-            const updates = {};
-            if (cfgData.active_profile.phone) {
-                updates.ivac_phone = cfgData.active_profile.phone;
-            }
-            if (cfgData.active_profile.password) {
-                updates.ivac_password = cfgData.active_profile.password;
-            }
-            if (Object.keys(updates).length > 0) {
-                chrome.storage.local.set(updates);
-            }
+            chrome.storage.local.get(['ivac_phone', 'ivac_password'], (local) => {
+                const updates = {};
+                // Only populate if extension storage is currently empty
+                if (!local.ivac_phone && cfgData.active_profile.phone) {
+                    updates.ivac_phone = cfgData.active_profile.phone;
+                }
+                if (!local.ivac_password && cfgData.active_profile.password) {
+                    updates.ivac_password = cfgData.active_profile.password;
+                }
+                if (Object.keys(updates).length > 0) {
+                    chrome.storage.local.set(updates);
+                }
+            });
         }
     } catch (e) {
         showLicenseError("Digonto QuickFill কাজ করছে না! দয়া করে IVAC Desktop সফটওয়্যারটি ব্যাকগ্রাউন্ডে চালু রাখুন।");
