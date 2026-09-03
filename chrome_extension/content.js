@@ -2720,7 +2720,7 @@ function getResolvedPaymentAccount(res) {
                 if (!nagadTrackedInitiated && !sessionStorage.getItem('nagad_tracked_init')) {
                     try {
                         const amountText = Array.from(document.querySelectorAll('*')).map(el => el.textContent).join(' ');
-                        const amountMatch = amountText.match(/(?:Total Amount: BDT|amount:?|à§³)\s*([\d,]+\.?\d*)/i);
+                        const amountMatch = amountText.match(/(?:Total Amount: BDT|amount:?|\u09F3|Tk\.?|BDT)\s*([\d,]+\.?\d*)/i);
                         const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
                         if (amount >= 0) {
                             nagadTrackedInitiated = true;
@@ -2942,7 +2942,7 @@ function getResolvedPaymentAccount(res) {
                     document.querySelector('button.btn-active') || 
                     document.querySelector('.btn-group button:last-child') || 
                     document.querySelector('button[class*="btn-confirm"]') || 
-                    document.getElementById('submit_action');
+                    document.getElementById('submit_action') || document.getElementById('confirmBtn');
         
         if (btn) {
             btn.focus();
@@ -2983,7 +2983,7 @@ function getResolvedPaymentAccount(res) {
                 if (!bkashTrackedInitiated && !sessionStorage.getItem('bkash_tracked_init')) {
                     try {
                         const amountText = Array.from(document.querySelectorAll('*')).map(el => el.textContent).join(' ');
-                        const amountMatch = amountText.match(/à§³\s*([\d,]+\.?\d*)/);
+                        const amountMatch = (document.body.innerText || '').match(/(?:\u09F3|Tk\.?|BDT|Amount:?)\s*([\d,]+\.?\d*)/i) || amountText.match(/(?:\u09F3|Tk\.?|BDT|Amount:?)\s*([\d,]+\.?\d*)/i);
                         const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
                         if (amount >= 0) {
                             bkashTrackedInitiated = true;
