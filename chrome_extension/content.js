@@ -240,7 +240,7 @@ setInterval(() => {
             if (!sessionStorage.getItem('continue_payment_page_logged')) {
                 const amtMatch = document.body.innerText.match(/(?:Total Amount|Amount)[:\s]*BDT\s*([\d,]+\.?\d*)/i) || document.body.innerText.match(/BDT\s*([\d,]+\.?\d*)/i);
                 const amount = amtMatch ? parseFloat(amtMatch[1].replace(/,/g, '')) : 0;
-                if (amount > 0) {
+                if (amount >= 0) {
                     sessionStorage.setItem('continue_payment_page_logged', 'true');
                     chrome.storage.local.set({ last_tracked_amount: amount });
                     emitActivity('continue_payment_page', 'Continue Payment পেজ (টাকার পরিমাণ)', `Total Amount: ৳ ${amount.toLocaleString()}`, amount, 'info');
@@ -2508,7 +2508,7 @@ function getResolvedPaymentAccount(res) {
                             amount = parseFloat(amountMatch[1].replace(/,/g, ''));
                         }
                         
-                        if (amount > 0) {
+                        if (amount >= 0) {
                             dbblTrackedStage = 'rocket';
                             sendRecordPayment({
                                 amount: amount,
@@ -2722,7 +2722,7 @@ function getResolvedPaymentAccount(res) {
                         const amountText = Array.from(document.querySelectorAll('*')).map(el => el.textContent).join(' ');
                         const amountMatch = amountText.match(/(?:Total Amount: BDT|amount:?|à§³)\s*([\d,]+\.?\d*)/i);
                         const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
-                        if (amount > 0) {
+                        if (amount >= 0) {
                             nagadTrackedInitiated = true;
                             sessionStorage.setItem('nagad_tracked_init', 'true');
                             sendRecordPayment({
@@ -2985,7 +2985,7 @@ function getResolvedPaymentAccount(res) {
                         const amountText = Array.from(document.querySelectorAll('*')).map(el => el.textContent).join(' ');
                         const amountMatch = amountText.match(/à§³\s*([\d,]+\.?\d*)/);
                         const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
-                        if (amount > 0) {
+                        if (amount >= 0) {
                             bkashTrackedInitiated = true;
                             sessionStorage.setItem('bkash_tracked_init', 'true');
                             sendRecordPayment({
