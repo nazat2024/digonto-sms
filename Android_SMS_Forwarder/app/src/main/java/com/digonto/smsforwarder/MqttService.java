@@ -118,7 +118,7 @@ public class MqttService extends Service {
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("IVAC SMS Sync Active")
-                .setContentText("Super Fast Sync Active (1.5s Real-time)")
+                .setContentText("Listening for SMS in background...")
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setOngoing(true)
@@ -156,19 +156,7 @@ public class MqttService extends Service {
                 options.setCleanSession(true);
                 options.setAutomaticReconnect(true);
                 options.setConnectionTimeout(10);
-                options.setKeepAliveInterval(15); // Fast 15s keepalive
-
-                // Set Last Will and Testament (LWT) for instant offline detection
-                try {
-                    JSONObject lwtData = new JSONObject();
-                    lwtData.put("type", "offline");
-                    lwtData.put("device_id", prefs.getString("device_id", "Unknown"));
-                    for (String code : pairingCodes) {
-                        String sysTopic = "digonto_ivac_sms_" + code + "_sys";
-                        options.setWill(sysTopic, lwtData.toString().getBytes(), 0, false);
-                        break;
-                    }
-                } catch (Exception ignored) {}
+                options.setKeepAliveInterval(60); // Stable 60s keepalive
 
                 mqttClient.setCallback(new MqttCallbackExtended() {
                     @Override
@@ -188,7 +176,7 @@ public class MqttService extends Service {
                             Log.e(TAG, "Error subscribing on connectComplete", e);
                         }
 
-                        // Send an INSTANT ping right now (0ms latency)!
+                        // Send an instant ping immediately
                         sendSinglePing();
 
                         // Flush pending SMS immediately
@@ -198,7 +186,8 @@ public class MqttService extends Service {
                     @Override
                     public void connectionLost(Throwable cause) {
                         isConnectedToBroker = false;
-                        Log.e(TAG, "Connection lost, will reconnect immediately...", cause);
+                        isConnecting = false;
+                        Log.e(TAG, "Connection lost, will reconnect...", cause);
                     }
 
                     @Override
@@ -259,8 +248,8 @@ public class MqttService extends Service {
     }
 
     /**
-     * Super-Fast 1.5 Second Real-Time Ping Loop.
-     * Runs 100% on background thread pool -> Zero freeze/hang on phone display!
+     * Stable background ping loop running on a background worker thread.
+     * ZERO work on Main/UI thread -> ZERO freeze/hang!
      */
     private synchronized void startPingLoop() {
         if (pingExecutor != null && !pingExecutor.isShutdown()) {
@@ -269,11 +258,11 @@ public class MqttService extends Service {
         pingExecutor = Executors.newSingleThreadScheduledExecutor();
         pingExecutor.scheduleWithFixedDelay(() -> {
             sendSinglePing();
-        }, 0, 1500, TimeUnit.MILLISECONDS); // Super fast 1.5s real-time heartbeat
+        }, 0, 2, TimeUnit.SECONDS); // Ping every 2 seconds on background thread
     }
 
     /**
-     * Active Watchdog that guards the connection every 4 seconds.
+     * Active Watchdog that guards the connection every 5 seconds.
      */
     private synchronized void startWatchdog() {
         if (watchdogExecutor != null && !watchdogExecutor.isShutdown()) {
@@ -287,13 +276,13 @@ public class MqttService extends Service {
 
                 if (mqttClient == null || !mqttClient.isConnected()) {
                     isConnectedToBroker = false;
-                    Log.d(TAG, "Watchdog: Reconnecting fast...");
+                    Log.d(TAG, "Watchdog: Reconnecting...");
                     connectToMqtt(codes);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Watchdog error", e);
             }
-        }, 3, 4, TimeUnit.SECONDS);
+        }, 5, 5, TimeUnit.SECONDS);
     }
 
     public void publishSms(long logId, String phone, String smsBody, String simName) {
@@ -398,14 +387,6 @@ public class MqttService extends Service {
         }
         if (mqttClient != null) {
             try {
-                // Send an instant offline broadcast
-                JSONObject offlineData = new JSONObject();
-                offlineData.put("type", "offline");
-                offlineData.put("device_id", prefs.getString("device_id", "Unknown"));
-                Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
-                for (String code : codes) {
-                    mqttClient.publish("digonto_ivac_sms_" + code + "_sys", new MqttMessage(offlineData.toString().getBytes()));
-                }
                 mqttClient.disconnectForcibly();
                 mqttClient.close();
             } catch (Exception ignored) {}
