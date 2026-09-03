@@ -102,4 +102,27 @@ public class SmsLogDbHelper extends SQLiteOpenHelper {
         cursor.close();
         return logs;
     }
+
+    public List<SmsLog> getPendingLogs() {
+        List<SmsLog> logs = new ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(TABLE_NAME, null, COL_STATUS + " = ?", new String[]{String.valueOf(SmsLog.STATUS_SENDING)}, null, null, COL_TIMESTAMP + " ASC");
+
+        if (cursor.moveToFirst()) {
+            do {
+                SmsLog log = new SmsLog(
+                        cursor.getLong(cursor.getColumnIndexOrThrow(COL_ID)),
+                        cursor.getString(cursor.getColumnIndexOrThrow(COL_SENDER)),
+                        cursor.getString(cursor.getColumnIndexOrThrow(COL_BODY)),
+                        cursor.getString(cursor.getColumnIndexOrThrow(COL_SIM_NAME)),
+                        cursor.getInt(cursor.getColumnIndexOrThrow(COL_STATUS)),
+                        cursor.getLong(cursor.getColumnIndexOrThrow(COL_TIMESTAMP))
+                );
+                logs.add(log);
+            } while (cursor.moveToNext());
+        }
+        cursor.close();
+        return logs;
+    }
+
 }

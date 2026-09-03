@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="bn">
 <head>
     <meta charset="UTF-8">
@@ -9,8 +9,8 @@
     <!-- Compact Header -->
     <div class="header">
         <div class="header-title">
-            <span class="logo">🇮🇳</span>
-            <span>IVAC Assistant</span>
+            <img src="logo.png" class="header-logo" alt="Digonto">
+            <span>Digonto QuickFill</span>
         </div>
         <div class="header-actions">
             <label class="switch" title="অন/অফ">
@@ -21,55 +21,33 @@
     </div>
 
     <div class="container">
-        <!-- Compact Phone & Password Inputs Grid -->
-        <div class="phone-box ivac-box">
-            <div class="box-label">📱 IVAC:</div>
-            <input type="text" id="manual-phone-input" placeholder="01XXXXXXXXX">
-        </div>
-        <div class="phone-box ivac-box" style="margin-top: 3px;">
-            <div class="box-label">🔒 Pass:</div>
-            <input type="text" id="manual-pass-input" placeholder="পাসওয়ার্ড">
-            <button type="button" id="toggle-ivac-pass-btn" class="eye-btn" title="পাসওয়ার্ড দেখুন/লুকান">👁️</button>
-            <button id="save-phone-btn" class="save-btn green-btn">সেভ</button>
-        </div>
-
-
-        <!-- Rocket Payment Accounts Section -->
-        <div class="rocket-section">
-            <div class="rocket-header">
-                <div class="rocket-title">🚀 Rocket Accounts</div>
-                <div class="rocket-controls" style="display:flex; align-items:center;">
-                    <label class="switch small-switch" title="পেমেন্ট অটোমেশন অন/অফ">
-                        <input type="checkbox" id="payment-enabled-toggle" checked>
-                        <span class="slider round"></span>
-                    </label>
+        <!-- 1. Credentials Section (Mobile Number & Password) -->
+        
+            <div class="phone-box ivac-box">
+                <div class="box-label">
+                    <span>📱 IVAC:</span>
+                </div>
+                <div class="phone-input-wrapper">
+                    <input type="text" id="manual-phone-input" placeholder="01XXXXXXXXX">
+                    <span id="ivac-phone-status-dot" class="dot gray" title="মোবাইল স্ট্যাটাস"></span>
                 </div>
             </div>
-            
-            <!-- Add Rocket Account -->
-            <div class="rocket-add-row">
-                <input type="text" id="rocket-number-input" placeholder="12 ডিজিট নম্বর" maxlength="12">
-                <input type="password" id="rocket-pin-input" placeholder="PIN" maxlength="5">
-                <button type="button" id="toggle-rocket-pin-btn" class="eye-btn" title="PIN দেখুন/লুকান">🙈</button>
-                <button id="add-rocket-btn" class="save-btn green-btn">যোগ</button>
+            <div class="phone-box ivac-box" style="margin-top: 3px;">
+                <div class="box-label">🔒 Pass:</div>
+                <input type="text" id="manual-pass-input" placeholder="পাসওয়ার্ড">
+                <button type="button" id="toggle-ivac-pass-btn" class="eye-btn" title="পাসওয়ার্ড দেখুন/লুকান">👁️</button>
+                
             </div>
-            
-            <!-- Rocket Account List -->
-            <div id="rocket-list" class="rocket-list">
-                <!-- Accounts will be rendered dynamically -->
-            </div>
-        </div>
 
-        <!-- Webfile Section -->
+        <!-- 2. Webfile Upload Section -->
         <div class="webfile-section">
             <div class="webfile-header">
                 <div class="webfile-title">📄 Webfile Upload</div>
                 <div class="webfile-controls">
-                    <label class="switch small-switch" title="অটো আপলোড অন/অফ">
+                    <label class="switch small-switch" title="ওয়েবফাইল অন/অফ">
                         <input type="checkbox" id="webfile-enabled-toggle" checked>
                         <span class="slider round"></span>
                     </label>
-                    <button id="webfile-mode-btn" class="mode-btn" title="Auto/Manual মোড পরিবর্তন">Auto</button>
                 </div>
             </div>
 
@@ -85,11 +63,78 @@
             </div>
         </div>
 
-        <!-- Latest SMS OTP Card -->
-        <div class="sms-card">
-            <div class="sms-body" id="latest-sms">
-                অপেক্ষা করছি...
+        <!-- 3. Auto Date Check Section -->
+        <div class="slot-section">
+            <div class="slot-header">
+                <div class="slot-title">📅 Auto Date Check</div>
+                <div class="slot-controls" style="display:flex; align-items:center; gap:5px;">
+                    <label class="switch small-switch" title="অটো ডেট চেক অন/অফ">
+                        <input type="checkbox" id="slot-booking-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <button id="slot-mode-btn" class="mode-btn" title="All Date: পছন্দের তারিখ না পেলে অন্যান্য তারিখও ট্রাই করবে / Only Favorite: শুধুমাত্র পছন্দের তারিখগুলোই ট্রাই করবে">All Date</button>
+                </div>
             </div>
+
+            <!-- Pick Preferred Date from Calendar or Input -->
+            <div class="slot-add-row" style="display:flex; align-items:center; gap:4px;">
+                <input type="text" id="preferred-date-input" class="slot-date-picker" placeholder="যেমন: 24 বা 03-09" style="flex:1;">
+                <button type="button" id="open-calendar-btn" class="add-date-btn" title="ক্যালেন্ডার খুলুন" style="background:#fff; color:#065f46; border:1px solid #a7f3d0; padding:2px 6px; font-size:11px; cursor:pointer;">📅</button>
+                <button type="button" id="add-preferred-date-btn" class="add-date-btn" title="তারিখ যোগ করুন">+ যোগ</button>
+            </div>
+
+            <!-- Custom Premium In-Popup Calendar Dropdown -->
+            <div id="custom-calendar-popup" class="custom-cal-popup" style="display:none;">
+                <div class="cal-hdr">
+                    <button type="button" id="cal-prev-btn" class="cal-nav-btn" title="পূর্ববর্তী মাস">◀</button>
+                    <span id="cal-month-title" class="cal-title">September 2026</span>
+                    <button type="button" id="cal-next-btn" class="cal-nav-btn" title="পরবর্তী মাস">▶</button>
+                </div>
+                <div class="cal-weekdays">
+                    <span title="রবিবার">রবি</span>
+                    <span title="সোমবার">সোম</span>
+                    <span title="মঙ্গলবার">মঙ্গল</span>
+                    <span title="বুধবার">বুধ</span>
+                    <span title="বৃহস্পতিবার">বৃহ</span>
+                    <span class="cal-weekend" title="শুক্রবার (IVAC বন্ধ)">শুক্র</span>
+                    <span class="cal-weekend" title="শনিবার (IVAC বন্ধ)">শনি</span>
+                </div>
+                <div id="cal-days-grid" class="cal-grid">
+                    <!-- Days dynamically rendered -->
+                </div>
+                <div class="cal-ftr">
+                    <span class="cal-legend"><span class="legend-dot-off"></span>শুক্র ও শনি বন্ধ</span>
+                    <button type="button" id="cal-close-btn" class="cal-cls-btn">বন্ধ</button>
+                </div>
+            </div>
+
+            <!-- Preferred Dates List (Chips) -->
+            <div id="preferred-dates-list" class="preferred-dates-list">
+                <!-- Chips dynamically rendered -->
+            </div>
+        </div>
+
+        <!-- 4. Payment Accounts Section -->
+        <div class="rocket-section">
+            <div class="rocket-header">
+                <div class="rocket-title">💳 Payment Accounts</div>
+                <div class="rocket-controls" style="display:flex; align-items:center; gap:5px;">
+                    <label class="switch small-switch" title="পেমেন্ট অ্যাকাউন্ট অন/অফ">
+                        <input type="checkbox" id="payment-enabled-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <button id="payment-mode-btn" class="mode-btn" title="dgpay Auto Rocket/Manual টগল">Auto</button>
+                </div>
+            </div>
+            
+            <!-- Rocket Account List -->
+            <div id="rocket-list" class="rocket-list">
+                <!-- Accounts will be rendered dynamically -->
+            </div>
+        </div>
+<!-- Latest SMS OTP Card (Hidden when no OTP) -->
+        <div class="sms-card" id="sms-card-wrap" style="display:none;">
+            <div class="sms-body" id="latest-sms"></div>
         </div>
 
         <!-- Payment Link Catcher Card -->
@@ -104,16 +149,27 @@
             </div>
         </div>
 
-        <!-- Footer Server Status -->
+                <!-- Footer Server Status -->
         <div class="footer-bar">
-            <div class="server-status">
+            <div class="server-status" style="display:flex; align-items:center;">
                 <span id="server-dot" class="dot red"></span>
-                <span id="server-text">বিচ্ছিন্ন</span>
+                <span id="server-text">অসংযুক্ত</span>
+                <span id="popup-device-badge" style="display:none; margin-left:4px; font-size:10px; font-weight:700; color:#047857; background:#dcfce7; padding:1px 4px; border-radius:3px; border:1px solid #86efac;" title="সংযুক্ত মোবাইল / মোট মোবাইল">📱 0/0</span>
+                <button type="button" id="open-sidebar-btn" class="open-sidebar-btn" title="ওয়েবপেজে AI Auto-Fill সাইডবার খুলুন">📄 রেজিস্ট্রেশন</button>
             </div>
-            <span style="font-size:9px; color:#64748b;">📌 পেজে ফ্লোটিং কার্ড চালু</span>
+            <span style="font-size:9px; color:#64748b;">🔄 অটো রিলোড</span>
+        </div>
+
+    <script src="popup.js"></script>
+    <!-- License / Software Offline Lock Overlay -->
+    <div id="license-lock-overlay" class="license-lock-overlay" style="display:none;">
+        <div class="lock-card">
+            <div class="lock-icon">🔒</div>
+            <div class="lock-title">সফটওয়্যার নিষ্ক্রিয়</div>
+            <div class="lock-desc">Digonto QuickFill ডেস্কটপ অ্যাপ চালু নেই অথবা লাইসেন্স মেয়াদোত্তীর্ণ।<br>অনুগ্রহ করে ডেস্কটপ সফটওয়্যার চালু করুন।</div>
+            <button id="retry-server-btn" class="lock-retry-btn">🔄 পুনরায় পরীক্ষা করুন</button>
         </div>
     </div>
 
-    <script src="popup.js"></script>
 </body>
 </html>

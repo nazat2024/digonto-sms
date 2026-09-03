@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.telephony.SmsMessage;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
@@ -16,6 +18,8 @@ import java.util.List;
 
 public class SmsReceiver extends BroadcastReceiver {
     
+    private static final String TAG = "SmsReceiver";
+
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent.getAction() != null && intent.getAction().equals("android.provider.Telephony.SMS_RECEIVED")) {
@@ -41,7 +45,7 @@ public class SmsReceiver extends BroadcastReceiver {
                         fullMessage.append(smsMessage.getMessageBody());
                     }
 
-                    Log.d("SmsReceiver", "SMS From: " + sender);
+                    Log.d(TAG, "SMS Received From: " + sender);
 
                     // Determine which SIM slot received the SMS
                     int subId = bundle.getInt("subscription", -1);
@@ -50,8 +54,6 @@ public class SmsReceiver extends BroadcastReceiver {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 && subId != -1) {
                         SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
                         try {
-                            // Suppress permission check because we might not have READ_PHONE_STATE,
-                            // but we can sometimes still read active subscription info if the OS allows.
                             List<SubscriptionInfo> activeSubscriptionInfoList = subscriptionManager.getActiveSubscriptionInfoList();
                             if (activeSubscriptionInfoList != null) {
                                 for (SubscriptionInfo info : activeSubscriptionInfoList) {
@@ -62,7 +64,7 @@ public class SmsReceiver extends BroadcastReceiver {
                                 }
                             }
                         } catch (SecurityException e) {
-                            Log.e("SmsReceiver", "No permission to read subscription info", e);
+                            Log.e(TAG, "No permission to read subscription info", e);
                         }
                     }
 
@@ -83,29 +85,38 @@ public class SmsReceiver extends BroadcastReceiver {
                         simName = prefs.getString("sim1_name", "Unknown SIM");
                     }
 
-                    long logId = SmsLogDbHelper.getInstance(context.getApplicationContext()).insertLog(sender, fullMessage.toString(), simName, SmsLog.STATUS_SENDING);
+                    // Insert as STATUS_SENDING into local SQLite DB
+                    long logId = SmsLogDbHelper.getInstance(context.getApplicationContext()).insertLog(
+                            sender, fullMessage.toString(), simName, SmsLog.STATUS_SENDING
+                    );
 
                     // Publish to MQTT via Foreground Service
                     if (MqttService.instance != null) {
                         MqttService.instance.publishSms(logId, sender, fullMessage.toString(), simName);
-                        // Show visual feedback that SMS was forwarded
-                        Toast.makeText(context, "SMS Forwarded: " + simName, Toast.LENGTH_SHORT).show();
                     } else {
-                        Log.e("SmsReceiver", "MqttService is not running!");
-                        SmsLogDbHelper.getInstance(context.getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
-                        Toast.makeText(context, "Failed to forward SMS. Service stopped.", Toast.LENGTH_LONG).show();
-                        
-                        // Try to restart service for next time
-                        Intent serviceIntent = new Intent(context, MqttService.class);
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            context.startForegroundService(serviceIntent);
-                        } else {
-                            context.startService(serviceIntent);
+                        Log.w(TAG, "MqttService instance is null! Kept queued as STATUS_SENDING. Restarting service...");
+                        try {
+                            Intent serviceIntent = new Intent(context, MqttService.class);
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(serviceIntent);
+                            } else {
+                                context.startService(serviceIntent);
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error restarting MqttService from receiver", e);
                         }
                     }
 
+                    // Safe Toast feedback on UI thread
+                    final String feedbackSim = simName;
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        try {
+                            Toast.makeText(context.getApplicationContext(), "SMS Forwarded: " + feedbackSim, Toast.LENGTH_SHORT).show();
+                        } catch (Exception ignored) {}
+                    });
+
                 } catch (Exception e) {
-                    Log.e("SmsReceiver", "Error", e);
+                    Log.e(TAG, "Error processing incoming SMS", e);
                 }
             }
         }

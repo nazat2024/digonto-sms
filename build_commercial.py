@@ -76,7 +76,7 @@ def minify_and_obfuscate():
         print("\n  🔒 [2/4] PyArmor দিয়ে সোর্স কোড Obfuscate করা হচ্ছে...")
         
         # Obfuscate only specific core components to avoid Trial Limit on gui_app.py
-        cmd = f'"{sys.executable}" -m pyarmor.cli gen -O obf_dist license_system sms_server.py gui_license.py'
+        cmd = f'"{sys.executable}" -m pyarmor.cli gen -O obf_dist license_system gui_license.py'
         result = subprocess.run(cmd, shell=True, cwd=BASE_DIR, capture_output=True, text=True)
         
         if result.returncode != 0:
@@ -84,6 +84,7 @@ def minify_and_obfuscate():
             return False
             
         # Copy gui_app.py without obfuscation
+        shutil.copy("sms_server.py", os.path.join(OBF_DIR, "sms_server.py"))
         shutil.copy("gui_app.py", os.path.join(OBF_DIR, "gui_app.py"))
         
         print("    ✅ কোড সফলভাবে সিকিউর করা হয়েছে (obf_dist ফোল্ডারে)")
@@ -126,7 +127,8 @@ def build_exe():
         (os.path.join(BASE_DIR, "config.json"), "."),
         (os.path.join(BASE_DIR, "sim_mapping.json"), "."),
         (os.path.join(BASE_DIR, "icon.ico"), "."),
-        (os.path.join(BASE_DIR, "icon_v5.ico"), "."),
+        (os.path.join(BASE_DIR, "digonto_icon.ico"), "."),
+        (os.path.join(BASE_DIR, "logo App Light.png"), "."),
     ]
     
     hidden_imports = [
@@ -149,7 +151,7 @@ def build_exe():
         "--windowed",
         "--noconfirm",
         "--clean",
-        "--icon", os.path.join(BASE_DIR, "icon_v5.ico"),
+        "--icon", os.path.join(BASE_DIR, "digonto_icon.ico"),
         "--distpath", DIST_DIR,
         "--workpath", BUILD_DIR,
         "-p", BASE_DIR,
@@ -169,6 +171,16 @@ def build_exe():
     result = subprocess.run(cmd, cwd=BASE_DIR)
     
     if result.returncode == 0:
+        # Windows 7 Compatibility Fix: copy api-ms-win-core-path-l1-1-0.dll
+        win7_dll_src = os.path.join(BASE_DIR, 'win7_fix', 'x64', 'api-ms-win-core-path-l1-1-0.dll')
+        if os.path.exists(win7_dll_src):
+            app_root = os.path.join(DIST_DIR, OUTPUT_NAME)
+            internal_dir = os.path.join(app_root, '_internal')
+            shutil.copy2(win7_dll_src, os.path.join(app_root, 'api-ms-win-core-path-l1-1-0.dll'))
+            if os.path.exists(internal_dir):
+                shutil.copy2(win7_dll_src, os.path.join(internal_dir, 'api-ms-win-core-path-l1-1-0.dll'))
+            print('    🪟 Windows 7 Compatibility DLL (api-ms-win-core-path) সফলভাবে যুক্ত করা হয়েছে!')
+        
         print("    ✅ EXE বিল্ড সফল!")
         return True
     else:

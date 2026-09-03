@@ -1,0 +1,107 @@
+﻿<!DOCTYPE html>
+<html lang="bn" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Auto-Fill Dashboard</title>
+    <link rel="stylesheet" href="sidepanel.css">
+    <script src="pdf.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="zoom-wrapper" style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Zoom:</span>
+            <button type="button" class="theme-toggle" id="zoomOutBtn" style="min-width: 28px; font-size: 14px; padding: 2px 6px; display: flex; justify-content: center;">-</button>
+            <span id="zoomLevelTxt" style="font-size: 11px; font-weight: 700; min-width: 32px; text-align: center;">90%</span>
+            <button type="button" class="theme-toggle" id="zoomInBtn" style="min-width: 28px; font-size: 14px; padding: 2px 6px; display: flex; justify-content: center;">+</button>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>Web File No:</label><span class="shortcut-badge">Alt+1</span></div>
+            <div class="field-container">
+                <input type="text" id="webFile" placeholder="e.g. BGDR...">
+                <button type="button" class="copy-btn" data-target="webFile">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>Surname:</label><span class="shortcut-badge">Alt+2</span></div>
+            <div class="field-container">
+                <input type="text" id="surname">
+                <button type="button" class="copy-btn" data-target="surname">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>Given Name:</label><span class="shortcut-badge">Alt+3</span></div>
+            <div class="field-container">
+                <input type="text" id="givenName">
+                <button type="button" class="copy-btn" data-target="givenName">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>Passport No:</label><span class="shortcut-badge">Alt+4</span></div>
+            <div class="field-container">
+                <input type="text" id="passport">
+                <button type="button" class="copy-btn" data-target="passport">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>NID No:</label><span class="shortcut-badge">Alt+5</span></div>
+            <div class="field-container">
+                <input type="text" id="nid">
+                <button type="button" class="copy-btn" data-target="nid">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>Phone No:</label><span class="shortcut-badge">Alt+6</span></div>
+            <div class="field-container">
+                <input type="text" id="phone">
+                <button type="button" class="copy-btn" data-target="phone">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>Email:</label><span class="shortcut-badge">Alt+7</span></div>
+            <div class="field-container">
+                <input type="text" id="email">
+                <button type="button" class="copy-btn" data-target="email">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>DOB:</label><span class="shortcut-badge">Alt+8</span></div>
+            <div class="field-container">
+                <input type="text" id="dob" placeholder="09-JUN-1982">
+                <button type="button" class="copy-btn" data-target="dob">Copy</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <div class="label-wrapper"><label>Password:</label><span class="shortcut-badge">Alt+9</span></div>
+            <div class="field-container">
+                <input type="text" id="password">
+                <button type="button" class="copy-btn" data-target="password">Copy</button>
+            </div>
+        </div>
+
+        <button type="button" class="clear-btn" id="clearBtn">🗑️ Clear All Data</button>
+
+        <div class="upload-section">
+            <label for="pdfUpload" class="upload-btn">📂 Upload Webfile (PDF)</label>
+            <input type="file" id="pdfUpload" accept="application/pdf" style="display: none;">
+            <p id="uploadStatus">
+                <span class="loader" id="loader"></span>
+                <span id="statusText">আপলোড করলে ফর্ম অটোমেটিক পূরণ হয়ে যাবে</span>
+            </p>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">কপি হয়েছে!</div>
+
+    <script src="sidepanel.js"></script>
+</body>
+</html>

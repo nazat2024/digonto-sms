@@ -11,6 +11,7 @@ SolidCompression=yes
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
+SetupIconFile=digonto_icon.ico
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -19,9 +20,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "dist\Digonto QuickFill\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Digonto QuickFill"; Filename: "{app}\Digonto QuickFill.exe"; IconFilename: "{app}\_internal\icon_v5.ico"
+Name: "{group}\Digonto QuickFill"; Filename: "{app}\Digonto QuickFill.exe"; IconFilename: "{app}\_internal\digonto_icon.ico"
 Name: "{group}\{cm:UninstallProgram,Digonto QuickFill}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Digonto QuickFill"; Filename: "{app}\Digonto QuickFill.exe"; IconFilename: "{app}\_internal\icon_v5.ico"; Tasks: desktopicon
+Name: "{autodesktop}\Digonto QuickFill"; Filename: "{app}\Digonto QuickFill.exe"; IconFilename: "{app}\_internal\digonto_icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Digonto QuickFill.exe"; Description: "{cm:LaunchProgram,Digonto QuickFill}"; Flags: nowait postinstall skipifsilent

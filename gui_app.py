@@ -81,6 +81,73 @@ def get_local_ip():
 from gui_license import LicenseActivationWindow
 
 class IVACApp(ctk.CTk):
+    def _apply_crisp_icon(self):
+        """Ultra-crisp high-DPI window & taskbar icon setup"""
+        icon_path = os.path.join(BASE_DIR, 'digonto_icon.ico')
+        png_path = os.path.join(BASE_DIR, 'logo App Light.png')
+        
+        # 1. Tkinter iconphoto (provides high-res image to Windows taskbar)
+        try:
+            from PIL import Image, ImageTk
+            if os.path.exists(png_path):
+                pil_img = Image.open(png_path)
+                img_big = ImageTk.PhotoImage(pil_img.resize((64, 64), Image.Resampling.LANCZOS))
+                img_small = ImageTk.PhotoImage(pil_img.resize((32, 32), Image.Resampling.LANCZOS))
+                self.iconphoto(True, img_big, img_small)
+                self._icon_photo_ref = (img_big, img_small)
+        except Exception:
+            pass
+
+        # 2. Tkinter iconbitmap fallback
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass
+
+        # 3. Direct Win32 WM_SETICON with DPI-matched sizes
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            hwnd = self.winfo_id()
+            parent_hwnd = ctypes.windll.user32.GetParent(hwnd)
+            target_hwnd = parent_hwnd if parent_hwnd else hwnd
+
+            WM_SETICON = 0x0080
+            ICON_SMALL = 0
+            ICON_BIG = 1
+            IMAGE_ICON = 1
+            LR_LOADFROMFILE = 0x00000010
+
+            LoadImageW = ctypes.windll.user32.LoadImageW
+            LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+            LoadImageW.restype = wintypes.HANDLE
+
+            SendMessageW = ctypes.windll.user32.SendMessageW
+            SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+            SendMessageW.restype = wintypes.LPARAM
+
+            GetSystemMetrics = ctypes.windll.user32.GetSystemMetrics
+            cx_small = GetSystemMetrics(49)  # SM_CXSMICON
+            cy_small = GetSystemMetrics(50)
+            cx_big = GetSystemMetrics(11)    # SM_CXICON
+            cy_big = GetSystemMetrics(12)
+
+            h_big = LoadImageW(None, icon_path, IMAGE_ICON, cx_big, cy_big, LR_LOADFROMFILE)
+            h_small = LoadImageW(None, icon_path, IMAGE_ICON, cx_small, cy_small, LR_LOADFROMFILE)
+
+            if h_big:
+                SendMessageW(target_hwnd, WM_SETICON, ICON_BIG, h_big)
+                if parent_hwnd:
+                    SendMessageW(hwnd, WM_SETICON, ICON_BIG, h_big)
+            if h_small:
+                SendMessageW(target_hwnd, WM_SETICON, ICON_SMALL, h_small)
+                if parent_hwnd:
+                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, h_small)
+        except Exception:
+            pass
+
     """মূল অ্যাপ্লিকেশন উইন্ডো।"""
     
     def __init__(self):
@@ -90,17 +157,9 @@ class IVACApp(ctk.CTk):
         self.geometry("700x580")
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        for ico in ['icon_v5.ico', 'icon.ico', 'icon_v4.ico']:
-            icon_path = os.path.join(BASE_DIR, ico)
-            if os.path.exists(icon_path):
-                try:
-                    self.iconbitmap(icon_path)
-                    self.after(100, lambda p=icon_path: self.iconbitmap(p))
-                    self.after(300, lambda p=icon_path: self.iconbitmap(p))
-                    self.after(1000, lambda p=icon_path: self.iconbitmap(p))
-                except Exception:
-                    pass
-                break
+        self._apply_crisp_icon()
+        self.after(100, self._apply_crisp_icon)
+        self.after(500, self._apply_crisp_icon)
             
         # Center on screen
         self.update_idletasks()
@@ -114,17 +173,39 @@ class IVACApp(ctk.CTk):
         self.server_thread = None
         self.config = self._load_config()
         self.otp_data = {}
+        self._expanded_phones = set()
         
-        # License check first
+        # Instant UI Launch (< 50ms) - No slow loading screen!
+        self.loading_label = None
+        self._start_gui_mqtt_listener()
         self._check_license_and_start()
     
     def _load_config(self):
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
-                return self.config
+                
+            # Data Migration for older rocket accounts
+            accounts = self.config.get("rocket_accounts", [])
+            for acc in accounts:
+                if "rocket_extra" not in acc:
+                    num = acc.get("number", "")
+                    if len(num) == 12:
+                        acc["number"] = num[:11]
+                        acc["rocket_extra"] = num[11]
+                    else:
+                        acc["rocket_extra"] = ""
+                    
+                    old_pin = acc.get("pin", "")
+                    acc["rocket_pin"] = old_pin
+                    acc["bkash_pin"] = old_pin
+                    acc["nagad_pin"] = old_pin
+                    
+                    if "pin" in acc:
+                        del acc["pin"]
+            return self.config
         except Exception:
-            self.config = {"profiles": [], "sim_mapping": {}}
+            self.config = {"profiles": [], "sim_mapping": {}, "rocket_accounts": []}
             return self.config
     
     def _save_config(self):
@@ -133,20 +214,280 @@ class IVACApp(ctk.CTk):
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
-    
-    def _check_license_and_start(self):
-        info = check_license()
+    def _lockout_license(self, error_msg="আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!"):
+        self._is_locked_out = True
+        self._poller_running = False
         
+        # Stop background server process
+        if hasattr(self, 'server_process') and self.server_process:
+            try:
+                self.server_process.terminate()
+            except Exception:
+                pass
+        self.server_running = False
+        
+        for w in self.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
+                
+        lock_frame = ctk.CTkFrame(self, fg_color="#0a192f")
+        lock_frame.pack(fill="both", expand=True)
+        
+        ctk.CTkLabel(lock_frame, text="🚫", font=ctk.CTkFont(size=46)).pack(pady=(25, 4))
+        ctk.CTkLabel(
+            lock_frame, text="লাইসেন্স নিষ্ক্রিয় / ব্লক করা হয়েছে!",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="#ef4444"
+        ).pack(pady=3)
+        
+        self.lock_msg_label = ctk.CTkLabel(
+            lock_frame, text=error_msg,
+            font=ctk.CTkFont(size=13),
+            text_color="#cbd5e1"
+        )
+        self.lock_msg_label.pack(pady=4)
+        
+        ctk.CTkLabel(
+            lock_frame, text="এডমিন আনব্লক করামাত্রই সফটওয়্যারটি স্বয়ংক্রিয়ভাবে চালু হবে, অথবা নতুন লাইসেন্স কী দিন:",
+            font=ctk.CTkFont(size=11),
+            text_color="#8892b0"
+        ).pack(pady=(0, 10))
+        
+        # IN-WINDOW LICENSE ACTIVATION CARD (NO SEPARATE POPUP!)
+        card = ctk.CTkFrame(lock_frame, fg_color="#112240", corner_radius=10)
+        card.pack(padx=25, pady=5, fill="x")
+        
+        ctk.CTkLabel(
+            card, text="নতুন লাইসেন্স কী (License Key):",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#ccd6f6"
+        ).pack(anchor="w", padx=20, pady=(12, 4))
+        
+        self.new_key_entry = ctk.CTkEntry(
+            card,
+            placeholder_text="IVAC-XXXX-XXXX-XXXX-XXXX",
+            font=ctk.CTkFont(size=13, family="Consolas"),
+            height=38,
+            corner_radius=6
+        )
+        self.new_key_entry.pack(fill="x", padx=20, pady=4)
+        
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(10, 8))
+        
+        self.activate_inline_btn = ctk.CTkButton(
+            btn_row, text="🔑 অ্যাক্টিভেট করুন",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#059669", hover_color="#047857",
+            height=34,
+            command=self._activate_new_key_inline
+        )
+        self.activate_inline_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        self.recheck_unblock_btn = ctk.CTkButton(
+            btn_row, text="🔄 আনব্লক স্ট্যাটাস চেক",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#2563eb", hover_color="#1d4ed8",
+            height=34,
+            command=self._recheck_unblock_manually
+        )
+        self.recheck_unblock_btn.pack(side="right", fill="x", expand=True, padx=(5, 0))
+        
+        self.activate_status_label = ctk.CTkLabel(
+            card, text="⏳ এডমিন আনব্লক করার অপেক্ষায়...",
+            font=ctk.CTkFont(size=11),
+            text_color="#f59e0b"
+        )
+        self.activate_status_label.pack(pady=(0, 10))
+        
+        # Device ID Display
+        try:
+            from license_system.hwid import generate_hwid
+            hwid_str = generate_hwid()
+            id_row = ctk.CTkFrame(lock_frame, fg_color="transparent")
+            id_row.pack(pady=8)
+            ctk.CTkLabel(
+                id_row, text=f"📱 আপনার Device ID: {hwid_str[:20]}...",
+                font=ctk.CTkFont(size=11, family="Consolas"),
+                text_color="#64748b"
+            ).pack(side="left", padx=5)
+            
+            ctk.CTkButton(
+                id_row, text="📋 কপি", width=45, height=22,
+                font=ctk.CTkFont(size=10), fg_color="#1e293b", hover_color="#334155",
+                command=lambda: (self.clipboard_clear(), self.clipboard_append(hwid_str))
+            ).pack(side="left")
+        except Exception:
+            pass
+            
+        # Exit Button
+        ctk.CTkButton(
+            lock_frame, text="❌ সফটওয়্যার বন্ধ করুন", font=ctk.CTkFont(size=11),
+            fg_color="#334155", hover_color="#475569",
+            command=self.destroy
+        ).pack(pady=6)
+        
+        # Start Auto-Unblock Poller (Polls every 3 seconds to auto-restore when unblocked!)
+        # Poller removed: 100% Zero Firebase reads! Handled via MQTT
+
+    def _activate_new_key_inline(self):
+        key = self.new_key_entry.get().strip()
+        if not key:
+            self.activate_status_label.configure(text="দয়া করে লাইসেন্স কী দিন!", text_color="#ef4444")
+            return
+        self.activate_inline_btn.configure(state="disabled", text="যাচাই হচ্ছে...")
+        self.activate_status_label.configure(text="সার্ভারে লাইসেন্স চেক করা হচ্ছে...", text_color="#38bdf8")
+        self.update()
+        
+        from license_system.license_manager import activate_license
+        info = activate_license(key)
+        self.activate_inline_btn.configure(state="normal", text="🔑 অ্যাক্টিভেট করুন")
+        if info.is_valid:
+            self.activate_status_label.configure(text="✅ লাইসেন্স সফলভাবে অ্যাক্টিভেট হয়েছে!", text_color="#10b981")
+            self.after(400, lambda: self._restore_from_lockout(info))
+        else:
+            self.activate_status_label.configure(text=f"❌ {info.error_message or 'অ্যাক্টিভেশন ব্যর্থ'}", text_color="#ef4444")
+
+    def _recheck_unblock_manually(self):
+        # Prevent rapid spamming
+        self.recheck_unblock_btn.configure(state="disabled")
+        self.activate_status_label.configure(text="🔄 সার্ভার থেকে স্ট্যাটাস চেক করা হচ্ছে...", text_color="#38bdf8")
+        self.update()
+        
+        from license_system.license_manager import check_license
+        info = check_license(force_cloud=True)
+        if info.is_valid:
+            self.activate_status_label.configure(text="✅ লাইসেন্স আনব্লক শনাক্ত হয়েছে! চালু করা হচ্ছে...", text_color="#10b981")
+            self.after(300, lambda: self._restore_from_lockout(info))
+        else:
+            self.activate_status_label.configure(text="❌ লাইসেন্স এখনও আনব্লক করা হয়নি! (১০ সেকেন্ড পর আবার চেষ্টা করুন)", text_color="#ef4444")
+            self.after(10000, lambda: getattr(self, 'recheck_unblock_btn') and self.recheck_unblock_btn.configure(state="normal"))
+
+    def _get_raw_saved_license_key(self):
+        try:
+            import os, json
+            app_data = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+            lic_path = os.path.join(app_data, "license.dat")
+            if os.path.exists(lic_path):
+                from license_system.hwid import generate_hwid
+                from license_system.crypto import decrypt_data
+                with open(lic_path, 'r', encoding='utf-8') as f:
+                    enc = f.read().strip()
+                dec = decrypt_data(enc, extra_key=generate_hwid())
+                return json.loads(dec).get("license_key", "")
+        except Exception:
+            pass
+        return ""
+
+    def _start_gui_mqtt_listener(self):
+        """100% Zero Firebase Reads: Persistent MQTT kill-switch & instant unblock listener (50ms latency)"""
+        try:
+            import paho.mqtt.client as mqtt
+            import time
+            
+            def on_connect(client, userdata, flags, rc):
+                if rc == 0:
+                    key = self._get_raw_saved_license_key()
+                    if key:
+                        client.subscribe(f"digonto_kill_{key}")
+                    client.subscribe("digonto_license_event")
+                    
+            def on_message(client, userdata, msg):
+                import json
+                try:
+                    payload = json.loads(msg.payload.decode('utf-8'))
+                    action = payload.get("action")
+                    target_key = payload.get("key")
+                    my_key = self._get_raw_saved_license_key()
+                    
+                    if target_key and target_key == my_key:
+                        if action == "block":
+                            print(f"[GUI MQTT] Instant block received for {my_key}!")
+                            from license_system.license_manager import mark_license_blocked_locally
+                            mark_license_blocked_locally(my_key)
+                            self.after(0, lambda: self._lockout_license("আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!"))
+                        elif action == "unblock":
+                            print(f"[GUI MQTT] Instant unblock received for {my_key} with ZERO Firebase reads!")
+                            # Restore directly from MQTT payload - ZERO Firebase reads!
+                            import os, time
+                            from license_system.hwid import generate_hwid
+                            from license_system.crypto import encrypt_data
+                            from license_system.license_manager import LICENSE_FILE, LicenseInfo, LicenseStatus
+                            
+                            current_hwid = generate_hwid()
+                            bound_at = payload.get("bound_at") or int(time.time() * 1000)
+                            days = payload.get("duration_days", 30)
+                            expiry_ms = bound_at + (days * 24 * 60 * 60 * 1000)
+                            plan = payload.get("plan", "Standard")
+                            
+                            # Update local license.dat so subsequent starts are active
+                            new_data = {
+                                "license_key": my_key,
+                                "hwid": current_hwid,
+                                "status": "active",
+                                "expiry_ms": expiry_ms,
+                                "plan": plan
+                            }
+                            try:
+                                enc = encrypt_data(json.dumps(new_data), extra_key=current_hwid)
+                                with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
+                                    f.write(enc)
+                            except Exception:
+                                pass
+                                
+                            info = LicenseInfo()
+                            info.license_key = my_key
+                            info.hwid = current_hwid
+                            info.status = LicenseStatus.ACTIVE
+                            info.plan = plan
+                            diff_ms = max(0, expiry_ms - int(time.time() * 1000))
+                            info.days_remaining = diff_ms // (1000 * 60 * 60 * 24)
+                            
+                            self.after(0, lambda: self._restore_from_lockout(info))
+                except Exception as e:
+                    pass
+                    
+            client = mqtt.Client(client_id=f"gui_app_{int(time.time()*1000)%100000}")
+            client.on_connect = on_connect
+            client.on_message = on_message
+            client.connect_async("broker.emqx.io", 1883, 60)
+            client.loop_start()
+            self._gui_mqtt_client = client
+        except Exception:
+            pass
+
+    def _restore_from_lockout(self, info):
+        """Cleanly restore main dashboard when license is unblocked or activated"""
+        self._is_locked_out = False
         self.license_info = info
+        for w in self.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
         self._build_main_ui()
         self._start_server()
+
+    def _check_license_and_start(self):
+        info = check_license()
+        self.license_info = info
+        
+        if getattr(self, 'loading_label', None) is not None:
+            try:
+                if self.loading_label.winfo_exists():
+                    self.loading_label.destroy()
+            except Exception:
+                pass
+        
         if not info.is_valid:
-            # License window দেখাও
-            self.withdraw()  # Main window লুকাও
-            self.after(100, lambda: LicenseActivationWindow(
-                self, info, self._on_license_activated
-            ))
-    
+            self._lockout_license(info.error_message or "আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!")
+            return
+            
+        self._build_main_ui()
+        self._start_server()
+
     def _on_license_activated(self, info):
         self.license_info = info
         self.deiconify()  # Main window দেখাও
@@ -167,9 +508,20 @@ class IVACApp(ctk.CTk):
         header_inner = ctk.CTkFrame(header, fg_color="transparent")
         header_inner.pack(fill="both", expand=True, padx=15)
         
+        # Custom App Logo in Header
+        try:
+            from PIL import Image
+            logo_path = os.path.join(BASE_DIR, "logo App Light.png")
+            if os.path.exists(logo_path):
+                pil_logo = Image.open(logo_path)
+                ctk_logo = ctk.CTkImage(light_image=pil_logo, dark_image=pil_logo, size=(28, 28))
+                ctk.CTkLabel(header_inner, image=ctk_logo, text="").pack(side="left", padx=(0, 8), pady=10)
+        except Exception:
+            pass
+
         ctk.CTkLabel(
             header_inner,
-            text=f"🇮🇳 {APP_NAME}",
+            text=APP_NAME,
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color="#64ffda"
         ).pack(side="left", pady=10)
@@ -198,12 +550,14 @@ class IVACApp(ctk.CTk):
         
         # Create tabs
         self.tab_home = self.tabview.add("🏠 Home")
-        self.tab_profiles = self.tabview.add("🧩 Profiles")
+        self.tab_otps = self.tabview.add("📨 Recent OTPs")
+        self.tab_profiles = self.tabview.add("👥 Profiles")
         self.tab_settings = self.tabview.add("⚙️ Settings")
         self.tab_extension = self.tabview.add("🔌 Extension")
         self.tab_license = self.tabview.add("🔑 License")
         
         self._build_home_tab()
+        self._build_otps_tab()
         self._build_profiles_tab()
         self._build_settings_tab()
         self._build_extension_tab()
@@ -258,9 +612,9 @@ class IVACApp(ctk.CTk):
             text_color="#64ffda"
         ).pack(padx=15, pady=10)
         
-        # Connected Devices Card
+        # Connected Devices Card (Expanded with full height)
         device_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
-        device_card.pack(fill="x", padx=5, pady=(0, 10))
+        device_card.pack(fill="both", expand=True, padx=5, pady=(0, 5))
         
         device_header = ctk.CTkFrame(device_card, fg_color="transparent")
         device_header.pack(fill="x", padx=15, pady=(10, 5))
@@ -271,8 +625,10 @@ class IVACApp(ctk.CTk):
             text_color="#ccd6f6"
         ).pack(side="left")
         
-        self.device_list_frame = ctk.CTkFrame(device_card, fg_color="transparent")
-        self.device_list_frame.pack(fill="x", padx=15, pady=(0, 10))
+        self.device_list_frame = ctk.CTkScrollableFrame(device_card, fg_color="transparent")
+        self.device_list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self._device_rows = {}
+        self._has_device_placeholder = True
         
         self.device_placeholder = ctk.CTkLabel(
             self.device_list_frame,
@@ -280,7 +636,14 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color="#495670"
         )
-        self.device_placeholder.pack(pady=5)
+        self.device_placeholder.pack(pady=20)
+        
+        # Start ultra-fast background poller (decoupled from GUI thread)
+        self._start_background_poller()
+
+    # ===== RECENT OTPS TAB =====
+    def _build_otps_tab(self):
+        tab = self.tab_otps
         
         # Recent OTPs Card
         otp_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
@@ -290,7 +653,7 @@ class IVACApp(ctk.CTk):
         otp_header.pack(fill="x", padx=15, pady=(10, 5))
         
         ctk.CTkLabel(
-            otp_header, text="📊 Recent OTPs",
+            otp_header, text="📨 Recent OTPs",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#ccd6f6"
         ).pack(side="left")
@@ -307,7 +670,7 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color="#8892b0"
         )
-        self.otp_count_label.pack(side="right")
+        self.otp_count_label.pack(side="right", padx=10)
         
         # OTP Scrollable list
         self.otp_list_frame = ctk.CTkScrollableFrame(
@@ -317,15 +680,12 @@ class IVACApp(ctk.CTk):
         
         self.otp_placeholder = ctk.CTkLabel(
             self.otp_list_frame,
-            text="⏳ কোনো OTP আসেনি...\nSMS Forwarder অ্যাপ থেকে SMS পাঠান",
+            text="⏳ কোনো OTP আসেনি...\nSMS Forwarder অ্যাপটি ওপেন করে SMS পাঠাতে দিন",
             font=ctk.CTkFont(size=12),
             text_color="#495670",
             justify="center"
         )
-        self.otp_placeholder.pack(pady=30)
-        
-        # Auto-refresh OTP list
-        self._refresh_otps()
+        self.otp_placeholder.pack(pady=40)
         
     def _refresh_ip(self):
         self.server_info_label.configure(text=f"Port: 5000  |  SMS Endpoint: POST http://{get_local_ip()}:5000/api/sms")
@@ -346,32 +706,64 @@ class IVACApp(ctk.CTk):
 
     def _clear_all_data(self):
         from tkinter import messagebox
+        import requests, threading
         if messagebox.askyesno("Clear All", "আপনি কি নিশ্চিত যে সব OTP মুছে ফেলতে চান?"):
-            import requests
-            try:
-                requests.post("http://127.0.0.1:5000/api/clear", timeout=2)
-                self._refresh_otps()
-            except:
-                pass
-    
-    def _refresh_otps(self):
-        """OTP তালিকা রিফ্রেশ করে (প্রতি ২ সেকেন্ডে)।"""
-        try:
-            import requests
-            resp = requests.get("http://127.0.0.1:5000/api/status", timeout=1)
-            if resp.ok:
-                data = resp.json()
-                otps = data.get("otps", [])
-                devices = data.get("devices", [])
+            def clear_task():
+                try:
+                    requests.post("http://127.0.0.1:5000/api/clear", timeout=2)
+                    self._last_otp_state_key = None
+                except Exception:
+                    pass
+            threading.Thread(target=clear_task, daemon=True).start()
+
+    def _start_background_poller(self):
+        """Dedicated background daemon thread to fetch status without blocking GUI"""
+        if getattr(self, '_poller_running', False):
+            return
+        self._poller_running = True
+        
+        def poller_loop():
+            import requests, time
+            session = requests.Session()
+            while getattr(self, '_poller_running', True):
+                try:
+                    resp = session.get("http://127.0.0.1:5000/api/status", timeout=1)
+                    if resp.ok:
+                        data = resp.json()
+                        self.after(0, lambda d=data: self._apply_status_update(d))
+                    else:
+                        self.after(0, lambda: self.server_status_label.configure(text="⚠️ Error", text_color="#ff6b6b"))
+                except Exception:
+                    pass
+                time.sleep(1.0)
                 
-                # Update Devices
-                for widget in self.device_list_frame.winfo_children():
-                    widget.destroy()
-                    
-                if devices:
-                    for dev in devices:
-                        self._add_device_row(dev)
-                else:
+        threading.Thread(target=poller_loop, daemon=True).start()
+
+    def _refresh_otps(self):
+        """Compatibility trigger to invalidate OTP cache"""
+        self._last_otp_state_key = None
+
+    def _apply_status_update(self, data):
+        """Apply status update on the Tkinter main thread with ZERO destruction and ZERO lag"""
+        try:
+            # REAL-TIME INSTANT KILL SWITCH: If server indicates license blocked/invalid, lock immediately!
+            if data.get("licensed") is False:
+                self._lockout_license("আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!")
+                return
+            otps = data.get("otps", [])
+            devices = data.get("devices", [])
+            
+            # 1. INCREMENTAL DEVICE UPDATE (ZERO DESTROY LAG FOR 20-30 MOBILES)
+            if not hasattr(self, '_device_rows'):
+                self._device_rows = {}
+                
+            current_dev_ids = set()
+            
+            if not devices:
+                if not getattr(self, '_has_device_placeholder', False):
+                    for w in self.device_list_frame.winfo_children():
+                        w.destroy()
+                    self._device_rows.clear()
                     self.device_placeholder = ctk.CTkLabel(
                         self.device_list_frame,
                         text="⏳ Waiting for mobile connection...",
@@ -379,8 +771,73 @@ class IVACApp(ctk.CTk):
                         text_color="#495670"
                     )
                     self.device_placeholder.pack(pady=5)
+                    self._has_device_placeholder = True
+            else:
+                if hasattr(self, 'device_placeholder') and self.device_placeholder:
+                    try:
+                        self.device_placeholder.destroy()
+                        self.device_placeholder = None
+                    except:
+                        pass
+                self._has_device_placeholder = False
+                    
+                for dev in devices:
+                    dev_id = dev.get("device_id")
+                    if not dev_id:
+                        continue
+                    current_dev_ids.add(dev_id)
+                    
+                    is_online = dev.get("online", False)
+                    dev_name = dev.get("custom_name", dev.get("device_name", "Device"))
+                    is_active = dev.get("is_active", True)
+                    sims = []
+                    if dev.get("sim1_name"): sims.append(dev["sim1_name"])
+                    if dev.get("sim2_name"): sims.append(dev["sim2_name"])
+                    sim_text = " | ".join(sims) if sims else "No SIM set"
+                    
+                    status_icon = "🟢" if is_online else "⚪"
+                    color = "#059669" if is_online else "#495670"
+                    display_text = f"  {status_icon}  {dev_name}"
+                    
+                    if dev_id in self._device_rows:
+                        entry = self._device_rows[dev_id]
+                        # Only update if changed - ZERO canvas redraw if unchanged!
+                        if entry.get("display_text") != display_text or entry.get("color") != color:
+                            entry["name_label"].configure(text=display_text, text_color=color)
+                            entry["display_text"] = display_text
+                            entry["color"] = color
+                        if entry.get("sim_text") != sim_text:
+                            entry["sim_label"].configure(text=f"SIMs: {sim_text}  ")
+                            entry["sim_text"] = sim_text
+                        if entry.get("is_active") != is_active:
+                            if is_active: entry["switch"].select()
+                            else: entry["switch"].deselect()
+                            entry["is_active"] = is_active
+                        entry["dev_name"] = dev_name
+                    else:
+                        # First time seeing this device: create row once
+                        self._add_device_row_incremental(dev, dev_id, display_text, color, sim_text, is_active, dev_name)
+                        
+                # Clean up removed devices
+                for old_id in list(self._device_rows.keys()):
+                    if old_id not in current_dev_ids:
+                        row_data = self._device_rows.pop(old_id, {})
+                        if "row" in row_data and row_data["row"]:
+                            try:
+                                row_data["row"].destroy()
+                            except:
+                                pass
+                            
+            # 2. OTP UPDATE (Only re-render when OTPs or expanded state changes)
+            expanded_tuple = tuple(sorted(getattr(self, '_expanded_phones', set())))
+            import json
+            otps_snapshot = json.dumps(otps, sort_keys=True)
+            current_otp_state_key = (otps_snapshot, expanded_tuple)
+            
+            if current_otp_state_key != getattr(self, '_last_otp_state_key', None):
+                self._last_otp_state_key = current_otp_state_key
+                self._current_otps_cache = otps
                 
-                # Clear old OTPs
                 for widget in self.otp_list_frame.winfo_children():
                     widget.destroy()
                 
@@ -389,145 +846,286 @@ class IVACApp(ctk.CTk):
                     for otp in otps:
                         self._add_otp_row(otp)
                 else:
+                    self.otp_count_label.configure(text="0 টি")
                     self.otp_placeholder = ctk.CTkLabel(
                         self.otp_list_frame,
-                        text="⏳ কোনো OTP আসেনি...",
+                        text="⏳ কোনো OTP আসেনি...\nSMS Forwarder অ্যাপটি ওপেন করে SMS পাঠাতে দিন",
                         font=ctk.CTkFont(size=12),
-                        text_color="#495670"
+                        text_color="#495670",
+                        justify="center"
                     )
                     self.otp_placeholder.pack(pady=30)
-                
-                self.server_status_label.configure(text="🟢 Running", text_color="#64ffda")
-                
-                # Check for real-time config updates (e.g. from Chrome extension)
-                server_cfg_version = data.get("config_version", 0)
-                if server_cfg_version and server_cfg_version != getattr(self, '_last_config_version', 0):
-                    self._last_config_version = server_cfg_version
-                    self._load_config()
-                    if hasattr(self, 'profile_scroll'):
-                        for w in self.profile_scroll.winfo_children():
-                            w.destroy()
-                        profiles = self.config.get("profiles", [])
-                        if not profiles:
-                            ctk.CTkLabel(
-                                self.profile_scroll,
-                                text="কোনো প্রোফাইল যুক্ত করা হয়নি\n\nউপরে 'নতুন প্রোফাইল' বাটনে ক্লিক করে প্রোফাইল যুক্ত করুন",
-                                font=ctk.CTkFont(size=12),
-                                text_color="#495670",
-                                justify="center"
-                            ).pack(pady=40)
-                        else:
-                            for i, p in enumerate(profiles):
-                                self._add_profile_row(self.profile_scroll, p, i)
-            else:
-                self.server_status_label.configure(text="🔴 Error", text_color="#ff6b6b")
+            
+            self.server_status_label.configure(text="🟢 Running", text_color="#64ffda")
+            
+            # 3. Check for real-time config updates
+            server_cfg_version = data.get("config_version", 0)
+            if server_cfg_version and server_cfg_version != getattr(self, '_last_config_version', 0):
+                self._last_config_version = server_cfg_version
+                self._load_config()
+                if hasattr(self, '_refresh_profiles_tab'):
+                    self._refresh_profiles_tab()
+                if hasattr(self, '_refresh_rocket_list'):
+                    self._refresh_rocket_list()
         except Exception:
             pass
-        
-        self.after(1000, self._refresh_otps)
-    
+
     def _add_otp_row(self, otp_data):
-        row = ctk.CTkFrame(self.otp_list_frame, fg_color="#1a1a2e", corner_radius=6, height=40)
-        row.pack(fill="x", pady=2)
-        row.pack_propagate(False)
-        
-        phone = otp_data.get("phone", "?")
+        phone = (otp_data.get("phone") or "Unknown").strip() or "Unknown"
         display = otp_data.get("display", "?")
         used = otp_data.get("used", False)
+        otp_str = otp_data.get("otp_string", "")
+        history = otp_data.get("history", [])
+        timestamp = otp_data.get("timestamp", "")
         
-        icon = "✅" if not used else "⬜"
-        color = "#64ffda" if not used else "#495670"
-        
-        ctk.CTkLabel(
-            row, text=f"  {icon}  📱 {phone}",
-            font=ctk.CTkFont(size=12),
-            text_color="#8892b0"
-        ).pack(side="left", padx=5)
-        
-        ctk.CTkLabel(
-            row, text=f"  {display}  ",
-            font=ctk.CTkFont(size=14, weight="bold", family="Consolas"),
-            text_color=color
-        ).pack(side="right", padx=10)
-        
-    def _toggle_device_status(self, dev_id, is_active):
-        import requests
-        try:
-            requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "is_active": is_active}, timeout=1)
-        except:
-            pass
+        if not hasattr(self, '_expanded_phones'):
+            self._expanded_phones = set()
             
+        is_expanded = phone in self._expanded_phones
+        has_history = len(history) > 0
+        
+        # Outer group container
+        group_container = ctk.CTkFrame(self.otp_list_frame, fg_color="transparent")
+        group_container.pack(fill="x", pady=2)
+        
+        # Main latest row
+        main_row = ctk.CTkFrame(group_container, fg_color="#1a1a2e", corner_radius=6, height=44)
+        main_row.pack(fill="x")
+        main_row.pack_propagate(False)
+        
+        status_text = "Used" if used else "Unused"
+        status_color = "#64748b" if used else "#10b981"
+        icon = "🔒" if used else "⚡"
+        
+        # Left frame
+        left_frame = ctk.CTkFrame(main_row, fg_color="transparent")
+        left_frame.pack(side="left", padx=8)
+        
+        def toggle_dropdown(p=phone):
+            if p in self._expanded_phones:
+                self._expanded_phones.remove(p)
+            else:
+                self._expanded_phones.add(p)
+            self._last_otp_state_key = None
+            self._refresh_otps()
+
+        if has_history:
+            arrow_icon = "▲" if is_expanded else "▼"
+            hist_count = len(history)
+            toggle_btn = ctk.CTkButton(
+                left_frame, text=f"{arrow_icon} ({hist_count})", width=48, height=22,
+                font=ctk.CTkFont(size=10, weight="bold"),
+                fg_color="#2563eb" if is_expanded else "#0f172a",
+                hover_color="#1d4ed8" if is_expanded else "#1e293b",
+                command=toggle_dropdown
+            )
+            toggle_btn.pack(side="left", padx=(0, 6))
+        else:
+            ctk.CTkLabel(
+                left_frame, text="  ",
+                font=ctk.CTkFont(size=10)
+            ).pack(side="left", padx=(0, 4))
+        
+        ctk.CTkLabel(
+            left_frame, text=f"{icon}  📱 {phone}",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#ccd6f6"
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            left_frame, text=f" [{status_text}]",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=status_color
+        ).pack(side="left", padx=(4, 0))
+        
+        if timestamp:
+            ctk.CTkLabel(
+                left_frame, text=f" • {timestamp}",
+                font=ctk.CTkFont(size=9),
+                text_color="#64748b"
+            ).pack(side="left", padx=(4, 0))
+        
+        # Right frame
+        right_frame = ctk.CTkFrame(main_row, fg_color="transparent")
+        right_frame.pack(side="right", padx=8)
+        
+        copy_btn = ctk.CTkButton(
+            right_frame, text="📋 Copy", width=62, height=26,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#334155", hover_color="#475569"
+        )
+        
+        def do_copy(text_to_copy=otp_str, btn=copy_btn):
+            self.clipboard_clear()
+            self.clipboard_append(text_to_copy)
+            btn.configure(text="✓ Copied", fg_color="#059669")
+            self.after(1200, lambda: btn.configure(text="📋 Copy", fg_color="#334155"))
+            
+        copy_btn.configure(command=do_copy)
+        copy_btn.pack(side="right", padx=(6, 0))
+        
+        color = "#64ffda" if not used else "#94a3b8"
+        ctk.CTkLabel(
+            right_frame, text=f" {display} ",
+            font=ctk.CTkFont(size=13, weight="bold", family="Consolas"),
+            text_color=color
+        ).pack(side="right")
+        
+        # Expandable History Box
+        if has_history and is_expanded:
+            hist_box = ctk.CTkFrame(group_container, fg_color="#0b1329", corner_radius=6, border_width=1, border_color="#1e293b")
+            hist_box.pack(fill="x", padx=12, pady=(2, 4))
+            
+            hdr = ctk.CTkFrame(hist_box, fg_color="transparent")
+            hdr.pack(fill="x", padx=10, pady=(6, 2))
+            ctk.CTkLabel(
+                hdr, text=f"📜 এই নম্বরের পূর্বের SMS / OTP ইতিহাস ({len(history)} টি):",
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color="#94a3b8"
+            ).pack(side="left")
+            
+            for item in history:
+                h_row = ctk.CTkFrame(hist_box, fg_color="#111c38", corner_radius=4, height=32)
+                h_row.pack(fill="x", padx=8, pady=2)
+                h_row.pack_propagate(False)
+                
+                h_disp = item.get("display", "?")
+                h_used = item.get("used", True)
+                h_time = item.get("timestamp", "")
+                h_otp_str = item.get("otp_string", "")
+                h_raw = item.get("raw_sms", "")
+                h_status = "Used" if h_used else "Unused"
+                h_color = "#64748b" if h_used else "#10b981"
+                
+                h_left = ctk.CTkFrame(h_row, fg_color="transparent")
+                h_left.pack(side="left", padx=8)
+                
+                ctk.CTkLabel(
+                    h_left, text=f"⏱️ {h_time}",
+                    font=ctk.CTkFont(size=10),
+                    text_color="#64748b"
+                ).pack(side="left")
+                
+                ctk.CTkLabel(
+                    h_left, text=f" [{h_status}]",
+                    font=ctk.CTkFont(size=9, weight="bold"),
+                    text_color=h_color
+                ).pack(side="left", padx=4)
+                
+                if h_raw:
+                    snippet = h_raw[:35] + ("..." if len(h_raw) > 35 else "")
+                    ctk.CTkLabel(
+                        h_left, text=f'"{snippet}"',
+                        font=ctk.CTkFont(size=9),
+                        text_color="#475569"
+                    ).pack(side="left", padx=6)
+                
+                h_right = ctk.CTkFrame(h_row, fg_color="transparent")
+                h_right.pack(side="right", padx=8)
+                
+                h_copy_btn = ctk.CTkButton(
+                    h_right, text="📋 Copy", width=52, height=22,
+                    font=ctk.CTkFont(size=9, weight="bold"),
+                    fg_color="#1e293b", hover_color="#334155"
+                )
+                
+                def make_copy_handler(s=h_otp_str, b=h_copy_btn):
+                    return lambda: do_copy(s, b)
+                    
+                h_copy_btn.configure(command=make_copy_handler())
+                h_copy_btn.pack(side="right", padx=(4, 0))
+                
+                ctk.CTkLabel(
+                    h_right, text=f" {h_disp} ",
+                    font=ctk.CTkFont(size=11, weight="bold", family="Consolas"),
+                    text_color="#94a3b8" if h_used else "#64ffda"
+                ).pack(side="right")
+
+    def _toggle_device_status(self, dev_id, is_active):
+        import requests, threading
+        def toggle_task():
+            try:
+                requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "is_active": is_active}, timeout=1)
+            except Exception:
+                pass
+        threading.Thread(target=toggle_task, daemon=True).start()
+
     def _rename_device(self, dev_id):
         from tkinter import simpledialog
-        import requests
+        import requests, threading
         
-        # Get current name from the UI labels implicitly, or just default
         current = "Device"
-        try:
-            resp = requests.get("http://127.0.0.1:5000/api/status", timeout=1)
-            if resp.ok:
-                devices = resp.json().get("devices", [])
-                for d in devices:
-                    if d.get("device_id") == dev_id:
-                        current = d.get("custom_name", "Device")
-                        break
-        except:
-            pass
+        if hasattr(self, '_device_rows') and dev_id in self._device_rows:
+            current = self._device_rows[dev_id].get("dev_name", "Device")
             
         new_name = simpledialog.askstring("Rename Device", "Enter new name for mobile:", initialvalue=current)
         if new_name:
-            try:
-                requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "custom_name": new_name}, timeout=1)
-            except:
-                pass
-            self._refresh_otps()
+            def update_task():
+                try:
+                    requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "custom_name": new_name}, timeout=1)
+                except Exception:
+                    pass
+            threading.Thread(target=update_task, daemon=True).start()
 
-    def _add_device_row(self, dev_data):
+    def _add_device_row_incremental(self, dev_data, dev_id, display_text, color, sim_text, is_active, dev_name):
         row = ctk.CTkFrame(self.device_list_frame, fg_color="#1a1a2e", corner_radius=6, height=30)
         row.pack(fill="x", pady=2)
         row.pack_propagate(False)
         
-        is_online = dev_data.get("online", False)
-        status_icon = "🟢" if is_online else "⚪"
-        color = "#059669" if is_online else "#495670"
-        
-        sims = []
-        if dev_data.get("sim1_name"): sims.append(dev_data["sim1_name"])
-        if dev_data.get("sim2_name"): sims.append(dev_data["sim2_name"])
-        sim_text = " | ".join(sims) if sims else "No SIM set"
-        
-        dev_id = dev_data.get('device_id')
-        dev_name = dev_data.get('custom_name', dev_data.get('device_name', 'Device'))
-        is_active = dev_data.get('is_active', True)
-        
-        # Name and Status Label
         name_label = ctk.CTkLabel(
-            row, text=f"  {status_icon}  {dev_name}",
+            row, text=display_text,
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=color
         )
         name_label.pack(side="left", padx=5)
         
-        # Switch to turn ON/OFF
         switch = ctk.CTkSwitch(
             row, text="", width=40,
             command=lambda: self._toggle_device_status(dev_id, switch.get())
         )
         if is_active: switch.select()
+        else: switch.deselect()
         switch.pack(side="right", padx=(5, 10))
         
-        # Edit Button
         ctk.CTkButton(
             row, text="✏️ Edit Name", width=50, height=22,
             font=ctk.CTkFont(size=10), fg_color="#233554", hover_color="#2a4365",
             command=lambda: self._rename_device(dev_id)
         ).pack(side="right", padx=5)
         
-        ctk.CTkLabel(
+        sim_label = ctk.CTkLabel(
             row, text=f"SIMs: {sim_text}  ",
             font=ctk.CTkFont(size=10),
             text_color="#8892b0"
-        ).pack(side="right", padx=10)
+        )
+        sim_label.pack(side="right", padx=10)
+        
+        self._device_rows[dev_id] = {
+            "row": row,
+            "name_label": name_label,
+            "switch": switch,
+            "sim_label": sim_label,
+            "display_text": display_text,
+            "color": color,
+            "sim_text": sim_text,
+            "is_active": is_active,
+            "dev_name": dev_name
+        }
+
+    def _add_device_row(self, dev_data):
+        dev_id = dev_data.get('device_id')
+        dev_name = dev_data.get('custom_name', dev_data.get('device_name', 'Device'))
+        is_active = dev_data.get('is_active', True)
+        is_online = dev_data.get("online", False)
+        status_icon = "🟢" if is_online else "⚪"
+        color = "#059669" if is_online else "#495670"
+        sims = []
+        if dev_data.get("sim1_name"): sims.append(dev_data["sim1_name"])
+        if dev_data.get("sim2_name"): sims.append(dev_data["sim2_name"])
+        sim_text = " | ".join(sims) if sims else "No SIM set"
+        display_text = f"  {status_icon}  {dev_name}"
+        self._add_device_row_incremental(dev_data, dev_id, display_text, color, sim_text, is_active, dev_name)
+
     
     # ===== PROFILES TAB =====
     def _build_profiles_tab(self):
@@ -560,6 +1158,15 @@ class IVACApp(ctk.CTk):
             fg_color="#2563eb", hover_color="#1d4ed8",
             command=self._open_add_profile_dialog
         ).pack(side="right", padx=10)
+        
+        # Refresh Profiles Button
+        ctk.CTkButton(
+            header_frame, text="🔄 রিলোড",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=80, height=32,
+            fg_color="#4b5563", hover_color="#374151",
+            command=self._refresh_profiles_tab
+        ).pack(side="right")
         
         # Profile List Scrollable Frame
         self.profile_scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
@@ -622,7 +1229,7 @@ class IVACApp(ctk.CTk):
         if phone:
             details_text += f"  •  📱 {phone}"
         if password:
-            details_text += f"  •  🔒 {'•' * min(len(password), 8)}"
+            details_text += f"  •  🔓 {password}"
             
         ctk.CTkLabel(
             info_frame, text=details_text,
@@ -698,7 +1305,7 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=12, weight="bold")
         ).pack(anchor="w", padx=20, pady=(0, 2))
         
-        dir_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: Profile 1, Profile 2, Default")
+        dir_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 1, 2, 3 বা Default")
         dir_entry.pack(padx=20, pady=(0, 6))
         
         # IVAC Login Mobile Number
@@ -707,7 +1314,7 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=12, weight="bold")
         ).pack(anchor="w", padx=20, pady=(0, 2))
         
-        phone_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 01604686192")
+        phone_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 01912345678")
         phone_entry.pack(padx=20, pady=(0, 8))
         
         # IVAC Login Password
@@ -716,19 +1323,19 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=12, weight="bold")
         ).pack(anchor="w", padx=20, pady=(0, 2))
         
-        pass_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="IVAC সাইন-ইন পাসওয়ার্ড দিন", show="*")
+        pass_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="IVAC সাইন-ইন পাসওয়ার্ড দিন")
         pass_entry.pack(padx=20, pady=(0, 8))
         
         def toggle_pass_vis():
-            if pass_entry.cget("show") == "*":
-                pass_entry.configure(show="")
-                show_pass_btn.configure(text="🙈 Hide Password")
-            else:
+            if pass_entry.cget("show") == "":
                 pass_entry.configure(show="*")
                 show_pass_btn.configure(text="👁️ Show Password")
+            else:
+                pass_entry.configure(show="")
+                show_pass_btn.configure(text="🙈 Hide Password")
                 
         show_pass_btn = ctk.CTkButton(
-            dialog, text="👁️ Show Password", width=120, height=22,
+            dialog, text="🙈 Hide Password", width=120, height=22,
             font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
             command=toggle_pass_vis
         )
@@ -770,6 +1377,10 @@ class IVACApp(ctk.CTk):
         def save_new():
             name = name_entry.get().strip()
             chrome_profile = dir_entry.get().strip()
+            
+            if chrome_profile.isdigit():
+                chrome_profile = f"Profile {chrome_profile}"
+                
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
             
@@ -848,20 +1459,20 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=12, weight="bold")
         ).pack(anchor="w", padx=20, pady=(0, 2))
         
-        pass_entry = ctk.CTkEntry(dialog, width=420, show="*")
+        pass_entry = ctk.CTkEntry(dialog, width=420)
         pass_entry.insert(0, profile.get("password", ""))
         pass_entry.pack(padx=20, pady=(0, 8))
         
         def toggle_pass_vis():
-            if pass_entry.cget("show") == "*":
-                pass_entry.configure(show="")
-                show_pass_btn.configure(text="🙈 Hide Password")
-            else:
+            if pass_entry.cget("show") == "":
                 pass_entry.configure(show="*")
                 show_pass_btn.configure(text="👁️ Show Password")
+            else:
+                pass_entry.configure(show="")
+                show_pass_btn.configure(text="🙈 Hide Password")
                 
         show_pass_btn = ctk.CTkButton(
-            dialog, text="👁️ Show Password", width=120, height=22,
+            dialog, text="🙈 Hide Password", width=120, height=22,
             font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
             command=toggle_pass_vis
         )
@@ -870,6 +1481,10 @@ class IVACApp(ctk.CTk):
         def save_edit():
             name = name_entry.get().strip()
             chrome_profile = dir_entry.get().strip()
+            
+            if chrome_profile.isdigit():
+                chrome_profile = f"Profile {chrome_profile}"
+                
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
             
@@ -954,15 +1569,15 @@ class IVACApp(ctk.CTk):
             time.sleep(1)
     
     def _add_rocket_account(self):
-        num = self.rocket_num_entry.get().strip()
-        pin = self.rocket_pin_entry.get().strip()
-        if len(num) != 12 or not num.isdigit():
+        num = self.pay_num_entry.get().strip()
+        r_ext = self.rocket_extra_entry.get().strip()
+        r_pin = self.rocket_pin_entry.get().strip()
+        b_pin = self.bkash_pin_entry.get().strip()
+        n_pin = self.nagad_pin_entry.get().strip()
+        
+        if len(num) != 11 or not num.isdigit():
             from tkinter import messagebox
-            messagebox.showerror("Error", "Rocket নম্বর ১২ ডিজিটের হতে হবে!")
-            return
-        if not pin:
-            from tkinter import messagebox
-            messagebox.showerror("Error", "PIN দিতে হবে!")
+            messagebox.showerror("Error", "মোবাইল নম্বর ১১ ডিজিটের হতে হবে!")
             return
         
         accounts = self.config.get("rocket_accounts", [])
@@ -975,12 +1590,18 @@ class IVACApp(ctk.CTk):
         accounts.append({
             "id": str(uuid.uuid4()),
             "number": num,
-            "pin": pin
+            "rocket_extra": r_ext,
+            "rocket_pin": r_pin,
+            "bkash_pin": b_pin,
+            "nagad_pin": n_pin
         })
         self.config["rocket_accounts"] = accounts
         self._save_config()
-        self.rocket_num_entry.delete(0, 'end')
+        self.pay_num_entry.delete(0, 'end')
+        self.rocket_extra_entry.delete(0, 'end')
         self.rocket_pin_entry.delete(0, 'end')
+        self.bkash_pin_entry.delete(0, 'end')
+        self.nagad_pin_entry.delete(0, 'end')
         self._refresh_rocket_list()
         
     def _delete_rocket_account(self, acc_id):
@@ -988,6 +1609,44 @@ class IVACApp(ctk.CTk):
         self.config["rocket_accounts"] = [a for a in accounts if a.get("id") != acc_id]
         self._save_config()
         self._refresh_rocket_list()
+        
+    def _build_rocket_row(self, acc):
+        row = ctk.CTkFrame(self.rocket_list_frame, fg_color="transparent")
+        row.pack(fill="x", pady=2)
+        
+        display_num = acc['number']
+        if acc.get('rocket_extra'):
+            display_num += f"-{acc['rocket_extra']}"
+            
+        lbl = ctk.CTkLabel(row, text=f"{display_num} (R: *** | B: *** | N: ***)", text_color="#ccd6f6")
+        lbl.pack(side="left", padx=5)
+        
+        is_hidden = [True]
+        
+        def toggle_vis():
+            if is_hidden[0]:
+                r_pin = acc.get('rocket_pin', '')
+                b_pin = acc.get('bkash_pin', '')
+                n_pin = acc.get('nagad_pin', '')
+                lbl.configure(text=f"{display_num} (R:{r_pin} | B:{b_pin} | N:{n_pin})")
+                eye_btn.configure(text="🙈")
+                is_hidden[0] = False
+            else:
+                lbl.configure(text=f"{display_num} (R: *** | B: *** | N: ***)")
+                eye_btn.configure(text="👁️")
+                is_hidden[0] = True
+                
+        eye_btn = ctk.CTkButton(
+            row, text="👁️", width=30, height=24,
+            fg_color="transparent", text_color="#8892b0", hover_color="#112240",
+            command=toggle_vis
+        )
+        eye_btn.pack(side="left", padx=5)
+        
+        ctk.CTkButton(
+            row, text="Delete", width=50, fg_color="#ef4444", hover_color="#dc2626", height=24,
+            command=lambda aid=acc['id']: self._delete_rocket_account(aid)
+        ).pack(side="right", padx=5)
         
     def _refresh_rocket_list(self):
         for w in self.rocket_list_frame.winfo_children():
@@ -999,44 +1658,51 @@ class IVACApp(ctk.CTk):
             return
             
         for acc in accounts:
-            row = ctk.CTkFrame(self.rocket_list_frame, fg_color="transparent")
-            row.pack(fill="x", pady=2)
-            ctk.CTkLabel(row, text=f"{acc['number']} (***)", text_color="#ccd6f6").pack(side="left", padx=5)
-            ctk.CTkButton(
-                row, text="Delete", width=50, fg_color="#ef4444", hover_color="#dc2626", height=24,
-                command=lambda aid=acc['id']: self._delete_rocket_account(aid)
-            ).pack(side="right", padx=5)
-
+            self._build_rocket_row(acc)
     # ===== SETTINGS TAB =====
     def _build_settings_tab(self):
         tab = self.tab_settings
         
-        # Rocket Config (Moved from Extension Tab)
+        # Rocket Config (Moved from Extension Tab) -> Now Payment Accounts
         rocket_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
         rocket_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
-            rocket_card, text="📱 DBBL Rocket Accounts",
+            rocket_card, text="💳 Payment Accounts",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#ccd6f6"
         ).pack(anchor="w", padx=15, pady=(10, 5))
         
         ctk.CTkLabel(
-            rocket_card, text="আপনার রকেট নম্বর এবং পিন সেভ করুন। এক্সটেনশন এখান থেকে নম্বর সিঙ্ক করে নেবে।",
+            rocket_card, text="আপনার মোবাইল নম্বর এবং পিন সেভ করুন। রকেটের জন্য ১২তম ডিজিটটি আলাদা বক্সে দিন।",
             font=ctk.CTkFont(size=11), text_color="#8892b0"
         ).pack(anchor="w", padx=15, pady=(0, 10))
         
-        input_frame = ctk.CTkFrame(rocket_card, fg_color="transparent")
-        input_frame.pack(fill="x", padx=15, pady=(0, 10))
+        # Row 1
+        input_frame1 = ctk.CTkFrame(rocket_card, fg_color="transparent")
+        input_frame1.pack(fill="x", padx=15, pady=(0, 5))
         
-        self.rocket_num_entry = ctk.CTkEntry(input_frame, placeholder_text="Rocket Number (12 digit)", width=200)
-        self.rocket_num_entry.pack(side="left", padx=(0, 10))
+        self.pay_num_entry = ctk.CTkEntry(input_frame1, placeholder_text="Base Phone Number (11 digit)", width=200)
+        self.pay_num_entry.pack(side="left", padx=(0, 10))
         
-        self.rocket_pin_entry = ctk.CTkEntry(input_frame, placeholder_text="PIN", show="*", width=100)
+        self.rocket_extra_entry = ctk.CTkEntry(input_frame1, placeholder_text="Rocket Extra (1 digit)", width=130)
+        self.rocket_extra_entry.pack(side="left", padx=(0, 10))
+        
+        # Row 2
+        input_frame2 = ctk.CTkFrame(rocket_card, fg_color="transparent")
+        input_frame2.pack(fill="x", padx=15, pady=(0, 10))
+        
+        self.rocket_pin_entry = ctk.CTkEntry(input_frame2, placeholder_text="Rocket PIN", show="*", width=90)
         self.rocket_pin_entry.pack(side="left", padx=(0, 10))
         
+        self.bkash_pin_entry = ctk.CTkEntry(input_frame2, placeholder_text="bKash PIN", show="*", width=90)
+        self.bkash_pin_entry.pack(side="left", padx=(0, 10))
+        
+        self.nagad_pin_entry = ctk.CTkEntry(input_frame2, placeholder_text="Nagad PIN", show="*", width=90)
+        self.nagad_pin_entry.pack(side="left", padx=(0, 10))
+        
         ctk.CTkButton(
-            input_frame, text="Add", width=60,
+            input_frame2, text="Add", width=60,
             fg_color="#233554", hover_color="#059669",
             command=self._add_rocket_account
         ).pack(side="left")
