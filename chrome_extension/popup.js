@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentPhone = "";
     let webfiles = [];
     let webfileEnabled = true;
-    let webfileMode = "auto";
+    
 
     // Payment accounts: [{id, number, rocket_extra, rocket_pin, bkash_pin, nagad_pin}]
     let rocketAccounts = [];
@@ -127,9 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (result.webfile_enabled !== undefined) {
             webfileEnabled = result.webfile_enabled;
         }
-        if (result.webfile_mode) {
-            webfileMode = result.webfile_mode;
-        }
+        
 
         // Rocket accounts load
         if (result.rocket_accounts) {

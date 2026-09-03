@@ -1953,11 +1953,11 @@ setInterval(() => {
     try {
     chrome.storage.local.get(['webfile_enabled', 'webfile_mode', 'saved_webfiles'], (res) => {
         const enabled = res.webfile_enabled !== undefined ? res.webfile_enabled : true;
-        const mode = res.webfile_mode || 'auto';
+        
         const files = res.saved_webfiles || [];
 
         // à¦¬à¦¨à§à¦§ à¦¥à¦¾à¦•à¦²à§‡ à¦¬à¦¾ Manual à¦®à§‹à¦¡à§‡ à¦•à¦¿à¦›à§ à¦•à¦°à¦¬à§‡ à¦¨à¦¾
-        if (!enabled || mode !== 'auto') return;
+        if (!enabled) return;
         // à¦•à§‹à¦¨à§‹ à¦«à¦¾à¦‡à¦² à¦¨à§‡à¦‡
         if (files.length === 0) return;
         // à¦‡à¦¤à¦¿à¦®à¦§à§à¦¯à§‡ à¦†à¦ªà¦²à§‹à¦¡ à¦šà¦²à¦›à§‡
