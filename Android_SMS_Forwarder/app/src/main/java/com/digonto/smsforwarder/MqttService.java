@@ -143,7 +143,7 @@ public class MqttService extends Service {
             try {
                 if (mqttClient != null) {
                     try {
-                        mqttClient.disconnectForcibly(500);
+                        mqttClient.disconnectForcibly();
                         mqttClient.close();
                     } catch (Exception ignored) {}
                     mqttClient = null;
@@ -406,7 +406,7 @@ public class MqttService extends Service {
                 for (String code : codes) {
                     mqttClient.publish("digonto_ivac_sms_" + code + "_sys", new MqttMessage(offlineData.toString().getBytes()));
                 }
-                mqttClient.disconnectForcibly(500);
+                mqttClient.disconnectForcibly();
                 mqttClient.close();
             } catch (Exception ignored) {}
         }

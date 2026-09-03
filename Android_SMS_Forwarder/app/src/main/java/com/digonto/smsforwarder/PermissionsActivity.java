@@ -85,12 +85,22 @@ public class PermissionsActivity extends AppCompatActivity {
 
         switchBattery.setOnClickListener(v -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Intent intent = new Intent();
                 PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
-                    intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
+                if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        try {
+                            Intent appSettings = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                            appSettings.setData(Uri.parse("package:" + getPackageName()));
+                            startActivity(appSettings);
+                        } catch (Exception ignored) {}
+                    }
+                } else {
+                    Toast.makeText(this, "Battery Optimization already disabled!", Toast.LENGTH_SHORT).show();
+                    switchBattery.setChecked(true);
                 }
             }
         });
@@ -120,7 +130,7 @@ public class PermissionsActivity extends AppCompatActivity {
         boolean hasBattery = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            hasBattery = pm.isIgnoringBatteryOptimizations(getPackageName());
+            hasBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
         }
         switchBattery.setChecked(hasBattery);
 
@@ -144,7 +154,7 @@ public class PermissionsActivity extends AppCompatActivity {
         boolean hasBattery = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            hasBattery = pm.isIgnoringBatteryOptimizations(getPackageName());
+            hasBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
         }
         
         boolean hasNotif = true;
