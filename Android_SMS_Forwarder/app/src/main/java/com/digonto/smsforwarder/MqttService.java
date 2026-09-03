@@ -201,7 +201,7 @@ public class MqttService extends Service {
                     pingData.put("timestamp", System.currentTimeMillis());
 
                     MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
-                    msg.setQos(1); // QoS 1 for instant guaranteed delivery!
+                    msg.setQos(0);
 
                     Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
                     for (String code : codes) {
@@ -231,7 +231,7 @@ public class MqttService extends Service {
             public void run() {
                 sendSinglePing();
                 if (pingHandler != null) {
-                    pingHandler.postDelayed(this, 2000);
+                    pingHandler.postDelayed(this, 1000);
                 }
             }
         };

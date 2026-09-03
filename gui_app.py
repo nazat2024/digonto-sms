@@ -735,7 +735,7 @@ class IVACApp(ctk.CTk):
                         self.after(0, lambda: self.server_status_label.configure(text="⚠️ Error", text_color="#ff6b6b"))
                 except Exception:
                     pass
-                time.sleep(0.5)
+                time.sleep(0.2)
                 
         threading.Thread(target=poller_loop, daemon=True).start()
 

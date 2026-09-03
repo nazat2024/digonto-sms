@@ -373,7 +373,7 @@ def get_status():
     # Ultra-fast in-memory iteration without disk I/O or redundant regex
     for dev_id, data in list(connected_devices.items()):
         # Mark online if seen within 12 seconds
-        is_seen = (current_time - data.get("last_seen", 0) <= 6)
+        is_seen = (current_time - data.get("last_seen", 0) <= 2.5)
         data["online"] = is_seen
         
         is_on = bool(is_seen and data.get("is_active", True))
