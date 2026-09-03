@@ -188,7 +188,7 @@ public class MqttService extends Service {
         }).start();
     }
 
-    private void sendSinglePing() {
+    public void sendSinglePing() {
         new Thread(() -> {
             try {
                 if (mqttClient != null && mqttClient.isConnected()) {

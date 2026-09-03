@@ -495,7 +495,12 @@ def payment_success():
     success = bool(record_payment(amount, "success", "otp_submitted", rocket_account, "Custom Site"))
     return jsonify({"success": success}), 200
 
+_cached_license_key = None
+
 def get_installed_license_key():
+    global _cached_license_key
+    if _cached_license_key is not None:
+        return _cached_license_key
     try:
         app_data = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
         lic_path = os.path.join(app_data, "license.dat")
@@ -505,9 +510,11 @@ def get_installed_license_key():
             with open(lic_path, 'r', encoding='utf-8') as f:
                 enc = f.read().strip()
             dec = decrypt_data(enc, extra_key=generate_hwid())
-            return json.loads(dec).get("license_key", "")
+            _cached_license_key = json.loads(dec).get("license_key", "")
+            return _cached_license_key
     except Exception:
         pass
+    _cached_license_key = ""
     return ""
 
 last_license_status = None
@@ -633,21 +640,29 @@ def receive_heartbeat():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-last_license_status = None
+last_license_status = True
 last_license_check_time = 0
+_is_checking_license = False
 
 def is_license_active():
-    global last_license_status, last_license_check_time
+    global last_license_status, last_license_check_time, _is_checking_license
     import time
-    if time.time() - last_license_check_time > 60 or last_license_status is None:
-        try:
-            from license_system.license_manager import check_license
-            # Force cloud check once every 60s while active as safety net (only 60 reads/hr, 0.1% quota)
-            info = check_license(force_cloud=True)
-            last_license_status = bool(info.is_valid)
-        except Exception:
-            last_license_status = False
-        last_license_check_time = time.time()
+    now = time.time()
+    # Check asynchronously in background thread so /api/status never blocks
+    if now - last_license_check_time > 120 and not _is_checking_license:
+        _is_checking_license = True
+        def bg_lic_check():
+            global last_license_status, last_license_check_time, _is_checking_license
+            try:
+                from license_system.license_manager import check_license
+                info = check_license()
+                last_license_status = bool(info.is_valid)
+            except Exception:
+                pass
+            finally:
+                last_license_check_time = time.time()
+                _is_checking_license = False
+        threading.Thread(target=bg_lic_check, daemon=True).start()
     return bool(last_license_status)
 
 def generate_auth_token():

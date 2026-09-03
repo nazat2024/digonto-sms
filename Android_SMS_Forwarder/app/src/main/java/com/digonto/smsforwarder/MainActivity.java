@@ -282,6 +282,9 @@ public class MainActivity extends AppCompatActivity {
         sim2Input.setEnabled(false);
         btnSaveSim.setText("EDIT");
         btnSaveSim.setTextColor(android.graphics.Color.parseColor("#0284C7"));
+        if (MqttService.instance != null) {
+            MqttService.instance.sendSinglePing();
+        }
     }
 
     private void unlockSimInputs() {
@@ -370,6 +373,9 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         if (hasAllPermissions()) {
             startMqttService();
+            if (MqttService.instance != null) {
+                MqttService.instance.sendSinglePing();
+            }
         } else {
             startActivity(new Intent(this, PermissionsActivity.class));
             finish();
