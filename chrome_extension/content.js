@@ -3027,13 +3027,13 @@ function getResolvedPaymentAccount(res) {
                 // ===== STEP 2: OTP Verification =====
                 if (isOtpStep) {
                     // Fetch latest OTP for bkash number
-                    chrome.runtime.sendMessage({ action: 'fetchOtp', phone: bkashNumber }, (d) => {
+                    chrome.runtime.sendMessage({ action: 'fetchOtp', phone: bkashNumber, source: 'B' }, (d) => {
                         if (d && d.success && d.data && d.data.otp_string) {
                             const otp = d.data.otp_string;
                             if (mainInput.value !== otp) {
                                 setBkashValue(mainInput, otp);
                                 console.log('[IVAC] bKash OTP à¦¬à¦¸à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡:', otp);
-                                chrome.runtime.sendMessage({ action: 'markUsed', phone: bkashNumber });
+                                chrome.runtime.sendMessage({ action: 'markUsed', phone: bkashNumber, source: 'B' });
                             }
                         }
                     });
