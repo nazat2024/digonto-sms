@@ -90,7 +90,6 @@ public class MqttService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Set<String> pairingCodes = prefs.getStringSet("pairing_codes", new HashSet<>());
         
-        // Handle migration from old single code to set (in case it wasn't done by UI yet)
         if (pairingCodes.isEmpty()) {
             String oldCode = prefs.getString("pairing_code", "");
             if (!oldCode.isEmpty()) {
@@ -131,7 +130,7 @@ public class MqttService extends Service {
                 options.setCleanSession(true);
                 options.setAutomaticReconnect(true);
                 options.setConnectionTimeout(15);
-                options.setKeepAliveInterval(30); // Keep alive
+                options.setKeepAliveInterval(30);
 
                 mqttClient.setCallback(new org.eclipse.paho.client.mqttv3.MqttCallbackExtended() {
                     @Override
@@ -147,6 +146,9 @@ public class MqttService extends Service {
                         } catch (Exception e) {
                             Log.e(TAG, "Error subscribing on connectComplete", e);
                         }
+
+                        // Send ping IMMEDIATELY upon connection!
+                        sendSinglePing();
                     }
 
                     @Override
@@ -181,9 +183,35 @@ public class MqttService extends Service {
             } catch (Exception e) {
                 isConnectedToBroker = false;
                 Log.e(TAG, "MQTT Connection error", e);
-                // Retry after 5 seconds
                 new Handler(Looper.getMainLooper()).postDelayed(() -> connectToMqtt(pairingCodes), 5000);
             }
+        }).start();
+    }
+
+    private void sendSinglePing() {
+        new Thread(() -> {
+            try {
+                if (mqttClient != null && mqttClient.isConnected()) {
+                    JSONObject pingData = new JSONObject();
+                    pingData.put("type", "ping");
+                    pingData.put("device_id", prefs.getString("device_id", "Unknown"));
+                    pingData.put("device_name", Build.MODEL);
+                    pingData.put("sim1_name", prefs.getString("sim1_name", "Unknown SIM 1"));
+                    pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
+                    pingData.put("timestamp", System.currentTimeMillis());
+
+                    MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
+                    msg.setQos(1); // QoS 1 for instant guaranteed delivery!
+
+                    Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+                    for (String code : codes) {
+                        String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                        try {
+                            mqttClient.publish(sysTopic, msg);
+                        } catch (Exception ignored) {}
+                    }
+                }
+            } catch (Exception ignored) {}
         }).start();
     }
 
@@ -201,34 +229,9 @@ public class MqttService extends Service {
         pingRunnable = new Runnable() {
             @Override
             public void run() {
-                try {
-                    if (mqttClient != null && mqttClient.isConnected()) {
-                        JSONObject pingData = new JSONObject();
-                        pingData.put("type", "ping");
-                        pingData.put("device_id", prefs.getString("device_id", "Unknown"));
-                        pingData.put("device_name", Build.MODEL);
-                        pingData.put("sim1_name", prefs.getString("sim1_name", "Unknown SIM 1"));
-                        pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
-                        pingData.put("timestamp", System.currentTimeMillis());
-
-                        MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
-                        msg.setQos(0);
-
-                        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
-                        for (String code : codes) {
-                            String sysTopic = "digonto_ivac_sms_" + code + "_sys";
-                            try {
-                                mqttClient.publish(sysTopic, msg);
-                            } catch (Exception e) {
-                                Log.e(TAG, "Error publishing ping to " + sysTopic, e);
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Ping error", e);
-                }
+                sendSinglePing();
                 if (pingHandler != null) {
-                    pingHandler.postDelayed(this, 2000); // 2 second ping as requested
+                    pingHandler.postDelayed(this, 2000);
                 }
             }
         };
@@ -335,8 +338,17 @@ public class MqttService extends Service {
         }
         if (mqttClient != null) {
             try {
+                if (mqttClient.isConnected()) {
+                    JSONObject offData = new JSONObject();
+                    offData.put("type", "offline");
+                    offData.put("device_id", prefs.getString("device_id", "Unknown"));
+                    Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+                    for (String code : codes) {
+                        mqttClient.publish("digonto_ivac_sms_" + code + "_sys", new MqttMessage(offData.toString().getBytes()));
+                    }
+                }
                 mqttClient.disconnect();
-            } catch (MqttException ignored) {}
+            } catch (Exception ignored) {}
         }
     }
 

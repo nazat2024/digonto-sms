@@ -373,7 +373,7 @@ def get_status():
     # Ultra-fast in-memory iteration without disk I/O or redundant regex
     for dev_id, data in list(connected_devices.items()):
         # Mark online if seen within 12 seconds
-        is_seen = (current_time - data.get("last_seen", 0) <= 15)
+        is_seen = (current_time - data.get("last_seen", 0) <= 6)
         data["online"] = is_seen
         
         is_on = bool(is_seen and data.get("is_active", True))
@@ -887,6 +887,11 @@ try:
                     # Send pong immediately back to mobile
                     pong = json.dumps({"type": "pong"}).encode('utf-8')
                     client.publish(MQTT_SYS_TOPIC, pong)
+                elif sys_data.get("type") == "offline":
+                    dev_id = sys_data.get("device_id")
+                    if dev_id and dev_id in connected_devices:
+                        connected_devices[dev_id]["online"] = False
+                        connected_devices[dev_id]["last_seen"] = 0
                 return
 
             import base64
