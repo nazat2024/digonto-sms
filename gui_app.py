@@ -556,12 +556,21 @@ class IVACApp(ctk.CTk):
         self.tab_extension = self.tabview.add("🔌 Extension")
         self.tab_license = self.tabview.add("🔑 License")
         
+        # 1. Active tab loads instantly (< 50ms)
         self._build_home_tab()
-        self._build_otps_tab()
-        self._build_profiles_tab()
-        self._build_settings_tab()
-        self._build_extension_tab()
-        self._build_license_tab()
+        
+        # 2. Secondary tabs load in background without blocking window launch
+        def _load_secondary_tabs():
+            try:
+                self._build_otps_tab()
+                self._build_profiles_tab()
+                self._build_settings_tab()
+                self._build_extension_tab()
+                self._build_license_tab()
+            except Exception as e:
+                print(f"Secondary tabs load error: {e}")
+                
+        self.after(50, _load_secondary_tabs)
         
         # ===== FOOTER =====
         footer = ctk.CTkFrame(self, fg_color="#0a192f", corner_radius=0, height=30)
