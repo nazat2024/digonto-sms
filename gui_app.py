@@ -214,7 +214,7 @@ class IVACApp(ctk.CTk):
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
-    def _lockout_license(self, error_msg="আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!"):
+    def _lockout_license(self, error_msg="আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!", status="blocked"):
         self._is_locked_out = True
         self._poller_running = False
         
@@ -234,33 +234,82 @@ class IVACApp(ctk.CTk):
                 
         lock_frame = ctk.CTkFrame(self, fg_color="#0a192f")
         lock_frame.pack(fill="both", expand=True)
+
+        is_new = (status == "not_activated" or "কোনো লাইসেন্স" in error_msg)
+        is_expired = (status == "expired" or "মেয়াদ" in error_msg)
+        is_dev_mismatch = (status == "invalid_device" or "অন্য ডিভাইসের" in error_msg or "অন্য কম্পিউটারে" in error_msg)
         
-        ctk.CTkLabel(lock_frame, text="🚫", font=ctk.CTkFont(size=46)).pack(pady=(25, 4))
+        if is_new:
+            icon_char = "✨"
+            title_text = "লাইসেন্স অ্যাক্টিভেশন (Activation)"
+            title_color = "#38bdf8"
+            subtitle_text = "Digonto QuickFill-এ আপনাকে স্বাগতম!"
+            guide_text = "সফটওয়্যারটি চালু করতে আপনার ক্রয়কৃত লাইসেন্স কী (License Key) প্রদান করুন:"
+            key_label_text = "আপনার লাইসেন্স কী (License Key):"
+            btn_text = "🔑 লাইসেন্স অ্যাক্টিভেট করুন"
+            show_unblock_btn = False
+            initial_status = "লাইসেন্স কোড লিখে অ্যাক্টিভেট বাটনে ক্লিক করুন"
+            initial_status_color = "#94a3b8"
+        elif is_expired:
+            icon_char = "⏰"
+            title_text = "লাইসেন্সের মেয়াদ শেষ হয়ে গেছে!"
+            title_color = "#f59e0b"
+            subtitle_text = error_msg
+            guide_text = "চালিয়ে যেতে আপনার লাইসেন্স রিনিউ করুন বা নতুন লাইসেন্স কী দিন:"
+            key_label_text = "নতুন লাইসেন্স কী (License Key):"
+            btn_text = "🔑 নতুন কী দিয়ে অ্যাক্টিভেট করুন"
+            show_unblock_btn = False
+            initial_status = "নতুন কোড দিয়ে অ্যাক্টিভেট করুন"
+            initial_status_color = "#f59e0b"
+        elif is_dev_mismatch:
+            icon_char = "🔒"
+            title_text = "ডিভাইস অমিল (Device Mismatch)!"
+            title_color = "#f97316"
+            subtitle_text = "এই লাইসেন্সটি অন্য কম্পিউটারে সক্রিয় রয়েছে!"
+            guide_text = "এই কম্পিউটারে চালাতে এডমিনকে HWID রিসেট করতে বলুন, অথবা নতুন লাইসেন্স কী দিন:"
+            key_label_text = "নতুন লাইসেন্স কী (License Key):"
+            btn_text = "🔑 নতুন কী দিয়ে অ্যাক্টিভেট করুন"
+            show_unblock_btn = True
+            initial_status = "⏳ এডমিন HWID রিসেট করলে আনব্লক স্ট্যাটাস চেক করুন..."
+            initial_status_color = "#f59e0b"
+        else: # Blocked
+            icon_char = "🚫"
+            title_text = "লাইসেন্স সাময়িক নিষ্ক্রিয় / ব্লক করা হয়েছে!"
+            title_color = "#ef4444"
+            subtitle_text = error_msg
+            guide_text = "এডমিন আনব্লক করামাত্রই সফটওয়্যারটি স্বয়ংক্রিয়ভাবে চালু হবে, অথবা নতুন লাইসেন্স কী দিন:"
+            key_label_text = "নতুন লাইসেন্স কী (License Key):"
+            btn_text = "🔑 অ্যাক্টিভেট করুন"
+            show_unblock_btn = True
+            initial_status = "⏳ এডমিন আনব্লক করার অপেক্ষায়..."
+            initial_status_color = "#f59e0b"
+        
+        ctk.CTkLabel(lock_frame, text=icon_char, font=ctk.CTkFont(size=44)).pack(pady=(22, 4))
         ctk.CTkLabel(
-            lock_frame, text="লাইসেন্স নিষ্ক্রিয় / ব্লক করা হয়েছে!",
+            lock_frame, text=title_text,
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="#ef4444"
+            text_color=title_color
         ).pack(pady=3)
         
         self.lock_msg_label = ctk.CTkLabel(
-            lock_frame, text=error_msg,
+            lock_frame, text=subtitle_text,
             font=ctk.CTkFont(size=13),
             text_color="#cbd5e1"
         )
         self.lock_msg_label.pack(pady=4)
         
         ctk.CTkLabel(
-            lock_frame, text="এডমিন আনব্লক করামাত্রই সফটওয়্যারটি স্বয়ংক্রিয়ভাবে চালু হবে, অথবা নতুন লাইসেন্স কী দিন:",
+            lock_frame, text=guide_text,
             font=ctk.CTkFont(size=11),
             text_color="#8892b0"
         ).pack(pady=(0, 10))
         
-        # IN-WINDOW LICENSE ACTIVATION CARD (NO SEPARATE POPUP!)
+        # IN-WINDOW LICENSE ACTIVATION CARD
         card = ctk.CTkFrame(lock_frame, fg_color="#112240", corner_radius=10)
         card.pack(padx=25, pady=5, fill="x")
         
         ctk.CTkLabel(
-            card, text="নতুন লাইসেন্স কী (License Key):",
+            card, text=key_label_text,
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color="#ccd6f6"
         ).pack(anchor="w", padx=20, pady=(12, 4))
@@ -278,27 +327,30 @@ class IVACApp(ctk.CTk):
         btn_row.pack(fill="x", padx=20, pady=(10, 8))
         
         self.activate_inline_btn = ctk.CTkButton(
-            btn_row, text="🔑 অ্যাক্টিভেট করুন",
+            btn_row, text=btn_text,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color="#059669", hover_color="#047857",
-            height=34,
+            height=36,
             command=self._activate_new_key_inline
         )
-        self.activate_inline_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        
-        self.recheck_unblock_btn = ctk.CTkButton(
-            btn_row, text="🔄 আনব্লক স্ট্যাটাস চেক",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color="#2563eb", hover_color="#1d4ed8",
-            height=34,
-            command=self._recheck_unblock_manually
-        )
-        self.recheck_unblock_btn.pack(side="right", fill="x", expand=True, padx=(5, 0))
+        if show_unblock_btn:
+            self.activate_inline_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+            self.recheck_unblock_btn = ctk.CTkButton(
+                btn_row, text="🔄 আনব্লক স্ট্যাটাস চেক",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                fg_color="#2563eb", hover_color="#1d4ed8",
+                height=36,
+                command=self._recheck_unblock_manually
+            )
+            self.recheck_unblock_btn.pack(side="right", fill="x", expand=True, padx=(5, 0))
+        else:
+            self.activate_inline_btn.pack(fill="x", expand=True)
+            self.recheck_unblock_btn = None
         
         self.activate_status_label = ctk.CTkLabel(
-            card, text="⏳ এডমিন আনব্লক করার অপেক্ষায়...",
+            card, text=initial_status,
             font=ctk.CTkFont(size=11),
-            text_color="#f59e0b"
+            text_color=initial_status_color
         )
         self.activate_status_label.pack(pady=(0, 10))
         
@@ -482,7 +534,7 @@ class IVACApp(ctk.CTk):
                 pass
         
         if not info.is_valid:
-            self._lockout_license(info.error_message or "আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!")
+            self._lockout_license(info.error_message or "আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!", status=getattr(info, 'status', 'blocked'))
             return
             
         self._build_main_ui()
