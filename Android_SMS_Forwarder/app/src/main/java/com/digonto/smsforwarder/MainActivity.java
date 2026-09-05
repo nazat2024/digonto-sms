@@ -32,6 +32,7 @@ import java.util.Set;
 public class MainActivity extends AppCompatActivity {
 
     private TextInputEditText pairingCodeInput, sim1Input, sim2Input;
+    private TextView tvSim1Operator, tvSim2Operator;
     private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnAutoDetectSim, btnHistory;
     private TextView btnCancelAddDesktop, tvDesktopCount;
     private LinearLayout layoutPairingInputBox;
@@ -65,6 +66,8 @@ public class MainActivity extends AppCompatActivity {
         pairingCodeInput = findViewById(R.id.pairingCodeInput);
         sim1Input = findViewById(R.id.sim1Input);
         sim2Input = findViewById(R.id.sim2Input);
+        tvSim1Operator = findViewById(R.id.tvSim1Operator);
+        tvSim2Operator = findViewById(R.id.tvSim2Operator);
         btnAddDesktop = findViewById(R.id.btnAddDesktop);
         btnAddAnotherDesktop = findViewById(R.id.btnAddAnotherDesktop);
         btnCancelAddDesktop = findViewById(R.id.btnCancelAddDesktop);
@@ -106,17 +109,43 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Load saved SIM names and lock if they exist
+        // Load saved SIM info
         String savedSim1 = prefs.getString("sim1_name", "");
         String savedSim2 = prefs.getString("sim2_name", "");
+        String savedOp1 = prefs.getString("sim1_operator", "");
+        String savedOp2 = prefs.getString("sim2_operator", "");
+
+        // Auto-migration: if savedSim1 was an operator name rather than a phone number
+        if (!savedSim1.isEmpty() && !isPhoneNumber(savedSim1)) {
+            if (savedOp1.isEmpty()) savedOp1 = savedSim1;
+            savedSim1 = ""; // clear input so ghost hint 019XXXXXXXX shows!
+        }
+        if (!savedSim2.isEmpty() && !isPhoneNumber(savedSim2)) {
+            if (savedOp2.isEmpty()) savedOp2 = savedSim2;
+            savedSim2 = ""; // clear input so ghost hint 017XXXXXXXX shows!
+        }
+
         sim1Input.setText(savedSim1);
         sim2Input.setText(savedSim2);
-        
+
+        if (!savedOp1.isEmpty()) {
+            tvSim1Operator.setText("📶 " + savedOp1);
+            updateSimHint(sim1Input, savedOp1);
+        }
+        if (!savedOp2.isEmpty()) {
+            tvSim2Operator.setText("📶 " + savedOp2);
+            updateSimHint(sim2Input, savedOp2);
+        }
+
+        // If either has a real saved phone number, lock them. Otherwise unlock so user can type directly!
         if (!savedSim1.isEmpty() || !savedSim2.isEmpty()) {
             lockSimInputs();
         } else {
-            // Auto detect SIMs on first launch if empty
-            autoDetectSims(false);
+            unlockSimInputs();
+            // Auto detect carrier operators on startup if not yet detected
+            if (savedOp1.isEmpty() && savedOp2.isEmpty()) {
+                autoDetectSims(false);
+            }
         }
 
         // Manual Auto Detect Button Click
@@ -128,11 +157,24 @@ public class MainActivity extends AppCompatActivity {
             if (isSimLocked) {
                 unlockSimInputs();
             } else {
+                String num1 = sim1Input.getText() != null ? sim1Input.getText().toString().trim() : "";
+                String num2 = sim2Input.getText() != null ? sim2Input.getText().toString().trim() : "";
+
+                String op1 = prefs.getString("sim1_operator", "Banglalink");
+                String op2 = prefs.getString("sim2_operator", "Grameenphone");
+
+                // If user entered number, use it as sim name. Otherwise fallback to operator name for MQTT/SMS
+                String name1 = !num1.isEmpty() ? num1 : op1;
+                String name2 = !num2.isEmpty() ? num2 : op2;
+
                 prefs.edit()
-                    .putString("sim1_name", sim1Input.getText().toString().trim())
-                    .putString("sim2_name", sim2Input.getText().toString().trim())
+                    .putString("sim1_number", num1)
+                    .putString("sim2_number", num2)
+                    .putString("sim1_name", name1)
+                    .putString("sim2_name", name2)
                     .apply();
-                Toast.makeText(this, "SIM Names Saved!", Toast.LENGTH_SHORT).show();
+
+                Toast.makeText(this, "SIM Numbers Saved!", Toast.LENGTH_SHORT).show();
                 lockSimInputs();
             }
         });
@@ -181,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Auto detects SIM phone numbers or carrier names from the device hardware.
+     * Auto detects SIM carrier names and phone numbers from the device hardware.
      */
     private void autoDetectSims(boolean showToast) {
         try {
@@ -202,8 +244,10 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            String detectedSim1 = "";
-            String detectedSim2 = "";
+            String detectedOp1 = "";
+            String detectedOp2 = "";
+            String detectedNum1 = "";
+            String detectedNum2 = "";
 
             for (SubscriptionInfo info : subList) {
                 int slot = info.getSimSlotIndex();
@@ -222,51 +266,76 @@ public class MainActivity extends AppCompatActivity {
                     } catch (Exception ignored) {}
                 }
 
-                String simLabel;
-                if (number != null && !number.trim().isEmpty() && !number.equals("null")) {
-                    simLabel = number.trim();
+                CharSequence carrier = info.getCarrierName();
+                CharSequence displayName = info.getDisplayName();
+                String opName = "";
+                if (carrier != null && !carrier.toString().trim().isEmpty()) {
+                    opName = carrier.toString().trim();
+                } else if (displayName != null && !displayName.toString().trim().isEmpty()) {
+                    opName = displayName.toString().trim();
                 } else {
-                    // Fallback to Carrier Name (Grameenphone, Robi, Banglalink, Teletalk, etc.)
-                    CharSequence carrier = info.getCarrierName();
-                    CharSequence displayName = info.getDisplayName();
-                    if (carrier != null && !carrier.toString().trim().isEmpty()) {
-                        simLabel = carrier.toString().trim();
-                    } else if (displayName != null && !displayName.toString().trim().isEmpty()) {
-                        simLabel = displayName.toString().trim();
-                    } else {
-                        simLabel = "SIM " + (slot + 1);
-                    }
+                    opName = "SIM " + (slot + 1);
                 }
 
                 if (slot == 0) {
-                    detectedSim1 = simLabel;
+                    detectedOp1 = opName;
+                    if (number != null && isPhoneNumber(number)) {
+                        detectedNum1 = formatBDNumber(number);
+                    }
                 } else if (slot == 1) {
-                    detectedSim2 = simLabel;
+                    detectedOp2 = opName;
+                    if (number != null && isPhoneNumber(number)) {
+                        detectedNum2 = formatBDNumber(number);
+                    }
                 }
             }
 
+            SharedPreferences.Editor editor = prefs.edit();
             boolean updated = false;
-            if (!detectedSim1.isEmpty()) {
-                sim1Input.setText(detectedSim1);
+
+            if (!detectedOp1.isEmpty()) {
+                tvSim1Operator.setText("📶 " + detectedOp1);
+                updateSimHint(sim1Input, detectedOp1);
+                editor.putString("sim1_operator", detectedOp1);
                 updated = true;
+
+                // Only setText if hardware returned an actual phone number
+                if (!detectedNum1.isEmpty()) {
+                    sim1Input.setText(detectedNum1);
+                    editor.putString("sim1_name", detectedNum1);
+                } else if (sim1Input.getText() == null || sim1Input.getText().toString().trim().isEmpty()) {
+                    // Box stays empty with ghost hint 019XXXXXXXX
+                    editor.putString("sim1_name", detectedOp1);
+                }
             }
-            if (!detectedSim2.isEmpty()) {
-                sim2Input.setText(detectedSim2);
+
+            if (!detectedOp2.isEmpty()) {
+                tvSim2Operator.setText("📶 " + detectedOp2);
+                updateSimHint(sim2Input, detectedOp2);
+                editor.putString("sim2_operator", detectedOp2);
                 updated = true;
+
+                // Only setText if hardware returned an actual phone number
+                if (!detectedNum2.isEmpty()) {
+                    sim2Input.setText(detectedNum2);
+                    editor.putString("sim2_name", detectedNum2);
+                } else if (sim2Input.getText() == null || sim2Input.getText().toString().trim().isEmpty()) {
+                    // Box stays empty with ghost hint 017XXXXXXXX
+                    editor.putString("sim2_name", detectedOp2);
+                }
             }
 
             if (updated) {
-                prefs.edit()
-                    .putString("sim1_name", sim1Input.getText().toString().trim())
-                    .putString("sim2_name", sim2Input.getText().toString().trim())
-                    .apply();
-                lockSimInputs();
+                editor.apply();
                 if (showToast) {
-                    Toast.makeText(this, "SIMs auto-detected and saved!", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Operators detected!", Toast.LENGTH_SHORT).show();
+                }
+                if (MqttService.instance != null) {
+                    MqttService.instance.sendSinglePing();
                 }
             } else {
                 if (showToast) {
-                    Toast.makeText(this, "Could not determine SIM numbers", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Could not determine SIM details", Toast.LENGTH_SHORT).show();
                 }
             }
         } catch (Exception e) {
@@ -291,9 +360,48 @@ public class MainActivity extends AppCompatActivity {
         isSimLocked = false;
         sim1Input.setEnabled(true);
         sim2Input.setEnabled(true);
-        sim1Input.requestFocus();
         btnSaveSim.setText("SAVE");
         btnSaveSim.setTextColor(android.graphics.Color.parseColor("#10B981"));
+    }
+
+    private boolean isPhoneNumber(String text) {
+        if (text == null) return false;
+        String clean = text.replaceAll("[\\s\\-\\(\\)]", "");
+        return clean.matches("^(\\+?88)?01[3-9]\\d{8}$");
+    }
+
+    private String formatBDNumber(String number) {
+        if (number == null) return "";
+        String clean = number.replaceAll("[^0-9]", "");
+        if (clean.startsWith("8801") && clean.length() == 13) {
+            return clean.substring(2);
+        }
+        if (clean.startsWith("01") && clean.length() == 11) {
+            return clean;
+        }
+        return number.trim();
+    }
+
+    private void updateSimHint(TextInputEditText input, String operatorName) {
+        if (input == null) return;
+        if (operatorName == null || operatorName.trim().isEmpty()) {
+            input.setHint("017XXXXXXXX");
+            return;
+        }
+        String lower = operatorName.toLowerCase();
+        if (lower.contains("banglalink")) {
+            input.setHint("019XXXXXXXX");
+        } else if (lower.contains("grameen") || lower.contains("gp")) {
+            input.setHint("017XXXXXXXX");
+        } else if (lower.contains("robi")) {
+            input.setHint("018XXXXXXXX");
+        } else if (lower.contains("airtel")) {
+            input.setHint("016XXXXXXXX");
+        } else if (lower.contains("teletalk")) {
+            input.setHint("015XXXXXXXX");
+        } else {
+            input.setHint("017XXXXXXXX");
+        }
     }
 
     private boolean hasAllPermissions() {

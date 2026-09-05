@@ -284,37 +284,107 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
 
-                    <com.google.android.material.textfield.TextInputLayout
+                    <!-- SIM 1 Column -->
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                        android:hint="SIM 1 Name"
+                        android:orientation="vertical"
                         android:layout_marginEnd="6dp">
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/sim1Input"
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/layoutSim1Input"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:textSize="13sp"
-                            android:textColor="#0F172A"
-                            android:inputType="text" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                            android:hint="SIM 1 Number"
+                            app:hintTextColor="#0284C7"
+                            app:boxStrokeColor="#0284C7"
+                            app:expandedHintEnabled="false">
 
-                    <com.google.android.material.textfield.TextInputLayout
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/sim1Input"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textSize="14sp"
+                                android:textColor="#0F172A"
+                                android:hint="019XXXXXXXX"
+                                android:textColorHint="#94A3B8"
+                                android:inputType="phone"
+                                android:maxLength="14"
+                                android:singleLine="true" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <!-- SIM 1 Operator Badge -->
+                        <TextView
+                            android:id="@+id/tvSim1Operator"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:paddingTop="5dp"
+                            android:paddingBottom="5dp"
+                            android:text="📶 Operator: Auto"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textColor="#0369A1"
+                            android:background="@drawable/bg_sim_badge"
+                            android:gravity="center"
+                            android:maxLines="1"
+                            android:ellipsize="end" />
+                    </LinearLayout>
+
+                    <!-- SIM 2 Column -->
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                        android:hint="SIM 2 Name"
+                        android:orientation="vertical"
                         android:layout_marginStart="6dp">
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/sim2Input"
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/layoutSim2Input"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:textSize="13sp"
-                            android:textColor="#0F172A"
-                            android:inputType="text" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                            android:hint="SIM 2 Number"
+                            app:hintTextColor="#0284C7"
+                            app:boxStrokeColor="#0284C7"
+                            app:expandedHintEnabled="false">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/sim2Input"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textSize="14sp"
+                                android:textColor="#0F172A"
+                                android:hint="017XXXXXXXX"
+                                android:textColorHint="#94A3B8"
+                                android:inputType="phone"
+                                android:maxLength="14"
+                                android:singleLine="true" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <!-- SIM 2 Operator Badge -->
+                        <TextView
+                            android:id="@+id/tvSim2Operator"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:paddingTop="5dp"
+                            android:paddingBottom="5dp"
+                            android:text="📶 Operator: Auto"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textColor="#0369A1"
+                            android:background="@drawable/bg_sim_badge"
+                            android:gravity="center"
+                            android:maxLines="1"
+                            android:ellipsize="end" />
+                    </LinearLayout>
                 </LinearLayout>
 
             </LinearLayout>
