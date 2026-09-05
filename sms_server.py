@@ -800,12 +800,8 @@ try:
     import threading
 
     def get_pairing_code():
-        hwid = generate_hwid()
-        hash_hex = hashlib.md5(hwid.encode('utf-8')).hexdigest()
-        nums = "".join(filter(str.isdigit, hash_hex))
-        if len(nums) < 6:
-            nums = nums + "123456"
-        return nums[:6]
+        from license_system.hwid import get_pairing_code as _gpc
+        return _gpc()
 
     PAIRING_CODE = get_pairing_code()
     MQTT_TOPIC = f"digonto_ivac_sms_{PAIRING_CODE}"

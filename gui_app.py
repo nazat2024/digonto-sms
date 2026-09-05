@@ -590,12 +590,8 @@ class IVACApp(ctk.CTk):
             text_color="#00d2ff"
         ).pack(anchor="w", padx=15, pady=(10, 5))
         
-        import hashlib
-        from license_system.hwid import generate_hwid
-        hwid = generate_hwid()
-        hash_hex = hashlib.md5(hwid.encode('utf-8')).hexdigest()
-        nums = "".join(filter(str.isdigit, hash_hex))
-        pairing_code = (nums + "123456")[:6]
+        from license_system.hwid import get_pairing_code
+        pairing_code = get_pairing_code()
         
         ctk.CTkLabel(
             cloud_card, 
