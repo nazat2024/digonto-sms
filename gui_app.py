@@ -2579,9 +2579,9 @@ class IVACApp(ctk.CTk):
         self.lbl_profile_status.configure(text="⚡ Chrome Profile ও বুকমার্ক তৈরি হচ্ছে...", text_color="#f59e0b")
         
         custom_bms = self.config.get("chrome_bookmarks", [])
-        ext_path = cpm.get_default_extension_path(BASE_DIR)
         
         def _task():
+            ext_path = cpm.get_default_extension_path(BASE_DIR)
             return cpm.create_chrome_profile(
                 profile_name=name,
                 custom_bookmarks=custom_bms,
@@ -2611,7 +2611,7 @@ class IVACApp(ctk.CTk):
                     })
                     self.config["profiles"] = existing_p
                     self._save_config()
-                    self._refresh_profiles_tab()
+                    self._profiles_tab_dirty = True
                     
                 status_msg = f"✅ প্রোফাইল '{p_name}' ({p_dir}) সফলভাবে তৈরি ও ওপেন হয়েছে! প্রোফাইল ট্যাবে যুক্ত হয়েছে।"
                 self.lbl_profile_status.configure(

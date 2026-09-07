@@ -131,10 +131,14 @@ def get_desktop_dir() -> str:
         return d2
     return os.path.expanduser("~/Desktop")
 
+_CACHED_EXT_IDS = {}
+
 def compute_extension_id(manifest_dir_or_file: str) -> str:
-    """Computes the exact 32-character Chrome extension ID."""
+    """Computes the exact 32-character Chrome extension ID with caching."""
     if not manifest_dir_or_file:
         return ""
+    if manifest_dir_or_file in _CACHED_EXT_IDS:
+        return _CACHED_EXT_IDS[manifest_dir_or_file]
     manifest_path = manifest_dir_or_file
     if os.path.isdir(manifest_dir_or_file):
         manifest_path = os.path.join(manifest_dir_or_file, "manifest.json")
@@ -149,22 +153,26 @@ def compute_extension_id(manifest_dir_or_file: str) -> str:
         else:
             norm_path = os.path.normcase(os.path.normpath(os.path.dirname(manifest_path))).encode("utf-8")
             sha = hashlib.sha256(norm_path).hexdigest()
-        return "".join(chr(ord("a") + int(c, 16)) for c in sha[:32])
+        res = "".join(chr(ord("a") + int(c, 16)) for c in sha[:32])
+        _CACHED_EXT_IDS[manifest_dir_or_file] = res
+        return res
     except Exception as e:
         print(f"Error computing extension ID: {e}")
         return ""
 
+_CACHED_SAFE_EXT_DIR = None
+
 def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> str:
-    """Returns safe, dedicated directory for the Chrome extension and keeps it synced."""
+    """Returns safe, dedicated directory for the Chrome extension and keeps it synced (cached for maximum speed)."""
+    global _CACHED_SAFE_EXT_DIR
+    if _CACHED_SAFE_EXT_DIR and not force_sync and os.path.exists(_CACHED_SAFE_EXT_DIR):
+        return _CACHED_SAFE_EXT_DIR
+
     safe_ext_dir = r"C:\IVAC_Chrome_Extension"
     can_write = False
     try:
         os.makedirs(safe_ext_dir, exist_ok=True)
-        test_file = os.path.join(safe_ext_dir, ".write_test")
-        with open(test_file, "w") as f:
-            f.write("ok")
-        os.remove(test_file)
-        can_write = True
+        can_write = os.access(safe_ext_dir, os.W_OK)
     except Exception:
         can_write = False
 
@@ -230,14 +238,12 @@ def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> st
         except Exception as e:
             print(f"Warning syncing safe extension: {e}")
             
-    try:
-        subprocess.run(["attrib", "-h", "-s", safe_ext_dir], capture_output=True)
-    except Exception:
-        pass
-        
     if os.path.exists(manifest_target):
+        _CACHED_SAFE_EXT_DIR = safe_ext_dir
         return safe_ext_dir
-    return src or safe_ext_dir
+    final_dir = src or safe_ext_dir
+    _CACHED_SAFE_EXT_DIR = final_dir
+    return final_dir
 
 def get_default_extension_path(base_dir: str = None) -> str:
     """Finds best default extension path (always uses safe AppData directory)."""
