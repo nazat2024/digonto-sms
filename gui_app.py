@@ -256,7 +256,6 @@ class IVACApp(ctk.CTk):
         self._check_license_and_start()
         self.after(50, self._start_gui_mqtt_listener)
         self.after(300, self._cleanup_legacy_installation)
-        self.after(1000, lambda: self.run_in_background(cpm.fix_missing_avatars))
 
     def _cleanup_legacy_installation(self):
         """Removes leftover desktop shortcut and Start Menu folder from older 'Digonto QuickFill'."""
@@ -2575,20 +2574,6 @@ class IVACApp(ctk.CTk):
             messagebox.showwarning("Warning", "অনুগ্রহ করে প্রোফাইলের নাম লিখুন (যেমন: 30. MOHIR বা Counter 1)!")
             return
             
-        if cpm.is_chrome_running():
-            from tkinter import messagebox
-            msg = (
-                "Chrome ব্রাউজার বর্তমানে ব্যাকগ্রাউন্ডে বা স্ক্রিনে চালু রয়েছে।\n\n"
-                "নতুন প্রোফাইলে এক্সটেনশন সফলভাবে সক্রিয় করার জন্য খোলা থাকা Chrome বন্ধ করা আবশ্যক।\n\n"
-                "আপনি কি এখনই চালু থাকা Chrome বন্ধ করে নতুন প্রোফাইল ওপেন করতে চান?"
-            )
-            ans = messagebox.askyesno("Chrome বন্ধ করার অনুমতি", msg, icon="warning")
-            if ans:
-                cpm.close_all_chrome_processes()
-                time.sleep(0.8)
-            else:
-                return
-
         if hasattr(self, "btn_create_profile"):
             self.btn_create_profile.configure(state="disabled", text="⏳ তৈরি হচ্ছে...")
         self.lbl_profile_status.configure(text="⚡ Chrome Profile ও বুকমার্ক তৈরি হচ্ছে...", text_color="#f59e0b")

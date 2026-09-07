@@ -893,66 +893,8 @@ def list_existing_profiles() -> list:
     return profiles
 
 def fix_missing_avatars(user_data_dir: str = None) -> int:
-    """
-    Scans Chrome profiles and fixes any profile that has lost its avatar icon
-    or is stuck with the default blank silhouette (IDR_PROFILE_AVATAR_26).
-    Updates both Preferences and Local State.
-    """
-    if not user_data_dir:
-        user_data_dir = get_chrome_user_data_dir()
-    if not user_data_dir or not os.path.exists(user_data_dir):
-        return 0
-    ls_path = os.path.join(user_data_dir, "Local State")
-    if not os.path.exists(ls_path):
-        return 0
-
-    VALID_AVATAR_INDICES = [
-        27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-        41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55
-    ]
-    fixed_count = 0
-    try:
-        with open(ls_path, "r", encoding="utf-8") as f:
-            ls_data = json.load(f)
-        info_cache = ls_data.get("profile", {}).get("info_cache", {})
-        for p_dir, p_info in info_cache.items():
-            avatar = p_info.get("avatar_icon", "")
-            is_default = p_info.get("is_using_default_avatar", False)
-            if is_default or avatar == "chrome://theme/IDR_PROFILE_AVATAR_26" or not avatar:
-                chosen_idx = random.choice(VALID_AVATAR_INDICES)
-                chosen_url = f"chrome://theme/IDR_PROFILE_AVATAR_{chosen_idx}"
-                p_info["avatar_icon"] = chosen_url
-                p_info["is_using_default_avatar"] = False
-                p_info.setdefault("default_avatar_fill_color", -14737376)
-                p_info.setdefault("default_avatar_stroke_color", -3684409)
-                p_info.setdefault("profile_highlight_color", -14737376)
-
-                pref_file = os.path.join(user_data_dir, p_dir, "Preferences")
-                if os.path.exists(pref_file):
-                    try:
-                        with open(pref_file, "r", encoding="utf-8") as pf:
-                            p_prefs = json.load(pf)
-                        p_prefs.setdefault("profile", {})
-                        p_prefs["profile"]["avatar_index"] = chosen_idx
-                        p_prefs["profile"]["using_default_avatar"] = False
-                        p_prefs["profile"]["using_gaia_avatar"] = False
-                        with open(pref_file, "w", encoding="utf-8") as pf:
-                            json.dump(p_prefs, pf, indent=2)
-                    except Exception:
-                        pass
-                fixed_count += 1
-        if fixed_count > 0:
-            with open(ls_path, "w", encoding="utf-8") as f:
-                json.dump(ls_data, f, indent=2)
-    except Exception as e:
-        print(f"Error in fix_missing_avatars: {e}")
-        
-    try:
-        apply_auto_allow_to_all_existing_profiles(user_data_dir)
-    except Exception as e:
-        print(f"Error syncing auto-allow permissions: {e}")
-        
-    return fixed_count
+    """Disabled: Do not touch existing profiles' avatars. Only newly created profiles get avatars."""
+    return 0
 
 
 AUTO_ALLOW_DOMAINS = [
