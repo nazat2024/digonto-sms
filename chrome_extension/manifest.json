@@ -1,6 +1,5 @@
 {
     "manifest_version": 3,
-    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtB/3y0hvhpNgqPCpWkQFUajt5BRcCltaX99gv2pQUEbLnrGaH/Cb/xjmf4EpWt9QKyxpNoIAFlQx83xBudoFKEIGqX36My7caSGdFgzJzyHsdaG+ZT6MJILWhxKa6Pm9SOLtBMRiQoza/LMttzkSnt73Zv4/waM8sS2MBrkOpRuehrOp/Wev+ztErRnOHG3p9NHHnw6X7pLodYHvwLNw1ugCVBI7vtEbNPe0zEnzDVNWgwhTn/ZqPEeEcYN5qJ/jSV5/+ccybN7LT/yZqSLj/T5sXjLZBKFdnAQJ7rb/SzCF3B0yVTIejoLb87ungb+ftcRw7LQirSB0AGspMVeblwIDAQAB",
     "name": "IVAC Master Pro",
     "version": "4.0.1",
     "description": "Automatically fills OTP from local server for IVAC website.",
