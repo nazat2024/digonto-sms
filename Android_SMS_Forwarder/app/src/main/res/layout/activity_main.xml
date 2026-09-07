@@ -37,7 +37,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Digonto QuickFill"
+                    android:text="IVAC Master Pro"
                     android:textSize="20sp"
                     android:textStyle="bold"
                     android:textColor="#0F172A"/>
@@ -415,7 +415,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Digonto Tech • Background Service Active"
+            android:text="IVAC Master Pro • Background Service Active"
             android:textSize="11sp"
             android:textColor="#94A3B8"
             android:gravity="center"

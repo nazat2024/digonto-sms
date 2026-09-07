@@ -1,4 +1,4 @@
-﻿// SidePanel Script for Digonto QuickFill
+// SidePanel Script for IVAC Master Pro
 try {
     if (typeof pdfjsLib !== 'undefined') {
         pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdf.worker.min.js');

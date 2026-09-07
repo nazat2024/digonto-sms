@@ -95,6 +95,152 @@ document.addEventListener('DOMContentLoaded', () => {
     let paymentMode = "auto";
     let paymentMethods = {}; // { accountId: 'rocket' | 'bkash' | 'nagad' }
 
+    let currentProfileDir = "";
+    let currentProfileName = "";
+    let allServerProfiles = [];
+
+    const profileSelect = document.getElementById('popup-profile-select');
+
+    async function detectCurrentProfile(profilesList) {
+        if (!profilesList || !profilesList.length) return;
+        
+        // 1. Check local extension storage
+        const st = await new Promise(r => chrome.storage.local.get(['my_chrome_profile', 'my_profile_name'], r));
+        if (st && st.my_chrome_profile) {
+            currentProfileDir = st.my_chrome_profile;
+            currentProfileName = st.my_profile_name || "";
+            return;
+        }
+        
+        // 2. Check bookmarks
+        try {
+            if (chrome.bookmarks && chrome.bookmarks.getTree) {
+                const tree = await new Promise(r => chrome.bookmarks.getTree(r));
+                const titles = [];
+                function walk(nodes) {
+                    for (const n of nodes) {
+                        if (n.title) titles.push(n.title);
+                        if (n.children) walk(n.children);
+                    }
+                }
+                walk(tree);
+                
+                for (const t of titles) {
+                    const cleanT = t.replace(" - Google Search", "").trim().toLowerCase();
+                    for (const p of profilesList) {
+                        const pName = (p.name || "").trim().toLowerCase();
+                        if (pName && (cleanT === pName || t.toLowerCase().includes(pName))) {
+                            currentProfileDir = p.chrome_profile || "";
+                            currentProfileName = p.name || "";
+                            chrome.storage.local.set({
+                                my_chrome_profile: currentProfileDir,
+                                my_profile_name: currentProfileName
+                            });
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch(e) {}
+        
+        // 3. Match by phone if currently saved
+        if (!currentProfileDir && currentPhone) {
+            const cleanP = currentPhone.replace(/[^0-9]/g, '');
+            for (const p of profilesList) {
+                if (p.phone && p.phone.replace(/[^0-9]/g, '') === cleanP) {
+                    currentProfileDir = p.chrome_profile || "";
+                    currentProfileName = p.name || "";
+                    chrome.storage.local.set({
+                        my_chrome_profile: currentProfileDir,
+                        my_profile_name: currentProfileName
+                    });
+                    return;
+                }
+            }
+        }
+        
+        // 4. Fallback: if server has active_profile, use it
+        if (!currentProfileDir && latestServerStatus && latestServerStatus.active_profile) {
+            const ap = latestServerStatus.active_profile;
+            if (ap.chrome_profile) {
+                currentProfileDir = ap.chrome_profile;
+                currentProfileName = ap.name || "";
+                chrome.storage.local.set({
+                    my_chrome_profile: currentProfileDir,
+                    my_profile_name: currentProfileName
+                });
+            }
+        }
+    }
+
+    function renderProfileSelector(profiles) {
+        if (!profileSelect) return;
+        profileSelect.innerHTML = '';
+        if (!profiles || profiles.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = '(কোনো প্রোফাইল নেই)';
+            profileSelect.appendChild(opt);
+            return;
+        }
+        
+        let matchedOpt = null;
+        profiles.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.chrome_profile || p.name || '';
+            opt.dataset.name = p.name || '';
+            opt.dataset.dir = p.chrome_profile || '';
+            opt.dataset.phone = p.phone || '';
+            opt.dataset.pass = p.password || '';
+            
+            const label = p.name ? `${p.name} (${p.chrome_profile || 'Default'})` : (p.chrome_profile || 'Profile');
+            opt.textContent = label;
+            profileSelect.appendChild(opt);
+            
+            if (currentProfileDir && p.chrome_profile === currentProfileDir) {
+                matchedOpt = opt;
+            } else if (!matchedOpt && currentProfileName && p.name === currentProfileName) {
+                matchedOpt = opt;
+            }
+        });
+        
+        if (matchedOpt) {
+            profileSelect.value = matchedOpt.value;
+        } else if (profiles.length > 0 && !currentProfileDir) {
+            profileSelect.value = profiles[0].chrome_profile || profiles[0].name || '';
+            currentProfileDir = profiles[0].chrome_profile || '';
+            currentProfileName = profiles[0].name || '';
+            chrome.storage.local.set({
+                my_chrome_profile: currentProfileDir,
+                my_profile_name: currentProfileName
+            });
+        }
+    }
+
+    if (profileSelect) {
+        profileSelect.addEventListener('change', () => {
+            const selOpt = profileSelect.selectedOptions[0];
+            if (selOpt) {
+                currentProfileDir = selOpt.dataset.dir || '';
+                currentProfileName = selOpt.dataset.name || '';
+                const newPhone = selOpt.dataset.phone || '';
+                const newPass = selOpt.dataset.pass || '';
+                
+                chrome.storage.local.set({
+                    my_chrome_profile: currentProfileDir,
+                    my_profile_name: currentProfileName,
+                    ivac_phone: newPhone,
+                    ivac_password: newPass
+                });
+                
+                if (phoneInput) phoneInput.value = newPhone;
+                if (passInput) passInput.value = newPass;
+                currentPhone = newPhone;
+                updateStatus();
+            }
+        });
+    }
+
     // ===== 1. Load initial state =====
     chrome.storage.local.get([
         'ext_enabled', 'ivac_phone', 'ivac_password',
@@ -541,7 +687,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const pass = passInput ? passInput.value : '';
         
         currentPhone = phone;
-        const profileLabel = currentPhone ? `Profile (${currentPhone})` : `Profile`;
+        const profileLabel = currentPhone ? `Profile (${currentPhone})` : (currentProfileName || `Profile`);
         const dataToSave = {
             ivac_phone: currentPhone,
             ivac_password: pass,
@@ -550,11 +696,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         chrome.storage.local.set(dataToSave, () => {
             updateStatus();
-            // Sync with local desktop app backend
-            fetch('http://127.0.0.1:5000/api/profile/active', {
+            // Sync with local desktop app backend in REAL-TIME
+            fetch('http://127.0.0.1:5000/api/profile/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    chrome_profile: currentProfileDir,
+                    name: currentProfileName,
                     phone: currentPhone,
                     password: pass
                 })
@@ -924,7 +1072,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // Real-time 2-way sync credentials with desktop app
-                // Server active_profile sync disabled to respect user cleared inputs
+                if (statusData && statusData.profiles) {
+                    allServerProfiles = statusData.profiles;
+                    
+                    if (!currentProfileDir) {
+                        await detectCurrentProfile(allServerProfiles);
+                    }
+                    if (profileSelect && document.activeElement !== profileSelect) {
+                        renderProfileSelector(allServerProfiles);
+                    }
+                    
+                    const myProfile = allServerProfiles.find(p => 
+                        (currentProfileDir && p.chrome_profile === currentProfileDir) ||
+                        (currentProfileName && p.name === currentProfileName)
+                    );
+                    
+                    if (myProfile) {
+                        const serverPhone = (myProfile.phone || '').trim();
+                        const serverPass = myProfile.password || '';
+                        
+                        const isTypingPhone = (document.activeElement === phoneInput);
+                        const isTypingPass = (document.activeElement === passInput);
+                        
+                        let needsStorageUpdate = false;
+                        const storageUpdate = {};
+                        
+                        if (!isTypingPhone && phoneInput && phoneInput.value !== serverPhone) {
+                            phoneInput.value = serverPhone;
+                            currentPhone = serverPhone;
+                            storageUpdate.ivac_phone = serverPhone;
+                            needsStorageUpdate = true;
+                        }
+                        if (!isTypingPass && passInput && passInput.value !== serverPass) {
+                            passInput.value = serverPass;
+                            storageUpdate.ivac_password = serverPass;
+                            needsStorageUpdate = true;
+                        }
+                        
+                        if (needsStorageUpdate) {
+                            chrome.storage.local.set(storageUpdate);
+                            const ivacDot = document.getElementById('ivac-phone-status-dot');
+                            if (ivacDot) {
+                                const ivacStat = getPhoneDeviceStatus(currentPhone);
+                                ivacDot.className = `dot ${ivacStat.dotClass}`;
+                                ivacDot.title = `IVAC: ${ivacStat.label}`;
+                            }
+                        }
+                    }
+                }
                 // Sync payment accounts list from Desktop App (NEVER overwrite user-selected active_rocket_id)
                 if (statusData && statusData.rocket_accounts) {
                     const serverAccounts = statusData.rocket_accounts;

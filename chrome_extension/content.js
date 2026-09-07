@@ -591,6 +591,61 @@ setInterval(autoFillLoginCredentials, 600);
 document.addEventListener('DOMContentLoaded', autoFillLoginCredentials);
 window.addEventListener('load', autoFillLoginCredentials);
 
+// Extract #profile= from URL if launched from desktop app or shortcut
+(function initProfileFromUrl() {
+    try {
+        if (window.location.hash && window.location.hash.includes('profile=')) {
+            const match = window.location.hash.match(/profile=([^&]+)/);
+            if (match && match[1]) {
+                const profDir = decodeURIComponent(match[1]);
+                chrome.storage.local.set({ my_chrome_profile: profDir });
+                try {
+                    history.replaceState(null, null, window.location.pathname + window.location.search);
+                } catch(e) {}
+            }
+        }
+    } catch(e) {}
+})();
+
+// Real-time listener for credentials changes from Desktop App
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.ivac_phone || changes.ivac_password)) {
+        if (typeof autoFillLoginCredentials === 'function') {
+            autoFillLoginCredentials();
+        }
+    }
+});
+
+// Periodic background sync directly from Desktop App backend on signin page
+setInterval(() => {
+    try {
+        const url = window.location.href.toLowerCase();
+        if (url.includes('/signin') || url.includes('/login')) {
+            chrome.storage.local.get(['my_chrome_profile', 'ivac_phone', 'ivac_password'], (st) => {
+                const prof = st.my_chrome_profile || '';
+                fetch(`http://127.0.0.1:5000/api/profile/data?profile=${encodeURIComponent(prof)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.profile) {
+                            const sPhone = (data.profile.phone || '').trim();
+                            const sPass = data.profile.password || '';
+                            const curPhone = (st.ivac_phone || '').trim();
+                            const curPass = st.ivac_password || '';
+                            if (sPhone !== curPhone || sPass !== curPass) {
+                                chrome.storage.local.set({ ivac_phone: sPhone, ivac_password: sPass }, () => {
+                                    if (typeof autoFillLoginCredentials === 'function') {
+                                        autoFillLoginCredentials();
+                                    }
+                                });
+                            }
+                        }
+                    })
+                    .catch(() => {});
+            });
+        }
+    } catch(e) {}
+}, 2000);
+
 // ===== FLOATING PIN WIDGET (injected into the webpage DOM) =====
 let pinWidgetEl = null;
 let widgetMinimized = false;

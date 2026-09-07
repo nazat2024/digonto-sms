@@ -4,7 +4,7 @@ from license_system.license_manager import activate_license, LicenseStatus, Lice
 from license_system.hwid import get_hwid_display
 
 APP_VERSION = "4.0.0"
-APP_AUTHOR = "DiGonto Tech"
+APP_AUTHOR = "IVAC Master Pro"
 
 class LicenseActivationWindow(ctk.CTkToplevel):
     """লাইসেন্স অ্যাক্টিভেশন উইন্ডো — প্রথমবার বা মেয়াদ শেষে দেখাবে।"""
@@ -36,7 +36,7 @@ class LicenseActivationWindow(ctk.CTkToplevel):
         header.pack_propagate(False)
         
         ctk.CTkLabel(
-            header, text="🇮🇳 Digonto QuickFill",
+            header, text="🇮🇳 IVAC Master Pro",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color="#00d2ff"
         ).pack(pady=(15, 2))

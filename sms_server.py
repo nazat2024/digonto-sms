@@ -344,9 +344,10 @@ active_profile_data = {}
 
 _cached_config_mtime = 0
 _cached_rocket_accounts = []
+_cached_profiles = []
 
-def get_cached_rocket_accounts():
-    global _cached_config_mtime, _cached_rocket_accounts
+def get_cached_config_data():
+    global _cached_config_mtime, _cached_rocket_accounts, _cached_profiles
     try:
         app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
         config_path = os.path.join(app_data_dir, "config.json")
@@ -356,10 +357,15 @@ def get_cached_rocket_accounts():
                 with open(config_path, "r", encoding="utf-8") as f:
                     c = json.load(f)
                     _cached_rocket_accounts = c.get("rocket_accounts", [])
+                    _cached_profiles = c.get("profiles", [])
                     _cached_config_mtime = mtime
     except Exception:
         pass
-    return _cached_rocket_accounts
+    return _cached_rocket_accounts, _cached_profiles
+
+def get_cached_rocket_accounts():
+    accounts, _ = get_cached_config_data()
+    return accounts
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
@@ -397,7 +403,7 @@ def get_status():
     total_count = len(devices)
     online_phones = list(set(online_phones))
     offline_phones = list(set(offline_phones))
-    rocket_accounts = get_cached_rocket_accounts()
+    rocket_accounts, profiles = get_cached_config_data()
 
     return jsonify({
         "licensed": is_license_active(),
@@ -411,6 +417,7 @@ def get_status():
         "offline_phones": offline_phones,
         "config_version": last_config_ts,
         "active_profile": active_profile_data,
+        "profiles": profiles,
         "rocket_accounts": rocket_accounts
     }), 200
 
@@ -683,9 +690,10 @@ def _normalize_prof(p_str):
     if s.startswith("profile "): s = s.replace("profile ", "")
     return s
 
+@app.route("/api/profile/sync", methods=["POST"])
 @app.route("/api/profile/active", methods=["POST", "GET"])
-def active_profile_endpoint():
-    global active_profile_data, last_config_ts
+def sync_profile_endpoint():
+    global active_profile_data, last_config_ts, _cached_config_mtime
     if request.method == "POST":
         data = request.get_json(force=True, silent=True) or {}
         if data:
@@ -693,7 +701,11 @@ def active_profile_endpoint():
                 active_profile_data = {}
             active_profile_data.update(data)
             
-            # Save updated profile data to config.json
+            prof_dir = str(data.get("chrome_profile", "")).strip()
+            prof_name = str(data.get("name", data.get("profile_name", ""))).strip()
+            phone = str(data.get("phone", data.get("ivac_phone", ""))).strip()
+            password = str(data.get("password", data.get("ivac_password", "")))
+            
             import json, os
             app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
             config_path = os.path.join(app_data_dir, "config.json")
@@ -704,52 +716,85 @@ def active_profile_endpoint():
                     
                     cfg["active_profile"] = active_profile_data
                     
-                    # Also update matching profile in profiles list
-                    prof_dir = active_profile_data.get("chrome_profile", "")
                     norm_prof = _normalize_prof(prof_dir)
+                    norm_name = prof_name.lower()
                     
                     updated = False
                     if "profiles" in cfg and isinstance(cfg["profiles"], list) and len(cfg["profiles"]) > 0:
-                        # 1. Match by chrome_profile if known
+                        # 1. Match by chrome_profile
                         if norm_prof:
                             for p in cfg["profiles"]:
                                 if _normalize_prof(p.get("chrome_profile")) == norm_prof:
-                                    if "phone" in active_profile_data:
-                                        p["phone"] = active_profile_data["phone"]
-                                    if "password" in active_profile_data:
-                                        p["password"] = active_profile_data["password"]
+                                    p["phone"] = phone
+                                    p["password"] = password
+                                    if prof_name and not p.get("name"):
+                                        p["name"] = prof_name
                                     updated = True
-                        
-                        # 2. If not updated and only 1 profile exists, update it
-                        if not updated and len(cfg["profiles"]) == 1:
-                            if "phone" in active_profile_data:
-                                cfg["profiles"][0]["phone"] = active_profile_data["phone"]
-                            if "password" in active_profile_data:
-                                cfg["profiles"][0]["password"] = active_profile_data["password"]
-                            updated = True
-                            
-                        # 3. If multiple profiles and no prof_dir matched, update first enabled profile
-                        if not updated:
-                            for p in cfg["profiles"]:
-                                if p.get("enabled", True):
-                                    if "phone" in active_profile_data:
-                                        p["phone"] = active_profile_data["phone"]
-                                    if "password" in active_profile_data:
-                                        p["password"] = active_profile_data["password"]
                                     break
+                                    
+                        # 2. Match by name
+                        if not updated and norm_name:
+                            for p in cfg["profiles"]:
+                                if str(p.get("name", "")).strip().lower() == norm_name:
+                                    p["phone"] = phone
+                                    p["password"] = password
+                                    if prof_dir and not p.get("chrome_profile"):
+                                        p["chrome_profile"] = prof_dir
+                                    updated = True
+                                    break
+                                    
+                        # 3. If only 1 profile exists
+                        if not updated and len(cfg["profiles"]) == 1:
+                            cfg["profiles"][0]["phone"] = phone
+                            cfg["profiles"][0]["password"] = password
+                            updated = True
                     
                     with open(config_path, "w", encoding="utf-8") as f:
                         json.dump(cfg, f, ensure_ascii=False, indent=2)
                         
+                    _cached_config_mtime = 0
                     last_config_ts = time.time()
-
-
-
+                    
+                    # Notify connected SocketIO clients (Desktop GUI) in real-time
+                    try:
+                        socketio.emit("status_update", {
+                            "config_version": last_config_ts,
+                            "otps": otp_store.get_all_status()
+                        })
+                    except Exception:
+                        pass
                 except Exception as e:
                     print(f"Error persisting profile to config.json: {e}")
                     
         return jsonify({"success": True, "active_profile": active_profile_data, "config_version": last_config_ts}), 200
     return jsonify({"active_profile": active_profile_data, "config_version": last_config_ts}), 200
+
+@app.route("/api/profile/data", methods=["GET"])
+def get_profile_data():
+    prof_query = request.args.get("profile", "").strip()
+    name_query = request.args.get("name", "").strip().lower()
+    norm_query = _normalize_prof(prof_query)
+    
+    _, profiles = get_cached_config_data()
+    found = None
+    if norm_query:
+        for p in profiles:
+            if _normalize_prof(p.get("chrome_profile")) == norm_query:
+                found = p
+                break
+    if not found and name_query:
+        for p in profiles:
+            if str(p.get("name", "")).strip().lower() == name_query:
+                found = p
+                break
+    if not found and active_profile_data:
+        found = active_profile_data
+        
+    return jsonify({
+        "success": bool(found),
+        "profile": found or {},
+        "config_version": last_config_ts
+    }), 200
 
 @app.route("/api/config", methods=["GET"])
 def get_extension_config():

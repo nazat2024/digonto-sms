@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "Digonto QuickFill",
+    "name": "IVAC Master Pro",
     "version": "4.0.1",
     "description": "Automatically fills OTP from local server for IVAC website.",
     "permissions": [
@@ -8,7 +8,8 @@
         "unlimitedStorage",
         "activeTab",
         "scripting",
-        "sidePanel"
+        "sidePanel",
+        "bookmarks"
     ],
     "host_permissions": [
         "http://localhost:5000/*",
@@ -17,7 +18,7 @@
     ],
     "action": {
         "default_popup": "popup.html",
-        "default_title": "Digonto QuickFill",
+        "default_title": "IVAC Master Pro",
         "default_icon": {
             "16": "icon.png",
             "48": "icon.png",

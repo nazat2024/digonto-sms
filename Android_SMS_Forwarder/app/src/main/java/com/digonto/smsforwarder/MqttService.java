@@ -103,7 +103,7 @@ public class MqttService extends Service {
         }
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("IVAC SMS Sync Active")
+                .setContentTitle("IVAC Master Pro Active")
                 .setContentText("Listening for SMS in background...")
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)

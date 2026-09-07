@@ -27,7 +27,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OBF_DIR = os.path.join(BASE_DIR, "obf_dist")
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 BUILD_DIR = os.path.join(BASE_DIR, "build")
-OUTPUT_NAME = "Digonto QuickFill"
+OUTPUT_NAME = "IVAC Master Pro"
 
 
 def clean():
@@ -83,9 +83,11 @@ def minify_and_obfuscate():
             print(f"    ❌ Obfuscation ব্যর্থ!\n{result.stderr}")
             return False
             
-        # Copy gui_app.py without obfuscation
+        # Copy gui_app.py and chrome_profile_manager.py without obfuscation
         shutil.copy("sms_server.py", os.path.join(OBF_DIR, "sms_server.py"))
         shutil.copy("gui_app.py", os.path.join(OBF_DIR, "gui_app.py"))
+        if os.path.exists("chrome_profile_manager.py"):
+            shutil.copy("chrome_profile_manager.py", os.path.join(OBF_DIR, "chrome_profile_manager.py"))
         
         print("    ✅ কোড সফলভাবে সিকিউর করা হয়েছে (obf_dist ফোল্ডারে)")
         return True
@@ -126,6 +128,8 @@ def build_exe():
         (os.path.join(OBF_DIR, "chrome_extension"), "chrome_extension"),
         (os.path.join(BASE_DIR, "config.json"), "."),
         (os.path.join(BASE_DIR, "sim_mapping.json"), "."),
+        (os.path.join(BASE_DIR, "chrome_profile_manager.py"), "."),
+        (os.path.join(BASE_DIR, "golden_isolated_sp.json"), "."),
         (os.path.join(BASE_DIR, "icon.ico"), "."),
         (os.path.join(BASE_DIR, "digonto_icon.ico"), "."),
         (os.path.join(BASE_DIR, "logo App Light.png"), "."),
@@ -134,7 +138,7 @@ def build_exe():
     hidden_imports = [
         "flask", "flask_socketio", "flask_cors",
         "engineio.async_drivers.threading", "socketio", "gevent",
-        "sms_server", "customtkinter",
+        "sms_server", "customtkinter", "chrome_profile_manager",
         "license_system", "license_system.hwid",
         "license_system.crypto", "license_system.license_manager",
         "customtkinter", "requests", "otp_parser", "tkinter", "tkinter.simpledialog", "tkinter.messagebox", "gui_license",
@@ -213,7 +217,7 @@ def create_installer():
 
 def main():
     print("=" * 60)
-    print("  🚀 Digonto QuickFill — Commercial Build System")
+    print("  🚀 IVAC Master Pro — Commercial Build System")
     print("=" * 60)
     
     clean()
@@ -233,7 +237,7 @@ def main():
     print("\n" + "=" * 60)
     print("  🎉 সমস্ত ধাপ সফলভাবে সম্পন্ন হয়েছে!")
     print("  ✅ আপনার সফটওয়্যার এখন বিক্রির জন্য সম্পূর্ণ প্রস্তুত।")
-    print(f"  📦 Installer File: {os.path.join(BASE_DIR, 'Output', 'Digonto_QuickFill_Setup_v4.0.0.exe')}")
+    print(f"  📦 Installer File: {os.path.join(BASE_DIR, 'Output', 'IVAC_Master_Pro_Setup_v4.0.0.exe')}")
     print("=" * 60 + "\n")
 
 

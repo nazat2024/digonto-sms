@@ -22,7 +22,7 @@ if sys.platform == "win32":
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 BUILD_DIR = os.path.join(BASE_DIR, "build")
-OUTPUT_NAME = "Digonto QuickFill"
+OUTPUT_NAME = "IVAC Master Pro"
 
 def clean():
     """আগের বিল্ড ফাইল মুছে ফেলে।"""
@@ -38,7 +38,7 @@ def clean():
 def build():
     """PyInstaller দিয়ে EXE বিল্ড করে।"""
     print("\n" + "=" * 55)
-    print("  🔨 Digonto QuickFill — EXE Builder")
+    print("  🔨 IVAC Master Pro — EXE Builder")
     print("=" * 55)
     
     # Clean
@@ -61,7 +61,8 @@ def build():
         "gevent",
         "license_system", "license_system.hwid",
         "license_system.crypto", "license_system.license_manager",
-        "gui_license"
+        "gui_license",
+        "chrome_profile_manager"
     ]
     
     # Build command
@@ -88,6 +89,7 @@ def build():
         "sim_mapping.json",
         "otp_parser.py",
         "sms_server.py",
+        "chrome_profile_manager.py",
     ]
     for f in additional_files:
         fpath = os.path.join(BASE_DIR, f)
@@ -103,6 +105,16 @@ def build():
     result = subprocess.run(cmd, cwd=BASE_DIR)
     
     if result.returncode == 0:
+        # Windows 7 Compatibility Fix
+        win7_dll_src = os.path.join(BASE_DIR, 'win7_fix', 'x64', 'api-ms-win-core-path-l1-1-0.dll')
+        if os.path.exists(win7_dll_src):
+            app_root = os.path.join(DIST_DIR, OUTPUT_NAME)
+            internal_dir = os.path.join(app_root, '_internal')
+            shutil.copy2(win7_dll_src, os.path.join(app_root, 'api-ms-win-core-path-l1-1-0.dll'))
+            if os.path.exists(internal_dir):
+                shutil.copy2(win7_dll_src, os.path.join(internal_dir, 'api-ms-win-core-path-l1-1-0.dll'))
+            print("    🪟 Windows 7 Compatibility DLL যুক্ত করা হয়েছে!")
+            
         exe_path = os.path.join(DIST_DIR, OUTPUT_NAME, f"{OUTPUT_NAME}.exe")
         print(f"\n  {'=' * 55}")
         print(f"  ✅ বিল্ড সফল!")
