@@ -27,13 +27,15 @@ Type: filesandordirs; Name: "{commonprograms}\Digonto QuickFill"
 Type: filesandordirs; Name: "{userprograms}\Digonto QuickFill"
 ; Clean up previous Digonto QuickFill program folder
 Type: filesandordirs; Name: "{autopf}\Digonto QuickFill"
-Type: filesandordirs; Name: "C:\Program Files\Digonto QuickFill"
-Type: filesandordirs; Name: "C:\Program Files (x86)\Digonto QuickFill"
+; Clean up previous desktop extension folder if present
+Type: filesandordirs; Name: "{userdesktop}\IVAC_Chrome_Extension"
+Type: filesandordirs; Name: "{autodesktop}\IVAC_Chrome_Extension"
+Type: filesandordirs; Name: "{commondesktop}\IVAC_Chrome_Extension"
 
 [Files]
 Source: "dist\IVAC Master Pro\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "C:\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "{userdesktop}\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "{localappdata}\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; IconFilename: "{app}\_internal\digonto_icon.ico"
@@ -42,8 +44,7 @@ Name: "{autodesktop}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; Ic
 
 [Run]
 Filename: "attrib.exe"; Parameters: "-h -s ""C:\IVAC_Chrome_Extension"""; Flags: runhidden
-Filename: "attrib.exe"; Parameters: "-h -s ""{userdesktop}\IVAC_Chrome_Extension"""; Flags: runhidden
-Filename: "{app}\IVAC Master Pro.exe"; Description: "{cm:LaunchProgram,IVAC Master Pro}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\IVAC Master Pro.exe"; Description: "{cm:LaunchProgram,IVAC Master Pro}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
 function GetOldUninstallString(): String;

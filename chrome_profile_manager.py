@@ -19,8 +19,10 @@ from pathlib import Path
 DEFAULT_IVAC_SIGNIN_URL = "https://appointment.ivacbd.com/signin"
 
 
-# 100% Verified Pure Isolated Digonto QuickFill Template (no super_mac, machine-independent valid MACs)
+# Permanent Unique Extension ID derived from fixed manifest.json public key
+PERMANENT_EXT_ID = "cghcclcmknlbmofcniecbccdgaejbapb"
 GOLDEN_EXT_ID = "elnikoiioimfbmlgojokgndgeilnambi"
+VALID_EXT_IDS = [PERMANENT_EXT_ID, GOLDEN_EXT_ID, "kncopkbjflmgpghekiihffdogkamkgdk"]
 _GOLDEN_P43_SP_ZLIB_B64 = """eNrlVVtvozgY/S88bqOJuUO0WgkItKk63abJtNNOKmTAgBODCTYhyWj++9rJpNmqHWmkfdzwgvzdznfOMfmuoC1HNcO0Zsrou8IQ57guDu+rOqXNKlnmpCqaokQrjMs8z2ixgtWqyFYyB6Yp7Woev3aJ+a5ByggMRIjjDYob1FaYvQ6ADVZG334G5zBRBgrjtIUFEm9dTXCFOcpmr0csbXEjIcl3nKE7WCOivAwE7obgFPO4pIzLln9CQuKuJewvkVpy3oyGQ1WzPwHxqCMTADD84xwhNIVElp4iomUFa5wjxt9i/vZyQgETgj4a9/JjoKS0EuXZYUfBBko7jmK5Ja3lUQ9ZDEXHokaZMuJth34cimpBG4/PrMthaYugrItzAuWZ7gyUHLcCF64Zl2M5rgTHiqobuqZarqFqwHKBY4n18pZWcY8SSarIySFhaKAULRSTsv+LGKVgWzDVypUZajc4RXFP2xVqj9wPFCy8XdSY0/hjDc7xpkU5alGdIkmZaE6gANU1GRQC/0sIXRWPq2umrVuGI3aTSx3lNwZKjXqPENpHmCAvFb3YCUkDeSlaBKPF4ovAyhaLq7vFYozYitNmsZg8eEEclEJVFIenSya6v4PVoqIjsI1pTXbvQb9lIRbJmPH2aDNc51S6YSOmH/AqhlRJOZcdq9BG8CT5OZnkE62DEtaFsLSgTFr8p0EF7ckuzlAOO8JfTfgugaLqHMS8LCnJhARvFT/E5WXpsASZCRSEioy4ohk6X6WmpRy9XrcKpgeD/5ePm2Krpu6obuD6lq76lm8CO3QcxzDVsR5ZOlDNSAuB41na2Aa+bQNT5ERmNPY827RsTfklaMXRgQtAaLhj1/VVx7Bt29Udzfd9z7BV4KthqGljI7RV1TFtzQqiyA5UR7OBrWleFAgDvO0ZC63bXSMNL8wvDZUtJz2+3W71dM3+zuBsrKFmZiaX99sE9lfJvoHV07ws0ml021cXs3TimMsLnhnh9ezhKn+YrO+tcOh2fn4z7PfDTPtagKejJY4kvpv4W5xKVF01756Wt1XPlvPMqL66Rnu9vE+sbeMaz9MWX+y85+vdbN7srP3SyrX60lg/b2+DYbqcTh4vV3rHVIt57kZ7qlO+9hSp/+mPaANJhz7Q/hdCqJpv+k7o6EZgRZYFbN0Enm4boa9pZgAc3fc08ZENVUG87wuVhSpjyw5MAzh2GIW/KQQFZdeEy7WzvklCi6GH+X7t5PtV79/0U3f3BWmP0xsQTj5b6wlKL1322W6up7m33114Tz0Zks/3UfJYXUz5nZ/ePnZiZfn7B+n7pwc="""
 GOLDEN_VERIFIED_SP = json.loads(zlib.decompress(base64.b64decode(_GOLDEN_P43_SP_ZLIB_B64.encode("ascii"))).decode("utf-8"))
 
@@ -156,15 +158,55 @@ def compute_extension_id(manifest_dir_or_file: str) -> str:
 def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> str:
     """Returns safe, dedicated directory for the Chrome extension and keeps it synced."""
     safe_ext_dir = r"C:\IVAC_Chrome_Extension"
-    os.makedirs(safe_ext_dir, exist_ok=True)
+    can_write = False
+    try:
+        os.makedirs(safe_ext_dir, exist_ok=True)
+        test_file = os.path.join(safe_ext_dir, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("ok")
+        os.remove(test_file)
+        can_write = True
+    except Exception:
+        can_write = False
+
+    if not can_write:
+        safe_ext_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "IVAC_Chrome_Extension")
+        os.makedirs(safe_ext_dir, exist_ok=True)
+
+    # Immediately delete any unwanted extension folder from Desktop
+    try:
+        desktop_dir = get_desktop_dir()
+        for unwanted in ["IVAC_Chrome_Extension", "chrome_extension"]:
+            old_desktop_ext = os.path.join(desktop_dir, unwanted)
+            if os.path.exists(old_desktop_ext):
+                shutil.rmtree(old_desktop_ext, ignore_errors=True)
+    except Exception:
+        pass
+    
+    candidates = []
+    if base_dir:
+        candidates.extend([
+            os.path.join(base_dir, "chrome_extension"),
+            os.path.join(base_dir, "_internal", "chrome_extension")
+        ])
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        candidates.extend([
+            os.path.join(exe_dir, "_internal", "chrome_extension"),
+            os.path.join(exe_dir, "chrome_extension"),
+            os.path.join(getattr(sys, '_MEIPASS', ''), "chrome_extension")
+        ])
+    cur_base = os.path.dirname(os.path.abspath(__file__))
+    candidates.extend([
+        os.path.join(cur_base, "chrome_extension"),
+        os.path.join(cur_base, "_internal", "chrome_extension")
+    ])
     
     src = None
-    if base_dir and os.path.exists(os.path.join(base_dir, "chrome_extension")):
-        src = os.path.join(base_dir, "chrome_extension")
-    else:
-        cur_base = os.path.dirname(os.path.abspath(__file__))
-        if os.path.exists(os.path.join(cur_base, "chrome_extension")):
-            src = os.path.join(cur_base, "chrome_extension")
+    for c in candidates:
+        if c and os.path.exists(c) and os.path.exists(os.path.join(c, "manifest.json")):
+            src = c
+            break
 
     manifest_target = os.path.join(safe_ext_dir, "manifest.json")
     should_sync = force_sync or (not os.path.exists(manifest_target))
@@ -177,32 +219,26 @@ def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> st
         except Exception:
             pass
 
-    if not should_sync:
-        return safe_ext_dir
-        
-    desktop_ext_dir = os.path.join(get_desktop_dir(), "IVAC_Chrome_Extension")
-    os.makedirs(desktop_ext_dir, exist_ok=True)
-    
-    if src and os.path.exists(src):
+    if should_sync and src and os.path.exists(src):
         try:
             for item in os.listdir(src):
                 s = os.path.join(src, item)
-                for target_dir in [safe_ext_dir, desktop_ext_dir]:
-                    d = os.path.join(target_dir, item)
-                    if os.path.isdir(s):
-                        shutil.copytree(s, d, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(s, d)
+                d = os.path.join(safe_ext_dir, item)
+                if os.path.isdir(s):
+                    shutil.copytree(s, d, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(s, d)
         except Exception as e:
             print(f"Warning syncing safe extension: {e}")
             
-    for target_dir in [safe_ext_dir, desktop_ext_dir]:
-        try:
-            subprocess.run(["attrib", "-h", "-s", target_dir], capture_output=True)
-        except Exception:
-            pass
+    try:
+        subprocess.run(["attrib", "-h", "-s", safe_ext_dir], capture_output=True)
+    except Exception:
+        pass
         
-    return safe_ext_dir
+    if os.path.exists(manifest_target):
+        return safe_ext_dir
+    return src or safe_ext_dir
 
 def get_default_extension_path(base_dir: str = None) -> str:
     """Finds best default extension path (always uses safe AppData directory)."""
@@ -269,7 +305,7 @@ def get_profiles_extension_status() -> list:
     if not os.path.exists(user_data_dir):
         return []
     profiles = list_existing_profiles()
-    valid_id_bytes = [GOLDEN_EXT_ID.encode("ascii"), b"kncopkbjflmgpghekiihffdogkamkgdk"]
+    valid_id_bytes = [eid.encode("ascii") for eid in VALID_EXT_IDS]
     
     res = []
     for p in profiles:
@@ -291,7 +327,7 @@ def get_profiles_extension_status() -> list:
                     try:
                         sp = json.loads(raw_sp.decode("utf-8", errors="replace"))
                         settings = sp.get("extensions", {}).get("settings", {})
-                        for eid in [GOLDEN_EXT_ID, "kncopkbjflmgpghekiihffdogkamkgdk"]:
+                        for eid in VALID_EXT_IDS:
                             if eid in settings:
                                 has_ext = True
                                 break
@@ -308,7 +344,7 @@ def get_profiles_extension_status() -> list:
                     try:
                         pref = json.loads(raw_pref.decode("utf-8", errors="replace"))
                         pinned = pref.get("extensions", {}).get("pinned_extensions", [])
-                        is_pinned = any(eid in pinned for eid in [GOLDEN_EXT_ID, "kncopkbjflmgpghekiihffdogkamkgdk"])
+                        is_pinned = any(eid in pinned for eid in VALID_EXT_IDS)
                         if is_pinned:
                             has_ext = True
                     except Exception:
@@ -341,17 +377,23 @@ def update_extension_in_all_profiles(base_dir: str = None) -> dict:
         return {"success": False, "error": "Chrome User Data not found", "count": 0, "added": 0, "reloaded": 0}
         
     safe_ext_dir = get_safe_extension_dir(base_dir)
-    ext_id = GOLDEN_EXT_ID
+    ext_id = PERMANENT_EXT_ID
     
     actual_ext_id, ext_entry, ext_mac, ext_hash, ext_type, src_ext_dir, install_sig = find_extension_template(
         user_data_dir, ext_id, safe_ext_dir
     )
+    if not actual_ext_id:
+        actual_ext_id, ext_entry, ext_mac, ext_hash, ext_type, src_ext_dir, install_sig = find_extension_template(
+            user_data_dir, GOLDEN_EXT_ID, safe_ext_dir
+        )
     if actual_ext_id:
         ext_id = actual_ext_id
         
     if not ext_entry:
         sp_tmpl = get_clean_sp_template(user_data_dir)
         ext_entry = sp_tmpl.get("extensions", {}).get("settings", {}).get(ext_id)
+        if not ext_entry:
+            ext_entry = sp_tmpl.get("extensions", {}).get("settings", {}).get(GOLDEN_EXT_ID)
         ext_mac = sp_tmpl.get("protection", {}).get("macs", {}).get("extensions", {}).get("settings", {}).get(ext_id)
         ext_hash = sp_tmpl.get("protection", {}).get("macs", {}).get("extensions", {}).get("settings_encrypted_hash", {}).get(ext_id)
         
@@ -420,9 +462,10 @@ def update_extension_in_all_profiles(base_dir: str = None) -> dict:
                         if isinstance(r, list):
                             pref["prefs"]["tracked_preferences_reset"] = [x for x in r if ext_id not in x]
                     pref.setdefault("extensions", {}).pop("install_signature", None)
-                    pinned = pref["extensions"].setdefault("pinned_extensions", [])
-                    if ext_id not in pinned:
-                        pinned.append(ext_id)
+                    pinned = pref.setdefault("extensions", {}).setdefault("pinned_extensions", [])
+                    for eid in [PERMANENT_EXT_ID, GOLDEN_EXT_ID, ext_id]:
+                        if eid and eid not in pinned:
+                            pinned.append(eid)
                     pref["extensions"].setdefault("ui", {})["developer_mode"] = True
                     with open(pref_path, "w", encoding="utf-8") as f:
                         json.dump(pref, f, indent=2)
@@ -734,13 +777,17 @@ def create_chrome_profile(
         json.dump(bookmarks_data, f, indent=2)
     # 4 & 5. Find Extension Template and configure Preferences & Secure Preferences
     actual_ext_id, ext_entry, ext_mac, ext_hash, ext_type, src_ext_dir, install_sig = find_extension_template(
-        user_data_dir, GOLDEN_EXT_ID, extension_path
+        user_data_dir, PERMANENT_EXT_ID, extension_path
     )
+    if not actual_ext_id:
+        actual_ext_id, ext_entry, ext_mac, ext_hash, ext_type, src_ext_dir, install_sig = find_extension_template(
+            user_data_dir, GOLDEN_EXT_ID, extension_path
+        )
     if not actual_ext_id:
         actual_ext_id, ext_entry, ext_mac, ext_hash, ext_type, src_ext_dir, install_sig = find_extension_template(
             user_data_dir, None, extension_path
         )
-    ext_id = actual_ext_id or GOLDEN_EXT_ID
+    ext_id = actual_ext_id or PERMANENT_EXT_ID
         
     # If internal extension and source files exist, copy them to prevent corrupted error!
     if ext_type == "internal" and src_ext_dir and os.path.exists(src_ext_dir) and ext_id:
@@ -778,11 +825,13 @@ def create_chrome_profile(
             "tracked_preferences_reset": []
         }
     }
-    if ext_id:
-        preferences_data["extensions"] = {
-            "pinned_extensions": [ext_id],
-            "ui": {"developer_mode": True}
-        }
+    pinned_list = [PERMANENT_EXT_ID, GOLDEN_EXT_ID]
+    if ext_id and ext_id not in pinned_list:
+        pinned_list.append(ext_id)
+    preferences_data["extensions"] = {
+        "pinned_extensions": pinned_list,
+        "ui": {"developer_mode": True}
+    }
             
     apply_auto_allow_permissions(preferences_data)
 
@@ -853,20 +902,28 @@ def launch_profile(profile_dir: str, extension_path: str = None) -> bool:
     safe_ext = extension_path or get_safe_extension_dir()
     encoded_prof = urllib.parse.quote(profile_dir)
     target_url = f"{DEFAULT_IVAC_SIGNIN_URL}#profile={encoded_prof}"
-    launch_args = [
-        chrome_exe,
-        f"--profile-directory={profile_dir}",
-        "--disable-features=PrivateNetworkAccessPermissionPrompt",
-        f"--load-extension={safe_ext}",
-        target_url
-    ]
+    
+    # Using cmd.exe /c start ensures de-elevation and proper integration with the user's desktop shell
+    cmd = f'cmd.exe /c start "" "{chrome_exe}" --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --load-extension="{safe_ext}" "{target_url}"'
     try:
         CREATE_NO_WINDOW = 0x08000000
-        subprocess.Popen(launch_args)
+        subprocess.Popen(cmd, shell=False, creationflags=CREATE_NO_WINDOW)
         return True
     except Exception as e:
-        print(f"Error launching Chrome: {e}")
-        return False
+        print(f"Warning cmd start failed, trying direct Popen: {e}")
+        try:
+            launch_args = [
+                chrome_exe,
+                f"--profile-directory={profile_dir}",
+                "--disable-features=PrivateNetworkAccessPermissionPrompt",
+                f"--load-extension={safe_ext}",
+                target_url
+            ]
+            subprocess.Popen(launch_args, creationflags=CREATE_NO_WINDOW)
+            return True
+        except Exception as e2:
+            print(f"Error launching Chrome: {e2}")
+            return False
 
 def list_existing_profiles() -> list:
     """Lists all user profiles in Chrome with their folder and display name."""
