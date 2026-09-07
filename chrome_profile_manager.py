@@ -100,6 +100,17 @@ def is_chrome_running() -> bool:
     except Exception:
         return False
 
+def close_all_chrome_processes() -> bool:
+    """Gracefully terminates running chrome.exe processes."""
+    try:
+        CREATE_NO_WINDOW = 0x08000000
+        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/T"], 
+                       capture_output=True, creationflags=CREATE_NO_WINDOW)
+        return True
+    except Exception as e:
+        print(f"Error terminating Chrome: {e}")
+        return False
+
 def get_desktop_dir() -> str:
     try:
         import ctypes.wintypes
@@ -282,10 +293,8 @@ def get_profiles_extension_status() -> list:
                         settings = sp.get("extensions", {}).get("settings", {})
                         for eid in [GOLDEN_EXT_ID, "kncopkbjflmgpghekiihffdogkamkgdk"]:
                             if eid in settings:
-                                entry = settings[eid]
-                                if not entry.get("disable_reasons", []):
-                                    has_ext = True
-                                    break
+                                has_ext = True
+                                break
                     except Exception:
                         pass
             except Exception:
@@ -300,8 +309,20 @@ def get_profiles_extension_status() -> list:
                         pref = json.loads(raw_pref.decode("utf-8", errors="replace"))
                         pinned = pref.get("extensions", {}).get("pinned_extensions", [])
                         is_pinned = any(eid in pinned for eid in [GOLDEN_EXT_ID, "kncopkbjflmgpghekiihffdogkamkgdk"])
+                        if is_pinned:
+                            has_ext = True
                     except Exception:
                         pass
+            except Exception:
+                pass
+                
+        if not has_ext:
+            try:
+                desktop_dir = get_desktop_dir()
+                safe_sc = "".join(c for c in p_name if c not in r'\/:*?"<>|').strip()
+                sc_path = os.path.join(desktop_dir, f"{safe_sc}.lnk")
+                if os.path.exists(sc_path):
+                    has_ext = True
             except Exception:
                 pass
                 
@@ -769,15 +790,16 @@ def create_chrome_profile(
     with open(pref_file, "w", encoding="utf-8") as f:
         json.dump(preferences_data, f, indent=2)
 
-    # 5. Inject Extension into Secure Preferences with full verified template to prevent Chrome resetting
-    import copy
-    sp_data = copy.deepcopy(get_clean_sp_template(user_data_dir))
-    if extension_path and ext_id in sp_data.get("extensions", {}).get("settings", {}):
-        sp_data["extensions"]["settings"][ext_id]["path"] = extension_path
+    # 5. Inject Extension into Secure Preferences ONLY if a valid local template with verified MAC exists on this machine
+    if ext_mac and ext_hash:
+        import copy
+        sp_data = copy.deepcopy(get_clean_sp_template(user_data_dir))
+        if extension_path and ext_id in sp_data.get("extensions", {}).get("settings", {}):
+            sp_data["extensions"]["settings"][ext_id]["path"] = extension_path
 
-    sp_file = os.path.join(profile_full_path, "Secure Preferences")
-    with open(sp_file, "w", encoding="utf-8") as f:
-        json.dump(sp_data, f, indent=2)
+        sp_file = os.path.join(profile_full_path, "Secure Preferences")
+        with open(sp_file, "w", encoding="utf-8") as f:
+            json.dump(sp_data, f, indent=2)
 
     # 6. Register in Local State
     ls_path = os.path.join(user_data_dir, "Local State")
@@ -809,7 +831,8 @@ def create_chrome_profile(
     desktop_dir = get_desktop_dir()
     safe_shortcut_name = "".join(c for c in clean_name if c not in r'\/:*?"<>|').strip()
     shortcut_path = os.path.join(desktop_dir, f"{safe_shortcut_name}.lnk")
-    cmd_args = f'--profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt {DEFAULT_IVAC_SIGNIN_URL}'
+    safe_ext = extension_path if (extension_path and os.path.exists(extension_path)) else get_default_extension_path()
+    cmd_args = f'--profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --load-extension="{safe_ext}" {DEFAULT_IVAC_SIGNIN_URL}'
     create_desktop_shortcut(shortcut_path, chrome_exe, cmd_args)
     # 8. Launch Chrome
     if launch_now:
@@ -834,7 +857,7 @@ def launch_profile(profile_dir: str, extension_path: str = None) -> bool:
         chrome_exe,
         f"--profile-directory={profile_dir}",
         "--disable-features=PrivateNetworkAccessPermissionPrompt",
-        f'--load-extension="{safe_ext}"',
+        f"--load-extension={safe_ext}",
         target_url
     ]
     try:

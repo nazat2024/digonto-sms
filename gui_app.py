@@ -1933,7 +1933,8 @@ class IVACApp(ctk.CTk):
             profile_dir = self._format_profile_dir(profile_dir)
             encoded_prof = urllib.parse.quote(profile_dir)
             target_url = f"https://appointment.ivacbd.com/signin#profile={encoded_prof}"
-            cmd = f'start chrome.exe --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --load-extension="{ext_path}" "{target_url}"'
+            chrome_exe = cpm.get_chrome_exe_path() or "chrome.exe"
+            cmd = f'start "" "{chrome_exe}" --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --load-extension="{ext_path}" "{target_url}"'
             subprocess.Popen(cmd, shell=True)
     
     def _launch_all_profiles(self):
@@ -2574,6 +2575,20 @@ class IVACApp(ctk.CTk):
             messagebox.showwarning("Warning", "অনুগ্রহ করে প্রোফাইলের নাম লিখুন (যেমন: 30. MOHIR বা Counter 1)!")
             return
             
+        if cpm.is_chrome_running():
+            from tkinter import messagebox
+            msg = (
+                "Chrome ব্রাউজার বর্তমানে ব্যাকগ্রাউন্ডে বা স্ক্রিনে চালু রয়েছে।\n\n"
+                "নতুন প্রোফাইলে এক্সটেনশন সফলভাবে সক্রিয় করার জন্য খোলা থাকা Chrome বন্ধ করা আবশ্যক।\n\n"
+                "আপনি কি এখনই চালু থাকা Chrome বন্ধ করে নতুন প্রোফাইল ওপেন করতে চান?"
+            )
+            ans = messagebox.askyesno("Chrome বন্ধ করার অনুমতি", msg, icon="warning")
+            if ans:
+                cpm.close_all_chrome_processes()
+                time.sleep(0.8)
+            else:
+                return
+
         if hasattr(self, "btn_create_profile"):
             self.btn_create_profile.configure(state="disabled", text="⏳ তৈরি হচ্ছে...")
         self.lbl_profile_status.configure(text="⚡ Chrome Profile ও বুকমার্ক তৈরি হচ্ছে...", text_color="#f59e0b")
