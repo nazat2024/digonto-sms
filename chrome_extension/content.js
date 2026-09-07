@@ -623,24 +623,23 @@ setInterval(() => {
         if (url.includes('/signin') || url.includes('/login')) {
             chrome.storage.local.get(['my_chrome_profile', 'ivac_phone', 'ivac_password'], (st) => {
                 const prof = st.my_chrome_profile || '';
-                fetch(`http://127.0.0.1:5000/api/profile/data?profile=${encodeURIComponent(prof)}`)
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data && data.profile) {
-                            const sPhone = (data.profile.phone || '').trim();
-                            const sPass = data.profile.password || '';
-                            const curPhone = (st.ivac_phone || '').trim();
-                            const curPass = st.ivac_password || '';
-                            if (sPhone !== curPhone || sPass !== curPass) {
-                                chrome.storage.local.set({ ivac_phone: sPhone, ivac_password: sPass }, () => {
-                                    if (typeof autoFillLoginCredentials === 'function') {
-                                        autoFillLoginCredentials();
-                                    }
-                                });
-                            }
+                chrome.runtime.sendMessage({ action: 'getProfileData', profile: prof }, (res) => {
+                    if (chrome.runtime.lastError || !res || !res.success || !res.data) return;
+                    const data = res.data;
+                    if (data && data.profile) {
+                        const sPhone = (data.profile.phone || '').trim();
+                        const sPass = data.profile.password || '';
+                        const curPhone = (st.ivac_phone || '').trim();
+                        const curPass = st.ivac_password || '';
+                        if (sPhone !== curPhone || sPass !== curPass) {
+                            chrome.storage.local.set({ ivac_phone: sPhone, ivac_password: sPass }, () => {
+                                if (typeof autoFillLoginCredentials === 'function') {
+                                    autoFillLoginCredentials();
+                                }
+                            });
                         }
-                    })
-                    .catch(() => {});
+                    }
+                });
             });
         }
     } catch(e) {}

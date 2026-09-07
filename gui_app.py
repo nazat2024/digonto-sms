@@ -1933,7 +1933,7 @@ class IVACApp(ctk.CTk):
             profile_dir = self._format_profile_dir(profile_dir)
             encoded_prof = urllib.parse.quote(profile_dir)
             target_url = f"https://appointment.ivacbd.com/signin#profile={encoded_prof}"
-            cmd = f'start chrome.exe --profile-directory="{profile_dir}" --load-extension="{ext_path}" "{target_url}"'
+            cmd = f'start chrome.exe --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --load-extension="{ext_path}" "{target_url}"'
             subprocess.Popen(cmd, shell=True)
     
     def _launch_all_profiles(self):

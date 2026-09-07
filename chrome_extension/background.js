@@ -51,6 +51,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
+    if (request.action === 'getProfileData') {
+        const prof = request.profile || '';
+        fetch(`http://127.0.0.1:5000/api/profile/data?profile=${encodeURIComponent(prof)}`)
+            .then(r => {
+                if (r.ok) return r.json();
+                throw new Error('Failed to fetch profile data');
+            })
+            .then(data => sendResponse({ success: true, data: data }))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+
     if (request.action === 'trackActivity') {
         fetch('http://127.0.0.1:5000/api/activity', {
             method: 'POST',

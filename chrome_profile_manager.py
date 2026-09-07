@@ -763,6 +763,8 @@ def create_chrome_profile(
             "ui": {"developer_mode": True}
         }
             
+    apply_auto_allow_permissions(preferences_data)
+
     pref_file = os.path.join(profile_full_path, "Preferences")
     with open(pref_file, "w", encoding="utf-8") as f:
         json.dump(preferences_data, f, indent=2)
@@ -807,7 +809,7 @@ def create_chrome_profile(
     desktop_dir = get_desktop_dir()
     safe_shortcut_name = "".join(c for c in clean_name if c not in r'\/:*?"<>|').strip()
     shortcut_path = os.path.join(desktop_dir, f"{safe_shortcut_name}.lnk")
-    cmd_args = f'--profile-directory="{profile_dir}" {DEFAULT_IVAC_SIGNIN_URL}'
+    cmd_args = f'--profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt {DEFAULT_IVAC_SIGNIN_URL}'
     create_desktop_shortcut(shortcut_path, chrome_exe, cmd_args)
     # 8. Launch Chrome
     if launch_now:
@@ -831,6 +833,7 @@ def launch_profile(profile_dir: str, extension_path: str = None) -> bool:
     launch_args = [
         chrome_exe,
         f"--profile-directory={profile_dir}",
+        "--disable-features=PrivateNetworkAccessPermissionPrompt",
         f'--load-extension="{safe_ext}"',
         target_url
     ]
@@ -920,4 +923,79 @@ def fix_missing_avatars(user_data_dir: str = None) -> int:
                 json.dump(ls_data, f, indent=2)
     except Exception as e:
         print(f"Error in fix_missing_avatars: {e}")
+        
+    try:
+        apply_auto_allow_to_all_existing_profiles(user_data_dir)
+    except Exception as e:
+        print(f"Error syncing auto-allow permissions: {e}")
+        
     return fixed_count
+
+
+AUTO_ALLOW_DOMAINS = [
+    "https://appointment.ivacbd.com:443,*",
+    "https://appointment.ivacbd.com,*",
+    "https://www.ivacbd.com:443,*",
+    "https://www.ivacbd.com,*",
+    "https://[*.]ivacbd.com:443,*",
+    "https://[*.]ivacbd.com,*",
+    "[*.]ivacbd.com,*",
+    "https://payment.bkash.com:443,*",
+    "https://payment.mynagad.com:30000,*",
+    "https://payment.mynagad.com,*",
+    "https://api.paystation.com.bd:443,*",
+    "https://checkout.pathaopay.com:443,*",
+    "https://ecom1.dutchbanglabank.com:443,*",
+    "https://nexsoftstudio.com:443,*",
+    "https://indianvisa-bangladesh.nic.in:443,*",
+    "https://www.epassport.gov.bd:443,*",
+    "*,*"
+]
+
+def apply_auto_allow_permissions(pref_dict: dict) -> dict:
+    """Configures Chrome preferences to auto-allow loopback and local network access (no prompt!)."""
+    if "profile" not in pref_dict:
+        pref_dict["profile"] = {}
+    
+    prof = pref_dict["profile"]
+    dcv = prof.setdefault("default_content_setting_values", {})
+    dcv["loopback_network"] = 1
+    dcv["local_network"] = 1
+    dcv["local_network_access"] = 1
+    dcv["has_migrated_local_network_access"] = True
+
+    cs = prof.setdefault("content_settings", {})
+    cs.setdefault("pref_version", 1)
+    exceptions = cs.setdefault("exceptions", {})
+
+    for net_key in ["loopback_network", "local_network", "local_network_access", "direct_sockets_private_network_access"]:
+        if net_key not in exceptions or not isinstance(exceptions[net_key], dict):
+            exceptions[net_key] = {}
+        for domain in AUTO_ALLOW_DOMAINS:
+            exceptions[net_key][domain] = {"setting": 1}
+
+    return pref_dict
+
+
+def apply_auto_allow_to_all_existing_profiles(user_data_dir: str = None) -> int:
+    """Applies auto-allow permissions to ALL existing Chrome profiles in User Data."""
+    if not user_data_dir:
+        user_data_dir = get_chrome_user_data_dir()
+    if not user_data_dir or not os.path.exists(user_data_dir):
+        return 0
+    count = 0
+    candidate_dirs = ["Default"] + [d for d in os.listdir(user_data_dir) if d.startswith("Profile ")]
+    for c_dir in candidate_dirs:
+        pref_path = os.path.join(user_data_dir, c_dir, "Preferences")
+        if os.path.exists(pref_path):
+            try:
+                with open(pref_path, "r", encoding="utf-8") as f:
+                    pref = json.load(f)
+                apply_auto_allow_permissions(pref)
+                with open(pref_path, "w", encoding="utf-8") as f:
+                    json.dump(pref, f, indent=2)
+                count += 1
+            except Exception as e:
+                print(f"Error applying auto-allow to {pref_path}: {e}")
+    return count
+
