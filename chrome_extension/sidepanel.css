@@ -61,14 +61,45 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 10px;
 }
 
-h3 {
-    font-size: 16px;
-    font-weight: 700;
+.panel-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.panel-brand-logo {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+}
+
+.panel-brand-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-brand-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-main);
+    letter-spacing: 0.3px;
+    line-height: 1.2;
+}
+
+.panel-brand-sub {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: #059669;
+    line-height: 1;
+}
+
+.zoom-wrapper {
     display: flex;
     align-items: center;
     gap: 6px;
