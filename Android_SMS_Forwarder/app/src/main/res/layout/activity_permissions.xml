@@ -90,6 +90,16 @@
                     android:text="Allow Background Notifications"
                     android:textSize="16sp"
                     android:textStyle="bold"
+                    android:textColor="#1F2937"
+                    android:paddingBottom="16dp"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchEmailListener"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Allow Gmail / Email OTP Reading"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
                     android:textColor="#1F2937"/>
 
             </LinearLayout>

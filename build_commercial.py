@@ -104,17 +104,27 @@ def obfuscate_extension():
     ext_dir = os.path.join(BASE_DIR, "chrome_extension")
     obf_ext_dir = os.path.join(OBF_DIR, "chrome_extension")
     
-    if not os.path.exists(obf_ext_dir):
-        os.makedirs(obf_ext_dir, exist_ok=True)
-        
-    shutil.copytree(ext_dir, obf_ext_dir, dirs_exist_ok=True)
+    if os.path.exists(obf_ext_dir):
+        shutil.rmtree(obf_ext_dir)
+    os.makedirs(obf_ext_dir, exist_ok=True)
     
-    for file in ["content.js", "background.js", "popup.js"]:
-        js_file = os.path.join(obf_ext_dir, file)
-        if os.path.exists(js_file):
-            print(f"    - Included {file}...")
+    obf_tool = os.path.join(BASE_DIR, "tools", "obfuscate_extension.js")
+    if os.path.exists(obf_tool):
+        try:
+            cmd = ["node", obf_tool, ext_dir, obf_ext_dir]
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            if res.returncode == 0:
+                print(res.stdout)
+                print("    ✅ Chrome Extension সফলভাবে Obfuscate ও যুক্ত করা হয়েছে (CSP safe)!")
+                return True
+            else:
+                print(f"    ⚠️ Warning during extension obfuscation:\n{res.stderr}")
+        except Exception as e:
+            print(f"    ⚠️ Obfuscation error: {e}")
             
-    print("    ✅ Chrome Extension সফলভাবে যুক্ত করা হয়েছে (CSP safe)!")
+    # Fallback to direct copy if node fails
+    shutil.copytree(ext_dir, obf_ext_dir, dirs_exist_ok=True)
+    print("    ⚠️ Fallback copy used for Chrome Extension.")
     return True
 
 
@@ -142,7 +152,7 @@ def build_exe():
         "license_system", "license_system.hwid",
         "license_system.crypto", "license_system.license_manager",
         "customtkinter", "requests", "otp_parser", "tkinter", "tkinter.simpledialog", "tkinter.messagebox", "gui_license",
-        "paho", "paho.mqtt", "paho.mqtt.client"
+        "paho", "paho.mqtt", "paho.mqtt.client", "websocket"
     ]
     
     # We build from the obfuscated `gui_app.py`

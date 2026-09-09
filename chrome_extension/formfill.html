@@ -1,0 +1,1738 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>IVAC MASTER PRO - FormFill</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+        :root {
+            --primary: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
+            --primary-hover: linear-gradient(135deg, #be123c 0%, #9f1239 100%);
+            --primary-solid: #e11d48;
+            --accent: #2563eb;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            --dark-card: #0f172a;
+            --dark-surface: #1e293b;
+            --success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --success-hover: linear-gradient(135deg, #059669 0%, #047857 100%);
+            --danger: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            --warning: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --bg-main: #f8fafc;
+            --card-bg: #ffffff;
+            --border-color: #e2e8f0;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.02);
+            --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.07), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        html, body {
+            overflow-x: hidden !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* UTILS */
+        .hidden {
+            display: none !important;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 14px;
+            box-shadow: var(--shadow-md);
+            margin-bottom: 14px;
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+        }
+
+        .card:hover {
+            box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(225, 29, 72, 0.08);
+        }
+
+        /* NEUMORPHIC BUTTON DESIGN SYSTEM */
+        .btn {
+            width: 100%;
+            padding: 11px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            color: white;
+            transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 13.5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            letter-spacing: 0.3px;
+            position: relative;
+            user-select: none;
+            outline: none;
+        }
+
+        .btn:active {
+            transform: translateY(1.5px) scale(0.985) !important;
+        }
+
+        /* NEUMORPHIC AUTOFILL BUTTON - VIBRANT TACTILE EMERALD */
+        #autofillButton {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.35) !important;
+            box-shadow: 
+                4px 6px 14px rgba(5, 150, 105, 0.38),
+                -2px -2px 6px rgba(255, 255, 255, 0.85),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.5),
+                inset 0 -2px 4px rgba(4, 120, 87, 0.45) !important;
+            color: #ffffff !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.5px !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 12px !important;
+        }
+
+        #autofillButton:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+            box-shadow: 
+                5px 8px 18px rgba(5, 150, 105, 0.48),
+                -3px -3px 8px rgba(255, 255, 255, 0.95),
+                inset 0 1px 2px rgba(255, 255, 255, 0.6),
+                inset 0 -2px 5px rgba(4, 120, 87, 0.55) !important;
+            transform: translateY(-1.5px);
+        }
+
+        #autofillButton:active {
+            box-shadow: 
+                inset 3px 4px 8px rgba(4, 120, 87, 0.75),
+                inset -2px -2px 6px rgba(255, 255, 255, 0.3) !important;
+            transform: translateY(1.5px) scale(0.985) !important;
+        }
+
+        /* NEUMORPHIC EXTRACT DATA (BGD PDF) - SAPPHIRE BLUE */
+        #saveProfileButton {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.35) !important;
+            box-shadow: 
+                4px 6px 14px rgba(37, 99, 235, 0.38),
+                -2px -2px 6px rgba(255, 255, 255, 0.85),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.5),
+                inset 0 -2px 4px rgba(29, 78, 216, 0.45) !important;
+            color: #ffffff !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.3px !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 12px !important;
+        }
+
+        #saveProfileButton:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important;
+            box-shadow: 
+                5px 8px 18px rgba(37, 99, 235, 0.48),
+                -3px -3px 8px rgba(255, 255, 255, 0.95),
+                inset 0 1px 2px rgba(255, 255, 255, 0.6),
+                inset 0 -2px 5px rgba(29, 78, 216, 0.55) !important;
+            transform: translateY(-1.5px);
+        }
+
+        #saveProfileButton:active {
+            box-shadow: 
+                inset 3px 4px 8px rgba(29, 78, 216, 0.75),
+                inset -2px -2px 6px rgba(255, 255, 255, 0.3) !important;
+            transform: translateY(1.5px) scale(0.985) !important;
+        }
+
+        /* NEUMORPHIC EXTRACT DATA (PASSPORT) - CRIMSON ROSE */
+        #saveProfileButtonPassport {
+            background: linear-gradient(135deg, #f43f5e 0%, #be123c 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.35) !important;
+            box-shadow: 
+                4px 6px 14px rgba(225, 29, 72, 0.38),
+                -2px -2px 6px rgba(255, 255, 255, 0.85),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.5),
+                inset 0 -2px 4px rgba(190, 18, 60, 0.45) !important;
+            color: #ffffff !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.3px !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 12px !important;
+        }
+
+        #saveProfileButtonPassport:hover {
+            background: linear-gradient(135deg, #e11d48 0%, #9f1239 100%) !important;
+            box-shadow: 
+                5px 8px 18px rgba(225, 29, 72, 0.48),
+                -3px -3px 8px rgba(255, 255, 255, 0.95),
+                inset 0 1px 2px rgba(255, 255, 255, 0.6),
+                inset 0 -2px 5px rgba(190, 18, 60, 0.55) !important;
+            transform: translateY(-1.5px);
+        }
+
+        #saveProfileButtonPassport:active {
+            box-shadow: 
+                inset 3px 4px 8px rgba(190, 18, 60, 0.75),
+                inset -2px -2px 6px rgba(255, 255, 255, 0.3) !important;
+            transform: translateY(1.5px) scale(0.985) !important;
+        }
+
+        /* NEUMORPHIC MATTE BLACK BUTTON */
+        .btn-matte-black {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+            color: #ffffff !important;
+            box-shadow: 
+                4px 6px 14px rgba(15, 23, 42, 0.35),
+                -2px -2px 6px rgba(255, 255, 255, 0.8),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.25),
+                inset 0 -2px 4px rgba(0, 0, 0, 0.4) !important;
+            border: 1px solid #334155 !important;
+            font-size: 12.5px !important;
+            padding: 8px 12px !important;
+            border-radius: 10px !important;
+            margin-top: 8px !important;
+            font-weight: 700 !important;
+            width: 100% !important;
+            cursor: pointer !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        .btn-matte-black:hover {
+            background: linear-gradient(135deg, #334155 0%, #1e293b 100%) !important;
+            box-shadow: 
+                5px 8px 18px rgba(15, 23, 42, 0.45),
+                -3px -3px 8px rgba(255, 255, 255, 0.9) !important;
+            transform: translateY(-1.5px) !important;
+        }
+
+        .btn-matte-black:active {
+            box-shadow: 
+                inset 3px 3px 6px rgba(0, 0, 0, 0.6),
+                inset -2px -2px 5px rgba(255, 255, 255, 0.15) !important;
+            transform: translateY(1.5px) scale(0.985) !important;
+        }
+
+        /* NEUMORPHIC WRITE MANUALLY BUTTON */
+        #sideDocWriteManualBtn {
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%) !important;
+            color: #2563eb !important;
+            border: 1px solid rgba(255, 255, 255, 0.9) !important;
+            box-shadow: 
+                3px 4px 10px rgba(148, 163, 184, 0.35),
+                -3px -3px 8px rgba(255, 255, 255, 0.95),
+                inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            padding: 10px 14px !important;
+            border-radius: 12px !important;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #sideDocWriteManualBtn:hover {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+            color: #1d4ed8 !important;
+            box-shadow: 
+                4px 6px 14px rgba(148, 163, 184, 0.45),
+                -4px -4px 10px rgba(255, 255, 255, 1),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.9) !important;
+            transform: translateY(-1px);
+        }
+
+        #sideDocWriteManualBtn:active {
+            box-shadow: 
+                inset 2.5px 2.5px 5px rgba(148, 163, 184, 0.55),
+                inset -2px -2px 5px rgba(255, 255, 255, 0.85) !important;
+            transform: translateY(1px) scale(0.985) !important;
+        }
+
+        /* NEUMORPHIC SAVE BUTTONS IN SETTINGS */
+        #savePortSettingsBtn,
+        #saveJourneySettingsBtn,
+        #saveProfSettingsBtn,
+        #saveEduSettingsBtn {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.35) !important;
+            border-radius: 10px !important;
+            box-shadow: 
+                3px 4px 10px rgba(37, 99, 235, 0.35),
+                -2px -2px 6px rgba(255, 255, 255, 0.85),
+                inset 0 1px 1px rgba(255, 255, 255, 0.5),
+                inset 0 -1.5px 3px rgba(29, 78, 216, 0.4) !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            padding: 7px 16px !important;
+            font-size: 12px !important;
+            cursor: pointer !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        #savePortSettingsBtn:hover,
+        #saveJourneySettingsBtn:hover,
+        #saveProfSettingsBtn:hover,
+        #saveEduSettingsBtn:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important;
+            box-shadow: 
+                4px 6px 14px rgba(37, 99, 235, 0.45),
+                -3px -3px 8px rgba(255, 255, 255, 0.95),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.6),
+                inset 0 -2px 4px rgba(29, 78, 216, 0.5) !important;
+            transform: translateY(-1px);
+        }
+
+        #savePortSettingsBtn:active,
+        #saveJourneySettingsBtn:active,
+        #saveProfSettingsBtn:active,
+        #saveEduSettingsBtn:active {
+            box-shadow: 
+                inset 2.5px 2.5px 5px rgba(29, 78, 216, 0.7),
+                inset -1.5px -1.5px 4px rgba(255, 255, 255, 0.3) !important;
+            transform: translateY(1px) scale(0.97) !important;
+        }
+
+        /* NEUMORPHIC JOURNEY OFFSET BUTTONS (+15, +30, +45) */
+        .btn-journey-offset {
+            padding: 7px 11px;
+            border-radius: 9px;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            background: linear-gradient(135deg, #f8fafc 0%, #eef2f6 100%);
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #334155;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 
+                2px 3px 6px rgba(163, 177, 198, 0.35),
+                -2px -2px 5px rgba(255, 255, 255, 0.9),
+                inset 0 1px 1px rgba(255, 255, 255, 0.5);
+            outline: none;
+            user-select: none;
+        }
+
+        .btn-journey-offset:hover {
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+            box-shadow: 
+                3px 4px 8px rgba(163, 177, 198, 0.45),
+                -2px -2px 6px rgba(255, 255, 255, 1);
+            transform: translateY(-1px);
+        }
+
+        .btn-journey-offset:active {
+            box-shadow: 
+                inset 2px 2px 4px rgba(163, 177, 198, 0.55),
+                inset -1.5px -1.5px 3px rgba(255, 255, 255, 0.75) !important;
+            transform: translateY(1px) scale(0.97) !important;
+        }
+
+        .btn-journey-offset.active-offset {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+            border-color: #93c5fd !important;
+            color: #1d4ed8 !important;
+            font-weight: 700 !important;
+            box-shadow: 
+                inset 2px 2px 4px rgba(37, 99, 235, 0.25),
+                inset -1.5px -1.5px 3px rgba(255, 255, 255, 0.9),
+                0 0 0 1px #3b82f6 !important;
+        }
+
+        /* NEUMORPHIC BACK BUTTON */
+        #backToMainBtn {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+            border-radius: 8px !important;
+            box-shadow: 
+                2px 3px 6px rgba(71, 85, 105, 0.35),
+                -2px -2px 5px rgba(255, 255, 255, 0.85),
+                inset 0 1px 1px rgba(255, 255, 255, 0.4) !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            padding: 5px 12px !important;
+            cursor: pointer !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        #backToMainBtn:hover {
+            background: linear-gradient(135deg, #475569 0%, #334155 100%) !important;
+            box-shadow: 
+                3px 4px 8px rgba(71, 85, 105, 0.45),
+                -2px -2px 6px rgba(255, 255, 255, 0.95) !important;
+            transform: translateY(-1px);
+        }
+
+        #backToMainBtn:active {
+            box-shadow: 
+                inset 2px 2px 4px rgba(51, 65, 85, 0.7),
+                inset -1px -1px 3px rgba(255, 255, 255, 0.25) !important;
+            transform: translateY(1px) scale(0.97) !important;
+        }
+
+        /* NEUMORPHIC COPY TEMPID BUTTON */
+        .copy-tempid-btn {
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%) !important;
+            color: #334155 !important;
+            border: 1px solid rgba(255, 255, 255, 0.9) !important;
+            border-radius: 8px !important;
+            box-shadow: 
+                2px 3px 6px rgba(163, 177, 198, 0.35),
+                -2px -2px 5px rgba(255, 255, 255, 0.95),
+                inset 0 1px 1px rgba(255, 255, 255, 0.7) !important;
+            font-weight: 700 !important;
+            padding: 4px 11px !important;
+            font-size: 11px !important;
+            cursor: pointer !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        .copy-tempid-btn:hover {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+            color: #0f172a !important;
+            box-shadow: 
+                3px 4px 8px rgba(163, 177, 198, 0.45),
+                -2px -2px 6px rgba(255, 255, 255, 1) !important;
+            transform: translateY(-1px);
+        }
+
+        .copy-tempid-btn:active {
+            box-shadow: 
+                inset 2px 2px 4px rgba(163, 177, 198, 0.55),
+                inset -1.5px -1.5px 3px rgba(255, 255, 255, 0.75) !important;
+            transform: translateY(1px) scale(0.96) !important;
+        }
+
+        /* HEADER */
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            background: var(--card-bg);
+            padding: 10px 16px;
+            border-radius: 12px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+        }
+
+        #userNameDisplay {
+            background: #f1f5f9;
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-sub);
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        #userNameDisplay:hover {
+            background: #e2e8f0;
+            color: var(--text-main);
+            border-color: #cbd5e1;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* BUTTONS */
+        .icon-btn,
+        .text-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            cursor: pointer;
+            border-radius: 8px;
+            border: none;
+            transition: var(--transition);
+        }
+
+        .fb-btn {
+            background-color: #1877F2;
+            color: white;
+            padding: 6px;
+            width: 32px;
+            height: 32px;
+            box-shadow: 0 2px 4px rgba(24, 119, 242, 0.2);
+        }
+
+        .fb-btn:hover {
+            background-color: #166fe5;
+            transform: translateY(-1px);
+        }
+
+        .gold-btn {
+            background: var(--warning);
+            color: #ffffff;
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
+        }
+
+        .gold-btn:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            transform: translateY(-1px);
+        }
+
+        .credits-pill {
+            font-size: 12px;
+            font-weight: 700;
+            color: #065f46;
+            background: #d1fae5;
+            padding: 5px 12px;
+            border-radius: 20px;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid #a7f3d0;
+            animation: pulse-glow 2s infinite ease-in-out;
+        }
+
+        @keyframes pulse-glow {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3);
+            }
+
+            70% {
+                box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        .logout-link {
+            cursor: pointer;
+            color: #ef4444;
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            margin-left: 4px;
+            transition: var(--transition);
+        }
+
+        .logout-link:hover {
+            color: #b91c1c;
+            text-decoration: underline;
+        }
+
+        /* SEARCH & LIST */
+        .search-box {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+            font-size: 13px;
+            font-family: inherit;
+            background-color: #f8fafc;
+            transition: var(--transition);
+        }
+
+        .search-box:focus {
+            outline: none;
+            background-color: #ffffff;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .section-label {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 0;
+            letter-spacing: 0.1px;
+        }
+
+        .hidden-link {
+            font-size: 12px;
+            color: #4f46e5;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+            transition: var(--transition);
+        }
+
+        .hidden-link:hover {
+            color: #3730a3;
+            text-decoration: underline;
+        }
+
+        #profileList,
+        #hiddenProfileList {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            height: 320px;
+            overflow-y: auto;
+            background: #ffffff;
+            padding: 4px;
+        }
+
+        .profile-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13.5px;
+            font-weight: 500;
+            border-radius: 8px;
+            margin-bottom: 2px;
+            transition: var(--transition);
+        }
+
+        .profile-item:last-child {
+            border-bottom: none;
+        }
+
+        .profile-item:hover {
+            background-color: #f1f5f9;
+        }
+
+        .profile-item.selected {
+            background-color: #e0e7ff;
+            color: #312e81;
+            border-left: 4px solid #4f46e5;
+        }
+
+        .profile-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .profile-actions button {
+            padding: 5px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            outline: none;
+            user-select: none;
+        }
+
+        .profile-actions button:active {
+            transform: translateY(1px) scale(0.96) !important;
+        }
+
+        .edit-btn {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            box-shadow: 2px 3px 6px rgba(5, 150, 105, 0.3), -1px -1px 3px rgba(255, 255, 255, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+        }
+
+        .edit-btn:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            box-shadow: 3px 5px 9px rgba(5, 150, 105, 0.4), -2px -2px 5px rgba(255, 255, 255, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .edit-btn:active {
+            box-shadow: inset 2px 2px 4px rgba(4, 120, 87, 0.7), inset -1px -1px 3px rgba(255, 255, 255, 0.25) !important;
+        }
+
+        .del-btn {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            box-shadow: 2px 3px 6px rgba(220, 38, 38, 0.3), -1px -1px 3px rgba(255, 255, 255, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+        }
+
+        .del-btn:hover {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            box-shadow: 3px 5px 9px rgba(220, 38, 38, 0.4), -2px -2px 5px rgba(255, 255, 255, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .del-btn:active {
+            box-shadow: inset 2px 2px 4px rgba(185, 28, 28, 0.7), inset -1px -1px 3px rgba(255, 255, 255, 0.25) !important;
+        }
+
+        .rename-btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            box-shadow: 2px 3px 6px rgba(37, 99, 235, 0.3), -1px -1px 3px rgba(255, 255, 255, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+        }
+
+        .rename-btn:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            box-shadow: 3px 5px 9px rgba(37, 99, 235, 0.4), -2px -2px 5px rgba(255, 255, 255, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .rename-btn:active {
+            box-shadow: inset 2px 2px 4px rgba(29, 78, 216, 0.7), inset -1px -1px 3px rgba(255, 255, 255, 0.25) !important;
+        }
+
+        .hide-btn {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+            box-shadow: 2px 3px 6px rgba(71, 85, 105, 0.3), -1px -1px 3px rgba(255, 255, 255, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+        }
+
+        .hide-btn:hover {
+            background: linear-gradient(135deg, #475569 0%, #334155 100%);
+            box-shadow: 3px 5px 9px rgba(71, 85, 105, 0.4), -2px -2px 5px rgba(255, 255, 255, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .hide-btn:active {
+            box-shadow: inset 2px 2px 4px rgba(51, 65, 85, 0.7), inset -1px -1px 3px rgba(255, 255, 255, 0.25) !important;
+        }
+
+        .show-btn {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            box-shadow: 2px 3px 6px rgba(217, 119, 6, 0.3), -1px -1px 3px rgba(255, 255, 255, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+            color: white !important;
+        }
+
+        .show-btn:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            box-shadow: 3px 5px 9px rgba(217, 119, 6, 0.4), -2px -2px 5px rgba(255, 255, 255, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .show-btn:active {
+            box-shadow: inset 2px 2px 4px rgba(180, 83, 9, 0.7), inset -1px -1px 3px rgba(255, 255, 255, 0.25) !important;
+        }
+
+        /* SEPARATE NEUMORPHIC MODE SELECTOR BUTTONS (BGD PDF & PASSPORT) */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            margin: 0 auto 16px auto;
+            max-width: 250px;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            position: relative;
+        }
+
+        #toggle-slider {
+            display: none !important;
+        }
+
+        .toggle-btn {
+            flex: 1;
+            padding: 7.5px 12px;
+            font-size: 11.5px;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            outline: none;
+            user-select: none;
+            transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            background: linear-gradient(135deg, #f8fafc 0%, #eef2f6 100%);
+            color: #64748b;
+            box-shadow: 
+                3px 3px 7px rgba(163, 177, 198, 0.4),
+                -3px -3px 7px rgba(255, 255, 255, 0.95),
+                inset 0 1px 1px rgba(255, 255, 255, 0.6);
+        }
+
+        .toggle-btn:hover:not(.active) {
+            color: #1e293b;
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+            box-shadow: 
+                4px 4px 10px rgba(163, 177, 198, 0.5),
+                -3px -3px 8px rgba(255, 255, 255, 1);
+            transform: translateY(-1px);
+        }
+
+        .toggle-btn:active {
+            transform: translateY(1px) scale(0.97) !important;
+            box-shadow: 
+                inset 2px 2px 4px rgba(163, 177, 198, 0.6),
+                inset -1.5px -1.5px 3px rgba(255, 255, 255, 0.8) !important;
+        }
+
+        /* BGD PDF - ACTIVE NEUMORPHIC SAPPHIRE BLUE */
+        #btn-pdf-mode.active {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.35) !important;
+            box-shadow: 
+                3px 4px 10px rgba(37, 99, 235, 0.4),
+                -2px -2px 6px rgba(255, 255, 255, 0.85),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.5),
+                inset 0 -1.5px 3px rgba(29, 78, 216, 0.4) !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        #btn-pdf-mode.active:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important;
+            box-shadow: 
+                4px 5px 12px rgba(37, 99, 235, 0.5),
+                -2px -2px 6px rgba(255, 255, 255, 0.9) !important;
+            transform: translateY(-1px);
+        }
+
+        /* PASSPORT - ACTIVE NEUMORPHIC CRIMSON / ROSE RED */
+        #btn-passport-mode.active {
+            background: linear-gradient(135deg, #f43f5e 0%, #be123c 100%) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.35) !important;
+            box-shadow: 
+                3px 4px 10px rgba(225, 29, 72, 0.4),
+                -2px -2px 6px rgba(255, 255, 255, 0.85),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.5),
+                inset 0 -1.5px 3px rgba(190, 18, 60, 0.4) !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        #btn-passport-mode.active:hover {
+            background: linear-gradient(135deg, #e11d48 0%, #9f1239 100%) !important;
+            box-shadow: 
+                4px 5px 12px rgba(225, 29, 72, 0.5),
+                -2px -2px 6px rgba(255, 255, 255, 0.9) !important;
+            transform: translateY(-1px);
+        }
+
+        /* 50% OFF PROMO BADGE */
+        .promo-badge {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: #ffffff;
+            font-size: 8px;
+            font-weight: 800;
+            padding: 1px 5px;
+            border-radius: 12px;
+            margin-left: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            display: inline-block;
+            box-shadow: 0 2px 4px rgba(239, 68, 68, 0.35);
+            border: 1.5px solid #ffffff;
+            animation: promo-shake 2.5s infinite ease-in-out;
+        }
+
+        /* GOLD VARIATION FOR ACTIVE DISCOUNTS */
+        #btn-passport-mode.active .promo-badge {
+            background: #ffffff;
+            color: #b45309;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+            border-color: #fcd34d;
+        }
+
+        @keyframes promo-shake {
+
+            0%,
+            100% {
+                transform: rotate(0deg) scale(1);
+            }
+
+            5% {
+                transform: rotate(-5deg) scale(1.05);
+            }
+
+            10% {
+                transform: rotate(5deg) scale(1.05);
+            }
+
+            15% {
+                transform: rotate(-3deg) scale(1.05);
+            }
+
+            20% {
+                transform: rotate(3deg) scale(1.05);
+            }
+
+            25% {
+                transform: rotate(0deg) scale(1.05);
+            }
+        }
+
+        /* STATUS MESSAGES */
+        #statusMessage {
+            text-align: center;
+            font-size: 12.5px;
+            font-weight: 600;
+            margin-top: 14px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            transition: var(--transition);
+        }
+
+        #statusMessage:empty {
+            display: none;
+        }
+
+        .error {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+
+        .success {
+            background-color: #d1fae5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+
+        .processing {
+            background-color: #e0e7ff;
+            color: #3730a3;
+            border: 1px solid #c7d2fe;
+            animation: processing-pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes processing-pulse {
+            0% {
+                opacity: 0.8;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.8;
+            }
+        }
+
+        /* SIGN IN WITH GOOGLE & LOGIN VIEW */
+        .google-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            background: #ffffff;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .google-btn:hover {
+            background-color: #f8fafc;
+            border-color: #cbd5e1;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            transform: translateY(-1px);
+        }
+
+        .google-btn:active {
+            background-color: #f1f5f9;
+            transform: scale(0.98);
+        }
+
+        /* UPLOAD & CARD IMPROVEMENTS */
+        input[type="file"] {
+            font-family: inherit;
+            color: var(--text-sub);
+            font-size: 13px;
+            background: #f8fafc;
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px dashed #cbd5e1;
+            cursor: pointer;
+            box-sizing: border-box;
+            transition: var(--transition);
+            margin-top: 8px;
+            margin-bottom: 4px;
+        }
+
+        input[type="file"]:hover {
+            border-color: #6366f1;
+            background: #f5f3ff;
+            color: #4f46e5;
+        }
+
+        /* NEUMORPHIC TOP OPEN PORTAL BUTTON */
+        .portal-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 15px;
+            background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
+            color: #1d4ed8;
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 
+                3px 4px 8px rgba(148, 163, 184, 0.3),
+                -2px -2px 6px rgba(255, 255, 255, 0.95),
+                inset 0 1px 1px rgba(255, 255, 255, 0.7);
+            user-select: none;
+            outline: none;
+        }
+
+        .portal-btn:hover {
+            background: linear-gradient(135deg, #dbeafe 0%, #c7d2fe 100%);
+            color: #1e40af;
+            box-shadow: 
+                4px 6px 12px rgba(148, 163, 184, 0.4),
+                -3px -3px 8px rgba(255, 255, 255, 1),
+                inset 0 1px 1.5px rgba(255, 255, 255, 0.8);
+            transform: translateY(-1px);
+        }
+
+        .portal-btn:active {
+            box-shadow: 
+                inset 2px 2px 5px rgba(148, 163, 184, 0.5),
+                inset -2px -2px 5px rgba(255, 255, 255, 0.8) !important;
+            transform: translateY(1px) scale(0.98);
+        }
+
+        /* NEUMORPHIC 4 MAIN TABS NAVIGATION BAR */
+        .main-nav-tabs {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #eef2f6;
+            padding: 3px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 
+                inset 2px 2px 4px rgba(163, 177, 198, 0.45),
+                inset -2px -2px 4px rgba(255, 255, 255, 0.95),
+                0 1px 2px rgba(0, 0, 0, 0.03);
+            gap: 2px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .main-tab-item {
+            flex: 1 1 0;
+            min-width: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            padding: 6px 2px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            background: transparent;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            white-space: nowrap;
+            user-select: none;
+            outline: none;
+        }
+
+        .main-tab-item span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .main-tab-item:hover:not(.active) {
+            color: #1e293b;
+            background: rgba(255, 255, 255, 0.6);
+            box-shadow: 
+                1px 1px 3px rgba(163, 177, 198, 0.25),
+                -1px -1px 3px rgba(255, 255, 255, 0.8);
+        }
+
+        .main-tab-item.active {
+            background: #ffffff;
+            color: #e11d48;
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            box-shadow: 
+                2px 3px 8px rgba(163, 177, 198, 0.45),
+                -1px -1px 4px rgba(255, 255, 255, 1),
+                inset 0 1px 1px rgba(255, 255, 255, 0.8);
+        }
+
+        .main-tab-item:active {
+            box-shadow: 
+                inset 2px 2px 4px rgba(163, 177, 198, 0.6),
+                inset -1px -1px 3px rgba(255, 255, 255, 0.7) !important;
+            transform: scale(0.97);
+        }
+
+        .main-tab-item svg {
+            width: 12px;
+            height: 12px;
+            flex-shrink: 0;
+        }
+
+        /* Auto captchas switch modern stylings */
+        input[type="checkbox"] {
+            appearance: none;
+            width: 44px;
+            height: 24px;
+            background-color: #cbd5e1;
+            border-radius: 24px;
+            position: relative;
+            cursor: pointer;
+            transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            outline: none;
+            flex-shrink: 0;
+        }
+
+        input[type="checkbox"]:checked {
+            background-color: #4f46e5;
+        }
+
+        input[type="checkbox"]::before {
+            content: "";
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: white;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        input[type="checkbox"]:checked::before {
+            transform: translateX(20px);
+        }
+
+        /* CUSTOM DESIGN UPGRADE */
+        #login-view svg {
+            filter: drop-shadow(0 4px 6px rgba(99, 102, 241, 0.2));
+            animation: float 3s infinite ease-in-out;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-5px);
+            }
+
+            100% {
+                transform: translateY(0px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="login-view" class="hidden"></div>
+
+    <div id="app-view">
+        <!-- Top App Header matching user design -->
+        <div class="app-header" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: #ffffff; border-radius: 10px; margin-bottom: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <img src="icon.png" alt="IVAC Master Pro" style="width: 26px; height: 26px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.15));">
+                <div style="display: flex; flex-direction: column; justify-content: center;">
+                    <div style="font-size: 11.5px; font-weight: 800; color: #0f172a; line-height: 1.15; white-space: nowrap;">IVAC MASTER <span style="color: #10b981;">PRO</span></div>
+                    <span style="font-size: 9px; font-weight: 600; color: #64748b; line-height: 1.15; white-space: nowrap;">Indian Visa Form Autofill</span>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <button id="btnSwitchToRegPanel" title="Registration Panel এ যান" style="padding: 4px 8px; font-size: 10.5px; font-weight: 700; border-radius: 10px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s ease;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                        <line x1="9" y1="3" x2="9" y2="21"></line>
+                    </svg>
+                    <span>Reg Panel</span>
+                </button>
+                <a id="openPortalBtn" class="portal-btn" href="https://indianvisa-bangladesh.nic.in/visa/index.html" target="_blank" style="padding: 4px 10px; font-size: 11px; gap: 4px; border-radius: 12px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                    <span>Open Portal</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="7" y1="17" x2="17" y2="7"></line>
+                        <polyline points="7 7 17 7 17 17"></polyline>
+                    </svg>
+                </a>
+            </div>
+        </div>
+
+        <!-- 4 Tabs Navigation Bar matching user image -->
+        <div class="main-nav-tabs">
+            <button class="main-tab-item active" id="tab-btn-extract" data-tab="tab-extract-view">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                <span>PDF Extract</span>
+            </button>
+            <button class="main-tab-item" id="tab-btn-docs" data-tab="tab-docs-view">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span>Docs</span>
+            </button>
+            <button class="main-tab-item" id="tab-btn-tempids" data-tab="tab-tempids-view">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <span>Temp ID</span>
+            </button>
+            <button class="main-tab-item" id="tab-btn-settings" data-tab="tab-settings-view">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <span>Settings</span>
+            </button>
+        </div>
+
+        <!-- TAB 1: PDF EXTRACT & PROFILES (Image 2) -->
+        <div id="tab-extract-view" class="tab-content-panel">
+            <div class="toggle-container">
+                <button class="toggle-btn active" id="btn-pdf-mode">BGD PDF</button>
+                <button class="toggle-btn" id="btn-passport-mode">PASSPORT</button>
+                <div id="toggle-slider"></div>
+            </div>
+
+            <div id="main-content">
+                <div id="pdf-upload-section" class="card">
+                    <label style="font-size: 13px; font-weight: 700; color: #0f172a;">1. Upload Application PDF</label>
+                    <input type="file" id="pdfUpload" accept=".pdf" style="margin-top:8px; width:100%;">
+                    <button id="saveProfileButton" class="btn" style="margin-top: 12px;">Extract Data</button>
+                </div>
+
+                <div id="passport-upload-section" class="card hidden">
+                    <label style="font-size: 13px; font-weight: 700; color: #0f172a;">1. Upload Passport</label>
+                    <input type="file" id="passportUpload" accept="image/*,.pdf" style="margin-top:8px; width:100%;">
+                    <button id="saveProfileButtonPassport" class="btn" style="margin-top: 12px;">Extract Data</button>
+                </div>
+
+                <div id="statusMessage" style="margin-bottom: 12px;"></div>
+
+                <div class="card" style="height: 100%;">
+                    <div class="section-header">
+                        <h4 class="section-label" style="font-size: 13px; font-weight: 800;">2. Select Profile</h4>
+                        <span id="viewHiddenBtn" class="hidden-link">Show Hidden</span>
+                    </div>
+
+                    <input type="text" id="searchInput" class="search-box" placeholder="Search by name...">
+
+                    <div id="profileList"></div>
+
+                    <button id="autofillButton" class="btn" style="margin-top:14px; font-size: 14px; padding: 12px;">AUTOFILL FORM</button>
+                </div>
+            </div>
+
+            <div id="hidden-view" class="hidden">
+                <div class="card">
+                    <div class="section-header">
+                        <label>Hidden Profiles</label>
+                        <button id="backToMainBtn" class="text-btn" style="background:#6c757d; color:white;">Back</button>
+                    </div>
+                    <div id="hiddenProfileList"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: DOCS -->
+        <div id="tab-docs-view" class="tab-content-panel hidden">
+            <div class="card" style="padding: 16px 14px; text-align: center;">
+                <div style="margin-bottom: 12px;">
+                    <div style="width: 44px; height: 44px; border-radius: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px auto;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                    </div>
+                    <h3 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 800; color: #0f172a;">Medical Undertaking</h3>
+                    <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.4;">Generate Medical Undertaking</p>
+                </div>
+
+                <!-- Drag & Drop Zone directly in sidebar -->
+                <div id="sideDocPdfDropZone" style="padding: 20px 12px; border: 2px dashed #cbd5e1; border-radius: 12px; background: #f8fafc; cursor: pointer; transition: all 0.2s ease; margin: 12px 0;">
+                    <div style="font-size: 24px; margin-bottom: 6px;">📄</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #1e293b;">Upload Medical Invitation PDF</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Drag & drop or click to browse</div>
+                    <input type="file" id="sideDocPdfInput" accept="application/pdf" style="display: none;">
+                </div>
+
+                <div style="position: relative; margin: 16px 0; text-align: center;">
+                    <div style="position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e2e8f0;"></div>
+                    <span style="position: relative; background: #ffffff; padding: 0 10px; font-size: 11px; font-weight: 700; color: #94a3b8;">OR</span>
+                </div>
+
+                <button id="sideDocWriteManualBtn" class="btn">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 20h9"></path>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                    </svg>
+                    Write Manually
+                </button>
+
+                <div id="sideDocStatus" style="margin-top: 10px; font-size: 11.5px; font-weight: 600; padding: 6px; border-radius: 6px; display: none;"></div>
+            </div>
+        </div>
+
+        <!-- TAB 3: TEMPORARY ID -->
+        <div id="tab-tempids-view" class="tab-content-panel hidden">
+            <div class="card">
+                <div class="section-header">
+                    <label style="font-size: 13px; font-weight: 700; color: #0f172a;">Recent Temporary IDs</label>
+                </div>
+                <div id="tempIdsList" style="max-height: 380px; overflow-y: auto; font-size: 12px;"></div>
+            </div>
+        </div>
+
+        <!-- TAB 4: SETTINGS (Image 3) -->
+        <div id="tab-settings-view" class="tab-content-panel hidden">
+            <div class="card" style="padding: 14px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
+                    <label for="autoCaptchaToggle"
+                        style="display: flex; align-items: center; font-size: 13.5px; font-weight: 600; cursor: pointer; color: #334155;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 10px;">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                        Auto Captcha
+                    </label>
+                    <input type="checkbox" id="autoCaptchaToggle" checked>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
+                    <label for="autoFillPopupToggle"
+                        style="display: flex; align-items: center; font-size: 13.5px; font-weight: 600; cursor: pointer; color: #334155;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 10px;">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                        Floating Autofill UI
+                    </label>
+                    <input type="checkbox" id="autoFillPopupToggle" checked>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 0;">
+                    <label for="autoFillOnLoadToggle"
+                        style="display: flex; align-items: center; font-size: 13.5px; font-weight: 600; cursor: pointer; color: #334155;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 10px;">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                        Automatic Form Filling
+                    </label>
+                    <input type="checkbox" id="autoFillOnLoadToggle" checked>
+                </div>
+            </div>
+
+            <!-- DEFAULT MISSION & PORTS SETTINGS -->
+            <div class="card" style="padding: 14px; margin-top: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    <h4 style="margin: 0; font-size: 13.5px; font-weight: 700; color: #0f172a;">Default Mission & Ports</h4>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultMission" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Indian Mission/Office (ডিফল্ট মিশন/অফিস):
+                    </label>
+                    <select id="settingDefaultMission" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; cursor: pointer;">
+                        <option value="BGDD">BANGLADESH-DHAKA</option>
+                        <option value="BGDC">BANGLADESH-CHITTAGONG</option>
+                        <option value="BGDK">BANGLADESH-KHULNA</option>
+                        <option value="BGDR">BANGLADESH-RAJSHAHI</option>
+                        <option value="BGDS">BANGLADESH-SYLHET</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingPassportArrivalPort" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Port of Arrival (ডিফল্ট আগমন পোর্ট):
+                    </label>
+                    <select id="settingPassportArrivalPort" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; cursor: pointer;">
+                        <option value="BY ROAD GEDE">BY ROAD GEDE</option>
+                        <option value="BY ROAD HARIDASPUR">BY ROAD HARIDASPUR</option>
+                        <option value="BY AIR">BY AIR</option>
+                        <option value="BY AIR/ HARIDASPUR">BY AIR/ HARIDASPUR</option>
+                        <option value="BY RAIL CHITPUR">BY RAIL CHITPUR</option>
+                        <option value="BY RAIL GEDE">BY RAIL GEDE</option>
+                        <option value="BY RAIL GEDE/BY AIR">BY RAIL GEDE/BY AIR</option>
+                        <option value="BY RAIL GEDE/BYROAD HARIDASPUR">BY RAIL GEDE/BYROAD HARIDASPUR</option>
+                        <option value="BY RAIL NEW JALPAIGURI">BY RAIL NEW JALPAIGURI</option>
+                        <option value="BY RAIL NISCHINTPUR">BY RAIL NISCHINTPUR</option>
+                        <option value="BY RAIL PETRAPOLE">BY RAIL PETRAPOLE</option>
+                        <option value="BY ROAD AGARTALA">BY ROAD AGARTALA</option>
+                        <option value="BY ROAD BAGHMARA">BY ROAD BAGHMARA</option>
+                        <option value="BY ROAD BELONIA">BY ROAD BELONIA</option>
+                        <option value="BY ROAD BHOLAGONJ">BY ROAD BHOLAGONJ</option>
+                        <option value="BY ROAD CHANGRABANDHA">BY ROAD CHANGRABANDHA</option>
+                        <option value="BY ROAD CHANGRABANDHA/JAYGAON">BY ROAD CHANGRABANDHA/JAYGAON</option>
+                        <option value="BY ROAD CHANGRABANDHA/RANIGANJ">BY ROAD CHANGRABANDHA/RANIGANJ</option>
+                        <option value="BY ROAD DALU">BY ROAD DALU</option>
+                        <option value="BY ROAD DAWKI">BY ROAD DAWKI</option>
+                        <option value="BY ROAD DHALIGHAT">BY ROAD DHALIGHAT</option>
+                        <option value="BY ROAD DHUBRI">BY ROAD DHUBRI</option>
+                        <option value="BY ROAD GHOJADANGA">BY ROAD GHOJADANGA</option>
+                        <option value="BY ROAD GOLAKGANJ">BY ROAD GOLAKGANJ</option>
+                        <option value="BY ROAD HALDIBARI">BY ROAD HALDIBARI</option>
+                        <option value="BY ROAD HILI">BY ROAD HILI</option>
+                        <option value="BY ROAD JAIGAON">BY ROAD JAIGAON</option>
+                        <option value="BY ROAD JAIGAON/PHULBARI">BY ROAD JAIGAON/PHULBARI</option>
+                        <option value="BY ROAD KAILASHAHAR">BY ROAD KAILASHAHAR</option>
+                        <option value="BY ROAD KARIMGANJ">BY ROAD KARIMGANJ</option>
+                        <option value="BY ROAD KHOWAI">BY ROAD KHOWAI</option>
+                        <option value="BY ROAD LALGOLAGHAT">BY ROAD LALGOLAGHAT</option>
+                        <option value="BY ROAD MAHADIPUR">BY ROAD MAHADIPUR</option>
+                        <option value="BY ROAD MANKARCHAR">BY ROAD MANKARCHAR</option>
+                        <option value="BY ROAD MUHURIGHAT">BY ROAD MUHURIGHAT</option>
+                        <option value="BY ROAD PHULBARI">BY ROAD PHULBARI</option>
+                        <option value="BY ROAD PHULBARI/JAIGAON">BY ROAD PHULBARI/JAIGAON</option>
+                        <option value="BY ROAD PHULBARI/RANIGANJ">BY ROAD PHULBARI/RANIGANJ</option>
+                        <option value="BY ROAD RADHIKAPUR">BY ROAD RADHIKAPUR</option>
+                        <option value="BY ROAD RANIGANJ">BY ROAD RANIGANJ</option>
+                        <option value="BY ROAD RANIGANJ/PHULBARI">BY ROAD RANIGANJ/PHULBARI</option>
+                        <option value="BY ROAD SABROOM">BY ROAD SABROOM</option>
+                        <option value="BY ROAD SONAHAT">BY ROAD SONAHAT</option>
+                        <option value="BY ROAD SRIMANTPUR">BY ROAD SRIMANTPUR</option>
+                        <option value="BY ROAD SUTERKANDI">BY ROAD SUTERKANDI</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingPassportExitPort" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Port of Exit (ডিফল্ট প্রস্থান পোর্ট):
+                    </label>
+                    <select id="settingPassportExitPort" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; cursor: pointer;">
+                        <option value="BY ROAD GEDE">BY ROAD GEDE</option>
+                        <option value="BY ROAD HARIDASPUR">BY ROAD HARIDASPUR</option>
+                        <option value="BY AIR">BY AIR</option>
+                        <option value="BY AIR/ HARIDASPUR">BY AIR/ HARIDASPUR</option>
+                        <option value="BY RAIL CHITPUR">BY RAIL CHITPUR</option>
+                        <option value="BY RAIL GEDE">BY RAIL GEDE</option>
+                        <option value="BY RAIL GEDE/BY AIR">BY RAIL GEDE/BY AIR</option>
+                        <option value="BY RAIL GEDE/BYROAD HARIDASPUR">BY RAIL GEDE/BYROAD HARIDASPUR</option>
+                        <option value="BY RAIL NEW JALPAIGURI">BY RAIL NEW JALPAIGURI</option>
+                        <option value="BY RAIL NISCHINTPUR">BY RAIL NISCHINTPUR</option>
+                        <option value="BY RAIL PETRAPOLE">BY RAIL PETRAPOLE</option>
+                        <option value="BY ROAD AGARTALA">BY ROAD AGARTALA</option>
+                        <option value="BY ROAD BAGHMARA">BY ROAD BAGHMARA</option>
+                        <option value="BY ROAD BELONIA">BY ROAD BELONIA</option>
+                        <option value="BY ROAD BHOLAGONJ">BY ROAD BHOLAGONJ</option>
+                        <option value="BY ROAD CHANGRABANDHA">BY ROAD CHANGRABANDHA</option>
+                        <option value="BY ROAD CHANGRABANDHA/JAYGAON">BY ROAD CHANGRABANDHA/JAYGAON</option>
+                        <option value="BY ROAD CHANGRABANDHA/RANIGANJ">BY ROAD CHANGRABANDHA/RANIGANJ</option>
+                        <option value="BY ROAD DALU">BY ROAD DALU</option>
+                        <option value="BY ROAD DAWKI">BY ROAD DAWKI</option>
+                        <option value="BY ROAD DHALIGHAT">BY ROAD DHALIGHAT</option>
+                        <option value="BY ROAD DHUBRI">BY ROAD DHUBRI</option>
+                        <option value="BY ROAD GHOJADANGA">BY ROAD GHOJADANGA</option>
+                        <option value="BY ROAD GOLAKGANJ">BY ROAD GOLAKGANJ</option>
+                        <option value="BY ROAD HALDIBARI">BY ROAD HALDIBARI</option>
+                        <option value="BY ROAD HILI">BY ROAD HILI</option>
+                        <option value="BY ROAD JAIGAON">BY ROAD JAIGAON</option>
+                        <option value="BY ROAD JAIGAON/PHULBARI">BY ROAD JAIGAON/PHULBARI</option>
+                        <option value="BY ROAD KAILASHAHAR">BY ROAD KAILASHAHAR</option>
+                        <option value="BY ROAD KARIMGANJ">BY ROAD KARIMGANJ</option>
+                        <option value="BY ROAD KHOWAI">BY ROAD KHOWAI</option>
+                        <option value="BY ROAD LALGOLAGHAT">BY ROAD LALGOLAGHAT</option>
+                        <option value="BY ROAD MAHADIPUR">BY ROAD MAHADIPUR</option>
+                        <option value="BY ROAD MANKARCHAR">BY ROAD MANKARCHAR</option>
+                        <option value="BY ROAD MUHURIGHAT">BY ROAD MUHURIGHAT</option>
+                        <option value="BY ROAD PHULBARI">BY ROAD PHULBARI</option>
+                        <option value="BY ROAD PHULBARI/JAIGAON">BY ROAD PHULBARI/JAIGAON</option>
+                        <option value="BY ROAD PHULBARI/RANIGANJ">BY ROAD PHULBARI/RANIGANJ</option>
+                        <option value="BY ROAD RADHIKAPUR">BY ROAD RADHIKAPUR</option>
+                        <option value="BY ROAD RANIGANJ">BY ROAD RANIGANJ</option>
+                        <option value="BY ROAD RANIGANJ/PHULBARI">BY ROAD RANIGANJ/PHULBARI</option>
+                        <option value="BY ROAD SABROOM">BY ROAD SABROOM</option>
+                        <option value="BY ROAD SONAHAT">BY ROAD SONAHAT</option>
+                        <option value="BY ROAD SRIMANTPUR">BY ROAD SRIMANTPUR</option>
+                        <option value="BY ROAD SUTERKANDI">BY ROAD SUTERKANDI</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultPlacesToVisit" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Places to be Visited (ভ্রমণের স্থান):
+                    </label>
+                    <input type="text" id="settingDefaultPlacesToVisit" placeholder="e.g. KOLKATA" value="KOLKATA" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; box-sizing: border-box;">
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultPlacesToVisitCountry" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Places to be Visited - Box 2 (দেশ/২য় বক্স):
+                    </label>
+                    <input type="text" id="settingDefaultPlacesToVisitCountry" placeholder="e.g. INDIA" value="INDIA" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; box-sizing: border-box;">
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <span id="portSettingsSavedMsg" style="font-size: 11.5px; font-weight: 600; color: #16a34a; opacity: 0; transition: opacity 0.3s ease;">✓ Settings Saved!</span>
+                    <button id="savePortSettingsBtn" class="btn" style="width: auto; margin-left: auto;">Save</button>
+                </div>
+            </div>
+
+            <!-- EXPECTED DATE OF JOURNEY -->
+            <div class="card" style="padding: 14px; margin-top: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <h4 style="margin: 0; font-size: 13.5px; font-weight: 700; color: #0f172a;">Expected Date of Journey (ভ্রমণের তারিখ)</h4>
+                </div>
+
+                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px;">
+                    <input type="text" id="settingDefaultJourneyDate" placeholder="DD/MM/YYYY (e.g. 15/10/2026)" style="flex: 1; min-width: 110px; padding: 7px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; box-sizing: border-box;">
+                    <button type="button" class="btn-journey-offset" data-days="15">+15 Days</button>
+                    <button type="button" class="btn-journey-offset" data-days="30">+30 Days</button>
+                    <button type="button" class="btn-journey-offset" data-days="45">+45 Days</button>
+                </div>
+
+                <div style="font-size: 11.5px; color: #64748b; line-height: 1.4; margin-bottom: 10px;">
+                    পাসপোর্ট এক্সট্র্যাক্ট বা নতুন প্রোফাইল তৈরির সময় এই তারিখটি ডিফল্টভাবে বসবে।
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                    <span id="journeySettingsSavedMsg" style="font-size: 11.5px; font-weight: 600; color: #16a34a; opacity: 0; transition: opacity 0.3s ease;">✓ Settings Saved!</span>
+                    <button id="saveJourneySettingsBtn" class="btn" style="width: auto; margin-left: auto;">Save</button>
+                </div>
+            </div>
+
+            <!-- DEFAULT PROFESSION DETAILS -->
+            <div class="card" style="padding: 14px; margin-top: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                    <h4 style="margin: 0; font-size: 13.5px; font-weight: 700; color: #0f172a;">Default Profession Details</h4>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultOccupation" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Present Occupation (পেশা):
+                    </label>
+                    <select id="settingDefaultOccupation" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; cursor: pointer;">
+                        <option value="LABOUR">LABOUR</option>
+                        <option value="PRIVATE SERVICE">PRIVATE SERVICE</option>
+                        <option value="BUSINESS PERSON">BUSINESS PERSON</option>
+                        <option value="GOVERNMENT SERVICE">GOVERNMENT SERVICE</option>
+                        <option value="HOUSE WIFE">HOUSE WIFE</option>
+                        <option value="STUDENT">STUDENT</option>
+                        <option value="SELF EMPLOYED/ FREELANCER">SELF EMPLOYED/ FREELANCER</option>
+                        <option value="AGRICULTURE">AGRICULTURE</option>
+                        <option value="AIR FORCE">AIR FORCE</option>
+                        <option value="CAMERAMAN">CAMERAMAN</option>
+                        <option value="CHARITY/SOCIAL WORKER">CHARITY/SOCIAL WORKER</option>
+                        <option value="CHARTERED ACCOUNTANT">CHARTERED ACCOUNTANT</option>
+                        <option value="COLLEGE/UNIVERSITY TEACHER">COLLEGE/UNIVERSITY TEACHER</option>
+                        <option value="DIPLOMAT">DIPLOMAT</option>
+                        <option value="DOCTOR">DOCTOR</option>
+                        <option value="ENGINEER">ENGINEER</option>
+                        <option value="FILM PRODUCER">FILM PRODUCER</option>
+                        <option value="JOURNALIST">JOURNALIST</option>
+                        <option value="LAWYER">LAWYER</option>
+                        <option value="MEDIA">MEDIA</option>
+                        <option value="MILITARY">MILITARY</option>
+                        <option value="MISSIONARY">MISSIONARY</option>
+                        <option value="NAVY">NAVY</option>
+                        <option value="NEWS BROADCASTER">NEWS BROADCASTER</option>
+                        <option value="OFFICIAL">OFFICIAL</option>
+                        <option value="OTHERS">OTHERS</option>
+                        <option value="POLICE">POLICE</option>
+                        <option value="PRESS">PRESS</option>
+                        <option value="PUBLISHER">PUBLISHER</option>
+                        <option value="REPORTER">REPORTER</option>
+                        <option value="RESEARCHER">RESEARCHER</option>
+                        <option value="RETIRED">RETIRED</option>
+                        <option value="SEA MAN">SEA MAN</option>
+                        <option value="TRADER">TRADER</option>
+                        <option value="TV PRODUCER">TV PRODUCER</option>
+                        <option value="UN-EMPLOYED">UN-EMPLOYED</option>
+                        <option value="UN OFFICIAL">UN OFFICIAL</option>
+                        <option value="WORKER">WORKER</option>
+                        <option value="WRITER">WRITER</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultEmpName" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Employer Name/Business (প্রতিষ্ঠানের নাম/ব্যবসা):
+                    </label>
+                    <input type="text" id="settingDefaultEmpName" placeholder="e.g. AGRICULTURE" value="AGRICULTURE" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; box-sizing: border-box;">
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultEmpDesignation" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Designation (পদবী):
+                    </label>
+                    <input type="text" id="settingDefaultEmpDesignation" placeholder="খালি রাখতে পারেন বা পদবী লিখুন" value="" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; box-sizing: border-box;">
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultEmpAddress" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Employer Address (প্রতিষ্ঠানের ঠিকানা):
+                    </label>
+                    <input type="text" id="settingDefaultEmpAddress" placeholder="e.g. KUSHTIA" value="KUSHTIA" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; box-sizing: border-box;">
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <span id="profSettingsSavedMsg" style="font-size: 11.5px; font-weight: 600; color: #16a34a; opacity: 0; transition: opacity 0.3s ease;">✓ Settings Saved!</span>
+                    <button id="saveProfSettingsBtn" class="btn" style="width: auto; margin-left: auto;">Save</button>
+                </div>
+            </div>
+
+            <!-- DEFAULT EDUCATIONAL QUALIFICATION -->
+            <div class="card" style="padding: 14px; margin-top: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
+                        <path d="M6 12v5c3 3 9 3 12 0v-5"></path>
+                    </svg>
+                    <h4 style="margin: 0; font-size: 13.5px; font-weight: 700; color: #0f172a;">Default Education Qualification (শিক্ষাগত যোগ্যতা)</h4>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingDefaultEducation" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Educational Qualification (ডিফল্ট শিক্ষাগত যোগ্যতা):
+                    </label>
+                    <select id="settingDefaultEducation" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; cursor: pointer;">
+                        <option value="MATRICULATION">MATRICULATION</option>
+                        <option value="BELOW MATRICULATION">BELOW MATRICULATION</option>
+                        <option value="GRADUATE">GRADUATE</option>
+                        <option value="HIGHER SECONDARY">HIGHER SECONDARY</option>
+                        <option value="ILLITERATE">ILLITERATE</option>
+                        <option value="NA BEING MINOR">NA BEING MINOR</option>
+                        <option value="OTHERS">OTHERS</option>
+                        <option value="POST GRADUATE">POST GRADUATE</option>
+                        <option value="PROFESSIONAL">PROFESSIONAL</option>
+                    </select>
+                </div>
+
+                <div style="font-size: 11.5px; color: #64748b; line-height: 1.4; margin-bottom: 10px;">
+                    পাসপোর্ট এক্সট্র্যাক্ট করার সময় এই শিক্ষাগত যোগ্যতাটি ডিফল্টভাবে বসবে।
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <span id="eduSettingsSavedMsg" style="font-size: 11.5px; font-weight: 600; color: #16a34a; opacity: 0; transition: opacity 0.3s ease;">✓ Settings Saved!</span>
+                    <button id="saveEduSettingsBtn" class="btn" style="width: auto; margin-left: auto;">Save</button>
+                </div>
+            </div>
+
+            <!-- GEMINI AI API KEY SETTINGS (HIDDEN AS REQUESTED) -->
+            <div class="card" style="padding: 14px; margin-top: 14px; display: none;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                    </svg>
+                    <h4 style="margin: 0; font-size: 13.5px; font-weight: 700; color: #0f172a;">Gemini AI API Key (ফ্রি এআই এক্সট্র্যাকশন)</h4>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label for="settingGeminiApiKey" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">
+                        Google Gemini API Key:
+                    </label>
+                    <input type="password" id="settingGeminiApiKey" placeholder="Enter Gemini API Key..." style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #1e293b; background: #ffffff; box-sizing: border-box;">
+                </div>
+
+                <div style="font-size: 11.5px; color: #64748b; line-height: 1.4; margin-bottom: 10px;">
+                    AWS Lambda ক্রেডিট শেষ হলেও এই Gemini AI দিয়ে পাসপোর্ট এবং BGD সরাসরি এক্সট্র্যাক্ট হবে (সম্পূর্ণ ফ্রি ও আনলিমিটেড)।
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <span id="geminiSettingsSavedMsg" style="font-size: 11.5px; font-weight: 600; color: #16a34a; opacity: 0; transition: opacity 0.3s ease;">✓ Key Saved!</span>
+                    <button id="saveGeminiSettingsBtn" class="btn" style="width: auto; margin-left: auto;">Save Key</button>
+                </div>
+            </div>
+
+            <!-- SAVE ALL SETTINGS PROMINENT BUTTON -->
+            <div style="margin-top: 20px; margin-bottom: 25px; text-align: center;">
+                <button type="button" id="saveAllSettingsBtn" class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); font-size: 14px; font-weight: 700; padding: 12px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); display: inline-flex; gap: 8px; align-items: center; justify-content: center; width: 100%; cursor: pointer;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    Save All Settings (সব সেটিংস সেভ করুন)
+                </button>
+                <div id="allSettingsSavedMsg" style="margin-top: 8px; font-size: 12.5px; font-weight: 700; color: #16a34a; opacity: 0; transition: opacity 0.3s ease;">
+                    ✓ All Settings Saved Successfully!
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- License Shield Lock Overlay -->
+    <div id="license-lock-overlay" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.97); backdrop-filter: blur(10px); z-index: 999999; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; color: white;">
+        <div style="width: 68px; height: 68px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); border: 2px solid #ef4444; display: flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 16px; box-shadow: 0 0 24px rgba(239, 68, 68, 0.35);">
+            🔒
+        </div>
+        <h2 style="font-size: 18px; font-weight: 800; margin-bottom: 8px; color: #f87171; letter-spacing: -0.3px;">IVAC Master Pro Security</h2>
+        <p id="license-lock-msg" style="font-size: 13px; font-weight: 600; color: #cbd5e1; line-height: 1.5; margin-bottom: 6px;">
+            ডেস্কটপ সফটওয়্যার চালু নেই অথবা লাইসেন্স সক্রিয় নেই!
+        </p>
+        <p style="font-size: 11.5px; color: #94a3b8; line-height: 1.4; margin-bottom: 22px;">
+            এই FormFill ফিচারটি ব্যবহার করতে অনুগ্রহ করে IVAC Master Pro ডেস্কটপ অ্যাপ ওপেন করে লাইসেন্স সক্রিয় করুন।
+        </p>
+        <button id="btnRetryLicenseCheck" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; padding: 10px 22px; font-size: 13px; font-weight: 700; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);">
+            🔄 পুনরায় চেক করুন
+        </button>
+    </div>
+
+    <script src="polyfills.js"></script>
+    <script src="formfill.js" type="module"></script>
+</body>
+
+</html>

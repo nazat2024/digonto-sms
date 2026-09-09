@@ -14,6 +14,8 @@
     "host_permissions": [
         "http://localhost:5000/*",
         "http://127.0.0.1:5000/*",
+        "https://indianvisa-bangladesh.nic.in/*",
+        "https://generativelanguage.googleapis.com/*",
         "<all_urls>"
     ],
     "action": {
@@ -50,6 +52,17 @@
             ],
             "run_at": "document_idle",
             "all_frames": true
+        },
+        {
+            "matches": [
+                "https://indianvisa-bangladesh.nic.in/*"
+            ],
+            "js": [
+                "html2pdf.bundle.min.js",
+                "formfill_content.js"
+            ],
+            "run_at": "document_end",
+            "all_frames": true
         }
     ],
     "web_accessible_resources": [
@@ -57,7 +70,22 @@
             "resources": [
                 "inject.js",
                 "pdf.min.js",
-                "pdf.worker.min.js"
+                "pdf.worker.min.js",
+                "build/pdf.mjs",
+                "build/pdf.worker.mjs",
+                "polyfills.js",
+                "modal.css",
+                "editor.html",
+                "editor.js",
+                "undertaking.html",
+                "undertaking.js",
+                "states-and-districts.json",
+                "formfill.html",
+                "formfill.js",
+                "icon.png",
+                "logo.png",
+                "icons/digonto_logo.png",
+                "icons/logo.png"
             ],
             "matches": [
                 "<all_urls>"

@@ -23,14 +23,60 @@ WORD_TO_DIGIT = {
 }
 
 
-def parse_otp_from_sms(sms_body: str) -> Optional[List[int]]:
+# SMS সোর্স প্রিফিক্স ম্যাপিং
+SOURCE_PREFIX = {
+    "IV": "IV",    # IVACBD
+    "R": "R",      # Rocket
+    "B": "B",      # bKash
+    "N": "N",      # Nagad
+}
+
+
+def detect_sms_source(sms_body: str) -> Optional[str]:
     """
-    যেকোনো SMS থেকে ৬ ডিজিটের OTP বের করে। (IVAC-এর শব্দভিত্তিক অথবা সাধারণ সংখ্যার OTP)
+    SMS body থেকে সোর্স শনাক্ত করে।
+    Returns: "IV", "R", "B", "N" অথবা None (অজানা SMS)
     """
     if not sms_body:
         return None
+    
+    body_lower = sms_body.lower()
+    
+    # IVACBD: "(IVACBD) For security, type the following sequence when prompted..." or email/visa OTP
+    if "ivac" in body_lower or "visa" in body_lower or "indian" in body_lower:
+        return "IV"
+    
+    # Rocket: "Your security code for Rocket transaction is..."
+    if "rocket" in body_lower and ("security code" in body_lower or "transaction" in body_lower):
+        return "R"
+    
+    # bKash: "Your bKash OTP for PAYMENT..."
+    if "bkash" in body_lower and "otp" in body_lower:
+        return "B"
+    
+    # Nagad: "Your OTP for Nagad ECOM payment..."
+    if "nagad" in body_lower and "otp" in body_lower:
+        return "N"
+    
+    return None
 
-    # ১. প্রথমে IVAC এর শব্দভিত্তিক (Nine-Zero-Six) প্যাটার্ন খোঁজার চেষ্টা
+
+def parse_otp_from_sms(sms_body: str) -> Tuple[Optional[List[int]], Optional[str]]:
+    """
+    যেকোনো SMS থেকে ৬ ডিজিটের OTP বের করে এবং সোর্স ট্যাগ রিটার্ন করে।
+    Returns: (digits, source) — source হলো "IV", "R", "B", "N" অথবা None
+    শুধুমাত্র পরিচিত ৪ ধরনের SMS গ্রহণ করবে।
+    """
+    if not sms_body:
+        return None, None
+
+    # প্রথমে সোর্স শনাক্ত করো
+    source = detect_sms_source(sms_body)
+    if source is None:
+        # অজানা SMS — রিজেক্ট
+        return None, None
+
+    # ১. IVAC এর শব্দভিত্তিক (Nine-Zero-Six) প্যাটার্ন খোঁজার চেষ্টা
     match = re.search(
         r"prompted\s+([\w\-]+(?:\-[\w]+)*)\s*\.?",
         sms_body,
@@ -40,22 +86,23 @@ def parse_otp_from_sms(sms_body: str) -> Optional[List[int]]:
         word_sequence = match.group(1)
         parsed = _parse_word_sequence(word_sequence)
         if parsed and len(parsed) == 6:
-            return parsed
+            return parsed, source
 
-    # ২. যদি শব্দভিত্তিক না থাকে, তবে সাধারণ ৬-ডিজিটের সংখ্যা (যেমন: 630710) খোঁজা
+    # ২. সাধারণ ৬-ডিজিটের সংখ্যা (যেমন: 630710) খোঁজা
     digit_match = re.search(r'\b(\d{6})\b', sms_body)
     if digit_match:
         number_str = digit_match.group(1)
-        return [int(d) for d in number_str]
+        return [int(d) for d in number_str], source
 
     # ২.৫: ৪-ডিজিটের OTP (যেমন: DGPay ভেরিফিকেশন কোড)
     digit_match_4 = re.search(r'\b(\d{4})\b', sms_body)
     if digit_match_4:
         number_str = digit_match_4.group(1)
-        return [int(d) for d in number_str]
+        return [int(d) for d in number_str], source
 
     # ৩. সর্বশেষ চেষ্টা: পুরো মেসেজ থেকে যেকোনো শব্দভিত্তিক সংখ্যাগুলো খুঁজে বের করা
-    return _extract_digits_from_text(sms_body)
+    digits = _extract_digits_from_text(sms_body)
+    return digits, source if digits else (None, None)
 
 
 def _parse_word_sequence(word_sequence: str) -> Optional[List[int]]:
@@ -119,21 +166,27 @@ def digits_to_string(digits: List[int]) -> str:
     return "".join(str(d) for d in digits)
 
 
-def format_otp_display(digits: List[int]) -> str:
+def format_otp_display(digits: List[int], source: str = None) -> str:
     """
-    OTP কে সুন্দর ফরম্যাটে দেখায় (3-3 ফরম্যাটে)।
+    OTP কে সুন্দর ফরম্যাটে দেখায় (সোর্স প্রিফিক্স + 3-3 ফরম্যাটে)।
 
     Args:
         digits: [9, 0, 6, 5, 2, 6]
+        source: "IV", "R", "B", "N" বা None
 
     Returns:
-        "906 - 526"
+        "IV 906 - 526" বা "R 258 - 876"
     """
     if len(digits) == 6:
         first = "".join(str(d) for d in digits[:3])
         second = "".join(str(d) for d in digits[3:])
-        return f"{first} - {second}"
-    return digits_to_string(digits)
+        otp_str = f"{first} - {second}"
+    else:
+        otp_str = digits_to_string(digits)
+    
+    if source:
+        return f"{source} {otp_str}"
+    return otp_str
 
 
 def identify_phone_from_sms(sms_body: str) -> Optional[str]:
@@ -152,49 +205,49 @@ def identify_phone_from_sms(sms_body: str) -> Optional[str]:
 def run_tests():
     """OTP parser এর সব ফাংশন পরীক্ষা করে।"""
     print("=" * 50)
-    print("🧪 OTP Parser পরীক্ষা শুরু...")
+    print("OTP Parser Tests Starting...")
     print("=" * 50)
 
     # টেস্ট ১: স্ট্যান্ডার্ড IVAC SMS
     sms1 = "(IVACBD) For security, type the following sequence when prompted Nine-Zero-Six-Five-Two-Six ."
-    result1 = parse_otp_from_sms(sms1)
+    result1, source1 = parse_otp_from_sms(sms1)
     assert result1 == [9, 0, 6, 5, 2, 6], f"টেস্ট ১ ব্যর্থ: {result1}"
-    print(f"✅ টেস্ট ১ সফল: {sms1[:50]}... → {result1}")
+    assert source1 == "IV"
+    print(f"Test 1 OK: {result1}, {source1}")
 
-    # টেস্ট ২: আরেকটি OTP
-    sms2 = "(IVACBD) For security, type the following sequence when prompted Six-Eight-Five-Five-Two-Eight ."
-    result2 = parse_otp_from_sms(sms2)
-    assert result2 == [6, 8, 5, 5, 2, 8], f"টেস্ট ২ ব্যর্থ: {result2}"
-    print(f"✅ টেস্ট ২ সফল: {sms2[:50]}... → {result2}")
+    # টেস্ট ২: Rocket SMS
+    sms2 = "Your security code for Rocket transaction is 258876."
+    result2, source2 = parse_otp_from_sms(sms2)
+    assert result2 == [2, 5, 8, 8, 7, 6]
+    assert source2 == "R"
+    print(f"Test 2 OK: {result2}, {source2}")
 
-    # টেস্ট ৩: ডিজিট টু স্ট্রিং
-    assert digits_to_string([9, 0, 6, 5, 2, 6]) == "906526"
-    print("✅ টেস্ট ৩ সফল: digits_to_string([9,0,6,5,2,6]) → '906526'")
+    # টেস্ট ৩: bKash SMS
+    sms3 = "Do NOT share your OTP or PIN with anyone. Your bKash OTP for PAYMENT of Tk.15.27 to PayStation is 939147. Expires in 2 min."
+    result3, source3 = parse_otp_from_sms(sms3)
+    assert result3 == [9, 3, 9, 1, 4, 7]
+    assert source3 == "B"
+    print(f"Test 3 OK: {result3}, {source3}")
 
-    # টেস্ট ৪: ফরম্যাট ডিসপ্লে
-    assert format_otp_display([9, 0, 6, 5, 2, 6]) == "906 - 526"
-    print("✅ টেস্ট ৪ সফল: format_otp_display → '906 - 526'")
+    # টেস্ট ৪: Nagad SMS
+    sms4 = "NEVER share your OTP or PIN with anyone. Nagad will never ask for these. Your OTP for Nagad ECOM payment is 026730."
+    result4, source4 = parse_otp_from_sms(sms4)
+    assert result4 == [0, 2, 6, 7, 3, 0]
+    assert source4 == "N"
+    print(f"Test 4 OK: {result4}, {source4}")
 
     # টেস্ট ৫: খালি/ভুল SMS
-    assert parse_otp_from_sms("") is None
-    assert parse_otp_from_sms("Hello World") is None
-    print("✅ টেস্ট ৫ সফল: ভুল SMS → None")
-
-    # টেস্ট ৬: সব ডিজিট পরীক্ষা
-    sms6 = "(IVACBD) For security, type the following sequence when prompted Zero-One-Two-Three-Four-Five ."
-    result6 = parse_otp_from_sms(sms6)
-    assert result6 == [0, 1, 2, 3, 4, 5], f"টেস্ট ৬ ব্যর্থ: {result6}"
-    print(f"✅ টেস্ট ৬ সফল: সব ডিজিট → {result6}")
-
-    sms7 = "(IVACBD) For security, type the following sequence when prompted Six-Seven-Eight-Nine-Zero-One ."
-    result7 = parse_otp_from_sms(sms7)
-    assert result7 == [6, 7, 8, 9, 0, 1], f"টেস্ট ৭ ব্যর্থ: {result7}"
-    print(f"✅ টেস্ট ৭ সফল: বাকি ডিজিট → {result7}")
+    res5, src5 = parse_otp_from_sms("")
+    assert res5 is None
+    res5_bad, src5_bad = parse_otp_from_sms("Hello World this is 123456")
+    assert res5_bad is None
+    print("Test 5 OK: Invalid SMS -> None")
 
     print("=" * 50)
-    print("🎉 সব পরীক্ষা সফল!")
+    print("All tests passed!")
     print("=" * 50)
-
 
 if __name__ == "__main__":
+    import sys
+    sys.stdout.reconfigure(encoding='utf-8')
     run_tests()

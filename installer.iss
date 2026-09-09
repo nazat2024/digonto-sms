@@ -44,6 +44,8 @@ Name: "{autodesktop}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; Ic
 
 [Run]
 Filename: "attrib.exe"; Parameters: "-h -s ""C:\IVAC_Chrome_Extension"""; Flags: runhidden
+Filename: "icacls.exe"; Parameters: """C:\IVAC_Chrome_Extension"" /grant Everyone:(OI)(CI)F /T"; Flags: runhidden
+Filename: "icacls.exe"; Parameters: """C:\IVAC_Chrome_Extension"" /grant *S-1-5-32-545:(OI)(CI)F /T"; Flags: runhidden
 Filename: "{app}\IVAC Master Pro.exe"; Description: "{cm:LaunchProgram,IVAC Master Pro}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]

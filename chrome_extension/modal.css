@@ -1,0 +1,1107 @@
+/* =========================================
+   INDIAN VISA AUTOFILL PRO - PREMIUM PORTAL CSS
+   ========================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+    --modal-primary: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    --modal-primary-hover: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+    --modal-primary-solid: #4f46e5;
+    --modal-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    --modal-success-hover: linear-gradient(135deg, #059669 0%, #047857 100%);
+    --modal-success-solid: #10b981;
+    --modal-danger: #ef4444;
+    --modal-warning: #f59e0b;
+    --modal-text-main: #0f172a;
+    --modal-text-sub: #64748b;
+    --modal-border: #e2e8f0;
+    --modal-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.02);
+    --modal-shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.05);
+    --modal-radius: 16px;
+    --modal-transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =========================================
+   1. MODAL CONTAINER & BACKDROP
+   ========================================= */
+#iv-modal-backdrop, #iv-visa-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.45); /* Elegant translucent overlay */
+    backdrop-filter: blur(12px);       /* Smooth high-end backdrop blur */
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 2147483647;              /* Highest possible priority */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    animation: ivFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes ivFadeIn { 
+    from { opacity: 0; backdrop-filter: blur(0px); } 
+    to { opacity: 1; backdrop-filter: blur(12px); } 
+}
+
+#iv-modal-content, .iv-visa-content {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 30px;
+    border-radius: var(--modal-radius);
+    box-shadow: var(--modal-shadow);
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    width: 440px;
+    max-height: 85vh;
+    overflow-y: auto;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    animation: ivSlideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes ivSlideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* =========================================
+   2. TYPOGRAPHY & LAYOUT
+   ========================================= */
+h3 {
+    margin-top: 0;
+    color: var(--modal-text-main);
+    border-bottom: 2px solid var(--modal-border);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.1px;
+}
+
+/* Scrollable Form Container */
+.iv-modal-form {
+    text-align: left;
+    max-height: 500px;
+    overflow-y: auto;
+    padding-right: 8px; /* Space for scrollbar */
+}
+
+/* Input Fields */
+.iv-input-group { margin-bottom: 16px; }
+
+.iv-input-group label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--modal-text-sub);
+}
+
+.iv-input-group input, 
+.iv-input-group select {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid var(--modal-border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    box-sizing: border-box; /* Crucial for sizing */
+    transition: var(--modal-transition);
+    background-color: #f8fafc;
+    color: var(--modal-text-main);
+}
+
+.iv-input-group input:focus, 
+.iv-input-group select:focus {
+    border-color: #6366f1;
+    outline: none;
+    background-color: #ffffff;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+}
+
+/* =========================================
+   3. BUTTONS (MODERN STYLE)
+   ========================================= */
+
+/* Default Hotel Buttons (List) */
+.iv-modal-options button.btn-default {
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    margin: 8px 0;
+    background: #ffffff;
+    border: 1px solid var(--modal-border);
+    cursor: pointer;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--modal-text-main);
+    border-radius: 8px;
+    transition: var(--modal-transition);
+    text-align: center;
+    box-shadow: var(--modal-shadow-sm);
+}
+
+.iv-modal-options button.btn-default:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+}
+
+/* Action Buttons (Save / Cancel) */
+.iv-action-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 25px;
+    padding-top: 15px;
+    border-top: 1px solid var(--modal-border);
+}
+
+button.btn-save {
+    background: var(--modal-primary); 
+    color: white; 
+    flex: 1; 
+    border: none; 
+    padding: 12px; 
+    border-radius: 8px; 
+    cursor: pointer; 
+    font-weight: 700;
+    font-size: 13.5px;
+    font-family: inherit;
+    transition: var(--modal-transition);
+    box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+}
+button.btn-save:hover { 
+    background: var(--modal-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);
+}
+button.btn-save:active {
+    transform: scale(0.98);
+}
+
+button.btn-cancel {
+    background-color: #f1f5f9; 
+    color: var(--modal-text-sub); 
+    flex: 1; 
+    border: 1px solid var(--modal-border); 
+    padding: 12px; 
+    border-radius: 8px; 
+    cursor: pointer; 
+    font-weight: 600;
+    font-size: 13.5px;
+    font-family: inherit;
+    transition: var(--modal-transition);
+}
+button.btn-cancel:hover { 
+    background-color: #e2e8f0; 
+    color: var(--modal-text-main);
+}
+
+/* Add New Hotel Button (Green) */
+button.btn-add-new {
+    width: 100%;
+    background: var(--modal-success);
+    color: white;
+    font-weight: 700;
+    padding: 12px;
+    margin-top: 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-size: 12px;
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    transition: var(--modal-transition);
+    box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);
+}
+button.btn-add-new:hover { 
+    background: var(--modal-success-hover); 
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
+}
+button.btn-add-new:active { transform: scale(0.98); }
+
+
+/* =========================================
+   4. CUSTOM SAVED ITEMS (YELLOW)
+   ========================================= */
+.custom-hotel-wrapper {
+    position: relative;
+    margin-bottom: 10px;
+}
+
+button.btn-custom {
+    background-color: #fffbeb; /* Light elegant Warm Yellow */
+    border: 1px solid #fde68a;
+    color: #92400e;
+    width: 100%;
+    text-align: left;
+    padding: 12px 16px;
+    padding-right: 48px; /* Space for delete X */
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13.5px;
+    font-family: inherit;
+    transition: var(--modal-transition);
+    box-shadow: var(--modal-shadow-sm);
+}
+
+button.btn-custom:hover { 
+    background-color: #fef3c7; 
+    border-color: #fcd34d;
+}
+
+/* Delete (X) Button */
+.btn-delete-custom {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    line-height: 24px;
+    text-align: center;
+    color: var(--modal-danger);
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 16px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    transition: var(--modal-transition);
+    border: 1px solid #fee2e2;
+}
+
+.btn-delete-custom:hover {
+    background: var(--modal-danger);
+    color: white;
+    box-shadow: 0 2px 4px rgba(239,68,68,0.25);
+    border-color: var(--modal-danger);
+}
+
+/* =========================================
+   5. VISA & EMAIL MODAL SPECIFICS
+   ========================================= */
+.iv-email-section { margin-bottom: 25px; text-align: left; }
+.iv-email-section label { font-weight: 600; font-size: 12.5px; color: var(--modal-text-sub); margin-bottom: 8px; display: block; }
+.iv-email-input { 
+    width: 100%; 
+    padding: 12px 14px; 
+    border: 1px solid var(--modal-border); 
+    border-radius: 8px; 
+    font-size: 14px; 
+    font-family: inherit;
+    background-color: #f8fafc;
+    transition: var(--modal-transition);
+}
+.iv-email-input:focus {
+    outline: none;
+    border-color: #6366f1;
+    background-color: #ffffff;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+}
+.iv-warning {
+    color: var(--modal-danger); 
+    font-size: 12px; 
+    font-weight: 600; 
+    margin-top: 8px; 
+    display: block;
+}
+
+.iv-visa-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+
+.iv-visa-btn {
+    padding: 14px; 
+    border: none; 
+    border-radius: 8px; 
+    cursor: pointer;
+    font-weight: 700; 
+    font-size: 12.5px; 
+    font-family: inherit;
+    transition: var(--modal-transition);
+    color: white; 
+    text-transform: uppercase; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    letter-spacing: 0.2px;
+}
+.iv-visa-btn:hover { 
+    filter: brightness(1.08);
+    transform: translateY(-1px); 
+    box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+}
+.iv-visa-btn:active { transform: scale(0.96); box-shadow: none; }
+
+/* Visa Button Colors */
+.btn-tourist { background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); grid-column: span 2; }
+.btn-double { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); grid-column: span 2; }
+.btn-med-pat { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.btn-med-att { background: linear-gradient(135deg, #059669 0%, #047857 100%); }
+.btn-other { background-color: #64748b; grid-column: span 2; margin-top: 10px; }
+
+/* =========================================
+   6. FLOATING AUTOFILL WIDGET (COMPACT ULTRA-POLISHED)
+   ========================================= */
+.iv-floating-widget {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 260px;
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 10px 12px;
+    z-index: 2147483646;
+    box-shadow: 0 12px 30px -6px rgba(15, 23, 42, 0.22), 0 4px 10px -2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(226, 232, 240, 0.95);
+    border: 1px solid #e2e8f0;
+    border-top: 3px solid #2563eb;
+    box-sizing: border-box;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    animation: ivFloatIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.iv-floating-widget:hover {
+    box-shadow: 0 18px 36px -8px rgba(15, 23, 42, 0.26), 0 6px 14px -2px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(37, 99, 235, 0.2);
+}
+
+.iv-floating-widget.minimized {
+    width: auto !important;
+    padding: 6px 12px !important;
+    border-radius: 30px !important;
+    background: #ffffff !important;
+    border: 1.5px solid #2563eb !important;
+    box-shadow: 0 8px 24px -4px rgba(37, 99, 235, 0.3) !important;
+    cursor: pointer !important;
+}
+
+@keyframes ivFloatIn {
+    from { transform: scale(0.92) translateY(12px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.iv-float-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 2px;
+    border-bottom: none !important;
+    cursor: grab;
+    user-select: none;
+}
+.iv-float-header:active {
+    cursor: grabbing;
+}
+
+.iv-float-title {
+    font-weight: 800;
+    font-size: 12px;
+    color: #0f172a;
+    margin: 0;
+    padding: 0;
+    letter-spacing: -0.2px;
+    border: none !important;
+    border-bottom: none !important;
+    text-decoration: none !important;
+}
+
+.iv-float-ctrl-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    padding: 0;
+}
+.iv-float-ctrl-btn:hover {
+    background: #f1f5f9;
+    color: #334155;
+}
+.iv-float-sidebar-btn:hover {
+    background: #eff6ff !important;
+    color: #2563eb !important;
+}
+.iv-float-close-btn:hover {
+    background: #fee2e2 !important;
+    color: #ef4444 !important;
+}
+
+.iv-float-min-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.iv-float-temp-id {
+    font-size: 10.5px;
+    background: #fef2f2;
+    padding: 5px 8px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    border: 1px solid #fee2e2;
+}
+
+.iv-float-temp-id .iv-temp-id-val {
+    font-weight: 800;
+    color: #dc2626;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+}
+
+.iv-float-copy-btn {
+    background: #ffffff;
+    border: 1px solid #fca5a5;
+    color: #dc2626;
+    border-radius: 5px;
+    padding: 2px 6px;
+    font-size: 9.5px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+.iv-float-copy-btn:hover {
+    background: #dc2626;
+    color: #ffffff;
+    border-color: #dc2626;
+}
+
+.iv-float-toggle-row {
+    display: flex;
+    background: #f1f5f9;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 2.5px;
+    border: 1px solid #e2e8f0;
+    gap: 2px;
+}
+
+.iv-float-toggle-btn {
+    flex: 1;
+    padding: 5px 0;
+    text-align: center;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    border-radius: 6px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.iv-float-toggle-btn:hover:not(.active) {
+    color: #1e293b;
+}
+
+.iv-float-toggle-btn.active {
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: 800;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+}
+
+.iv-float-select {
+    width: 100%;
+    padding: 6px 26px 6px 10px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    font-family: inherit;
+    margin-bottom: 8px;
+    height: 34px;
+    outline: none;
+    background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 9px center;
+    appearance: none;
+    -webkit-appearance: none;
+    color: #1e293b;
+    box-sizing: border-box;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.iv-float-select:hover {
+    border-color: #cbd5e1;
+}
+
+.iv-float-select:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.iv-float-actions {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 0;
+}
+
+.iv-float-btn {
+    flex: 1;
+    padding: 8px 6px;
+    border: none;
+    border-radius: 8px;
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.iv-float-btn:hover {
+    transform: translateY(-1px);
+}
+.iv-float-btn:active {
+    transform: translateY(1px);
+}
+
+.iv-float-btn-fill {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    box-shadow: 0 3px 10px -1px rgba(16, 185, 129, 0.35);
+}
+.iv-float-btn-fill:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    box-shadow: 0 5px 14px -1px rgba(16, 185, 129, 0.45);
+}
+
+.iv-float-btn-next {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    box-shadow: 0 3px 10px -1px rgba(37, 99, 235, 0.35);
+}
+.iv-float-btn-next:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    box-shadow: 0 5px 14px -1px rgba(37, 99, 235, 0.45);
+}
+
+.iv-float-btn-download {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    box-shadow: 0 3px 10px -1px rgba(245, 158, 11, 0.3);
+    width: 100%;
+    margin-top: 4px;
+    padding: 7px;
+    font-size: 11px;
+}
+.iv-float-btn-download:hover {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+    box-shadow: 0 5px 14px -1px rgba(245, 158, 11, 0.4);
+}
+
+/* Hide widget during print */
+@media print {
+    .iv-floating-widget, 
+    #iv-float-widget-container, 
+    #iv-modal-backdrop, 
+    #iv-visa-modal,
+    .iv-visa-content {
+        display: none !important;
+    }
+}
+
+/* =========================================
+   8. MEDICAL UNDERTAKING WIZARD MODAL
+   ========================================= */
+#iv-undertaking-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 9999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+#iv-undertaking-modal {
+    background: #ffffff;
+    width: 580px;
+    max-width: 90%;
+    max-height: 90vh;
+    border-radius: 16px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid var(--border-color);
+}
+
+@keyframes modalSlideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.iv-modal-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8fafc;
+}
+
+.iv-modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.iv-modal-close {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: #64748b;
+    line-height: 1;
+}
+
+.iv-modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.iv-modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8fafc;
+}
+
+/* Steps Indicator */
+.iv-steps-indicator {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    position: relative;
+}
+
+.iv-steps-indicator::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 2px;
+    background: #e2e8f0;
+    z-index: 1;
+    transform: translateY(-50%);
+}
+
+.iv-step-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #64748b;
+    z-index: 2;
+    transition: all 0.3s;
+}
+
+.iv-step-dot.active {
+    border-color: #4f46e5;
+    background: #4f46e5;
+    color: #ffffff;
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.15);
+}
+
+.iv-step-dot.completed {
+    border-color: #10b981;
+    background: #10b981;
+    color: #ffffff;
+}
+
+/* Upload Area */
+.iv-upload-area {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #f8fafc;
+}
+
+.iv-upload-area:hover, .iv-upload-area.dragover {
+    border-color: #4f46e5;
+    background: #f0f7ff;
+}
+
+.iv-upload-icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+    display: block;
+}
+
+.iv-upload-text {
+    font-size: 14px;
+    color: #0f172a;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.iv-upload-subtext {
+    font-size: 12px;
+    color: #64748b;
+}
+
+/* Form Styles */
+.iv-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.iv-form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.iv-form-group.full-width {
+    grid-column: span 2;
+}
+
+.iv-form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+.iv-form-group input, .iv-form-group select {
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 13.5px;
+    outline: none;
+    transition: border-color 0.2s;
+    background-color: #ffffff;
+}
+
+.iv-form-group input:focus, .iv-form-group select:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+/* Profile Selector Cards */
+.iv-profiles-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 18px 0 10px;
+}
+
+.iv-profiles-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.iv-profile-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #f8fafc;
+}
+
+.iv-profile-card:hover {
+    border-color: #cbd5e1;
+}
+
+.iv-profile-card.active {
+    border-color: #4f46e5;
+    background: #f5f3ff;
+    box-shadow: 0 0 0 1px #4f46e5;
+}
+
+.iv-profile-card-role {
+    font-size: 10px;
+    font-weight: 700;
+    color: #4f46e5;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.iv-profile-card-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 2px;
+}
+
+.iv-profile-card-ppt {
+    font-size: 11px;
+    color: #64748b;
+}
+
+/* Visual Canvas Workspace */
+.iv-sig-workspace {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid #e2e8f0;
+}
+
+.iv-canvas-container {
+    position: relative;
+    width: 300px;
+    height: 100px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: grab;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.iv-canvas-container:active {
+    cursor: grabbing;
+}
+
+.iv-canvas-crop-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border: 2px dashed #4f46e5;
+    pointer-events: none;
+    box-sizing: border-box;
+    opacity: 0.7;
+}
+
+.iv-sig-slider-group {
+    width: 100%;
+    margin-top: 16px;
+}
+
+.iv-slider-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.iv-slider-row label {
+    width: 80px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.iv-slider-row input[type="range"] {
+    flex: 1;
+    margin: 0 12px;
+    accent-color: #4f46e5;
+}
+
+.iv-slider-val {
+    width: 40px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+/* Modal Actions */
+.btn-primary-wizard {
+    background: #4f46e5;
+    color: #ffffff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary-wizard:hover {
+    background: #4338ca;
+}
+
+.btn-secondary-wizard {
+    background: #ffffff;
+    color: #4f46e5;
+    border: 1px solid #4f46e5;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary-wizard:hover {
+    background: #f5f3ff;
+}
+
+.btn-neutral-wizard {
+    background: #ffffff;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-neutral-wizard:hover {
+    background: #f8fafc;
+}
+
+#iv-coverletter-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 9999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+#iv-coverletter-modal {
+    background: #ffffff;
+    width: 580px;
+    max-width: 90%;
+    max-height: 90vh;
+    border-radius: 16px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid #cbd5e1;
+}
+
+.iv-segment-control {
+    display: flex;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid #e2e8f0;
+}
+
+.iv-segment-btn {
+    flex: 1;
+    text-align: center;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.iv-segment-btn.active {
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+}
+
+#iv-noc-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 9999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+#iv-noc-modal {
+    background: #ffffff;
+    width: 580px;
+    max-width: 90%;
+    max-height: 90vh;
+    border-radius: 16px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid #cbd5e1;
+}
+
+/* Styled placeholders with reduced opacity (15-20% visual visibility) */
+input::placeholder {
+    color: #94a3b8 !important;
+    opacity: 0.40 !important;
+}
+
+/* Premium Gold wizard button style for undertaking */
+.btn-gold-wizard {
+    background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid #d97706 !important;
+    font-weight: bold !important;
+    box-shadow: 0 4px 6px rgba(217, 119, 6, 0.2) !important;
+    animation: luxury-gold-pulsate-btn 2s infinite ease-in-out !important;
+}
+.btn-gold-wizard:hover {
+    background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 12px rgba(217, 119, 6, 0.3) !important;
+}
+@keyframes luxury-gold-pulsate-btn {
+    0% {
+        box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 10px 4px rgba(217, 119, 6, 0.35);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4);
+    }
+}

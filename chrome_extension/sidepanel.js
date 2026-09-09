@@ -280,6 +280,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Switch to FormFill Side Panel
+    const btnFormFill = document.getElementById('btnSwitchToFormFill');
+    if (btnFormFill) {
+        btnFormFill.addEventListener('click', async () => {
+            await chrome.storage.local.set({ activeSidePanelPath: 'formfill.html' });
+            if (chrome.sidePanel && typeof chrome.sidePanel.setOptions === 'function') {
+                await chrome.sidePanel.setOptions({ path: 'formfill.html' });
+            }
+            window.location.href = 'formfill.html';
+        });
+    }
+
     // Keyboard Shortcuts
     document.addEventListener('keydown', function(event) {
         if (event.altKey && shortcutMap[event.key]) {
@@ -290,3 +302,4 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+

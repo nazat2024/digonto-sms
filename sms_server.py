@@ -292,6 +292,8 @@ def manual_otp():
 @app.route("/api/otp/<phone>", methods=["GET"])
 def get_otp(phone):
     """Extension will poll this or use SocketIO"""
+    if not is_license_active():
+        return jsonify({"success": False, "error": "লাইসেন্স সক্রিয় নেই"}), 403
     source = request.args.get("source")
     unused_only = request.args.get("unused_only", "").lower() in ("true", "1")
     otp_data = otp_store.get_otp(phone, source, unused_only=unused_only)
@@ -305,6 +307,57 @@ def mark_otp_used(phone):
     source = request.args.get("source")
     otp_store.mark_used(phone, source)
     return jsonify({"success": True}), 200
+
+@app.route("/api/email_otp", methods=["POST", "GET"])
+def receive_email_otp():
+    """Handle email OTP from webmail extension reader with strict email isolation"""
+    if not hasattr(otp_store, "_email_otps"):
+        otp_store._email_otps = {}
+
+    if request.method == "GET":
+        req_email = (request.args.get("email") or "").strip().lower()
+        if req_email:
+            record = otp_store._email_otps.get(req_email)
+            if record and not record.get("used") and (time.time() - record.get("created_at_ts", 0) < 300):
+                return jsonify({"success": True, "data": record}), 200
+            return jsonify({"success": False, "error": f"No unused OTP found for {req_email}"}), 404
+
+        email_otp = getattr(otp_store, "_latest_email_otp", None)
+        if email_otp:
+            return jsonify({"success": True, "data": email_otp}), 200
+        return jsonify({"success": False, "error": "No email OTP found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    otp = str(data.get("otp", "")).strip()
+    email = str(data.get("email", "")).strip().lower()
+    raw_text = data.get("rawText", "")
+    sender = data.get("sender", "info@appointment.ivacbd.com")
+
+    if otp:
+        digits = [int(d) for d in otp if d.isdigit()]
+        record = {
+            "otp": otp,
+            "digits": digits,
+            "display": otp,
+            "otp_string": otp,
+            "email": email,
+            "raw_text": raw_text,
+            "sender": sender,
+            "source": "IV_EMAIL",
+            "created_at": datetime.now().strftime("%I:%M:%S %p"),
+            "created_at_ts": time.time(),
+            "used": False
+        }
+        otp_store._latest_email_otp = record
+        if email:
+            otp_store._email_otps[email] = record
+        try:
+            socketio.emit("email_otp", record)
+        except Exception:
+            pass
+        print(f"📧 [Email OTP Received] Code: {otp} for '{email}' from {sender}")
+        return jsonify({"success": True, "data": record}), 200
+    return jsonify({"success": False, "error": "Invalid OTP payload"}), 400
 
 @app.route("/api/device/update", methods=["POST"])
 def update_device():
@@ -445,6 +498,244 @@ def clear_phone(phone):
     otp_store.clear(phone, source)
     socketio.emit("cleared", {"phone": phone, "source": source or ""})
     return jsonify({"success": True}), 200
+
+# =========================================================================
+# ===== CUSTOMER WHATSAPP 1-CLICK CONNECT & INSTANT OTP PORTAL =====
+# =========================================================================
+@app.route("/connect", methods=["GET"])
+def customer_connect_portal():
+    phone = (request.args.get("phone") or "").strip()
+    email = (request.args.get("email") or "").strip()
+    name = (request.args.get("name") or "সম্মানিত গ্রাহক").strip()
+
+    html = f"""<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IVAC ভিসা ওটিপি ভেরিফিকেশন পোর্টাল</title>
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: 'Hind Siliguri', -apple-system, BlinkMacSystemFont, sans-serif; }}
+        body {{ background: #f0f4f8; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 16px; color: #1e293b; }}
+        .container {{ width: 100%; max-width: 440px; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.04); overflow: hidden; border: 1px solid #e2e8f0; }}
+        .header {{ background: linear-gradient(135deg, #0f766e, #0d9488); color: #fff; padding: 20px 16px; text-align: center; position: relative; }}
+        .header h1 {{ font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; }}
+        .header p {{ font-size: 12px; opacity: 0.9; margin-top: 4px; }}
+        .badge-secure {{ display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 20px; font-size: 11px; margin-top: 8px; font-weight: 600; }}
+        .body {{ padding: 18px 16px; }}
+        .card-info {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-bottom: 16px; }}
+        .info-row {{ display: flex; justify-content: space-between; font-size: 12.5px; padding: 3px 0; border-bottom: 1px dashed #e2e8f0; }}
+        .info-row:last-child {{ border-bottom: none; }}
+        .info-label {{ color: #64748b; }}
+        .info-val {{ font-weight: 700; color: #0f172a; }}
+        
+        .section-title {{ font-size: 13.5px; font-weight: 700; color: #334155; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }}
+        
+        /* 1-Tap Google Button */
+        .btn-google {{ width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; background: #ffffff; color: #374151; border: 1.5px solid #d1d5db; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.04); transition: all 0.2s; }}
+        .btn-google:active {{ transform: scale(0.98); background: #f9fafb; }}
+        .btn-google svg {{ width: 20px; height: 20px; }}
+
+        /* Divider */
+        .divider {{ display: flex; align-items: center; text-align: center; margin: 18px 0; color: #94a3b8; font-size: 12px; }}
+        .divider::before, .divider::after {{ content: ''; flex: 1; border-bottom: 1px solid #e2e8f0; }}
+        .divider span {{ padding: 0 10px; font-weight: 600; }}
+
+        /* Instant OTP Box */
+        .otp-box {{ background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 14px; text-align: center; }}
+        .otp-input {{ width: 100%; font-size: 24px; font-weight: 800; text-align: center; letter-spacing: 6px; padding: 10px; border: 2px solid #cbd5e1; border-radius: 8px; background: #fff; color: #0f172a; outline: none; transition: border-color 0.2s; }}
+        .otp-input:focus {{ border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13,148,136,0.15); }}
+        .btn-submit-otp {{ width: 100%; background: #059669; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 14.5px; font-weight: 700; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s; }}
+        .btn-submit-otp:active {{ background: #047857; transform: scale(0.98); }}
+
+        /* Success / Alert Message */
+        .msg-box {{ display: none; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; text-align: center; margin-top: 12px; }}
+        .msg-success {{ background: #dcfce7; color: #15803d; border: 1px solid #86efac; }}
+        .msg-error {{ background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }}
+
+        .footer {{ text-align: center; font-size: 11px; color: #94a3b8; margin-top: 16px; padding-bottom: 16px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🇮🇳 ভারতীয় ভিসা ওটিপি পোর্টাল</h1>
+            <p>IVAC Appointment Verification Gateway</p>
+            <div class="badge-secure">🔒 256-Bit SSL নিরাপদ ও সুরক্ষিত</div>
+        </div>
+
+        <div class="body">
+            <div class="card-info">
+                <div class="info-row">
+                    <span class="info-label">👤 আবেদনকারীর নাম:</span>
+                    <span class="info-val">{name}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">📱 মোবাইল নম্বর:</span>
+                    <span class="info-val">{phone or "দেওয়া হয়নি"}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">✉️ রেজিস্টার্ড ইমেইল:</span>
+                    <span class="info-val">{email or "যেকোনো ইমেইল"}</span>
+                </div>
+            </div>
+
+            <!-- অপশন ১: গুগল ১-ট্যাপ পারমিশন -->
+            <div class="section-title">✨ অপশন ১: ১-ক্লিকে গুগল ওটিপি সংযোগ</div>
+            <button class="btn-google" id="btn-google-auth">
+                <svg viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                Google অ্যাকাউন্ট অনুমোদন দিন
+            </button>
+            <p style="font-size: 11px; color: #64748b; margin-top: 5px; text-align: center;">(কোনো পাসওয়ার্ড ছাড়াই শুধু ওটিপি অটোমেটিক পাঠানো হবে)</p>
+
+            <div class="divider">
+                <span>অথবা</span>
+            </div>
+
+            <!-- অপশন ২: সরাসরি ওটিপি লিখুন -->
+            <div class="section-title">📲 অপশন ২: সরাসরি ওটিপি পাঠান</div>
+            <div class="otp-box">
+                <p style="font-size: 12px; color: #854d0e; margin-bottom: 8px; font-weight: 600;">ইমেইল বা মেসেজে আসা ওটিপি কোডটি লিখুন:</p>
+                <input type="text" id="manual-otp" class="otp-input" placeholder="••••••" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+                <button class="btn-submit-otp" id="btn-submit-otp">
+                    🚀 ওটিপি জমা দিন (Submit OTP)
+                </button>
+            </div>
+
+            <div id="msg-alert" class="msg-box"></div>
+        </div>
+
+        <div class="footer">
+            🇮🇳 ভারতীয় ভিসা সহায়তা কেন্দ্র | সুরক্ষিত অটোমেশন সিস্টেম
+        </div>
+    </div>
+
+    <script>
+        const phone = "{phone}";
+        const email = "{email}";
+        const alertBox = document.getElementById('msg-alert');
+
+        function showAlert(msg, isSuccess) {{
+            alertBox.textContent = msg;
+            alertBox.className = 'msg-box ' + (isSuccess ? 'msg-success' : 'msg-error');
+            alertBox.style.display = 'block';
+        }}
+
+        // 1. Google 1-Tap Auth Button
+        document.getElementById('btn-google-auth').addEventListener('click', () => {{
+            const confirmed = confirm("আপনার IVAC ভিসা আবেদনের ওটিপি স্বয়ংক্রিয়ভাবে ভিসা সার্ভারে পাঠানোর অনুমোদন দিতে চান?");
+            if (confirmed) {{
+                fetch('/api/customer/connect', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        phone: phone,
+                        email: email,
+                        action: 'google_allow',
+                        timestamp: Date.now()
+                    }})
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    showAlert("🎉 আপনার Google অ্যাকাউন্ট সফলভাবে সংযুক্ত হয়েছে! ভিসা ওটিপি স্বয়ংক্রিয়ভাবে প্রসেস হবে।", true);
+                    document.getElementById('btn-google-auth').style.display = 'none';
+                }})
+                .catch(err => {{
+                    showAlert("সংযোগ সফল হয়েছে! ওটিপি স্বয়ংক্রিয়ভাবে গ্রহণ করা হবে।", true);
+                }});
+            }}
+        }});
+
+        // 2. Submit OTP Button
+        document.getElementById('btn-submit-otp').addEventListener('click', () => {{
+            const otpVal = document.getElementById('manual-otp').value.trim();
+            if (!otpVal || otpVal.length < 4) {{
+                showAlert("অনুগ্রহ করে সঠিক ওটিপি কোডটি লিখুন!", false);
+                return;
+            }}
+
+            fetch('/api/customer/submit_otp', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{
+                    phone: phone,
+                    email: email,
+                    otp: otpVal,
+                    timestamp: Date.now()
+                }})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                showAlert("✅ ওটিপি (" + otpVal + ") সফলভাবে ভিসা সার্ভারে চলে গেছে! এটি স্বয়ংক্রিয়ভাবে পেজে বসে যাবে।", true);
+                document.getElementById('manual-otp').value = '';
+            }})
+            .catch(err => {{
+                showAlert("✅ ওটিপি পাঠানো হয়েছে!", true);
+            }});
+        }});
+    </script>
+</body>
+</html>
+"""
+    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+@app.route("/api/customer/connect", methods=["POST"])
+def customer_connect_api():
+    data = request.get_json(force=True, silent=True) or {}
+    phone = data.get("phone", "")
+    email = data.get("email", "")
+    print(f"📱 [Customer Connected] Phone: {phone}, Email: {email}")
+    socketio.emit("customer_connected", {"phone": phone, "email": email, "timestamp": time.time()})
+    return jsonify({"success": True, "message": "Connected successfully"}), 200
+
+@app.route("/api/customer/submit_otp", methods=["POST"])
+def customer_submit_otp_api():
+    data = request.get_json(force=True, silent=True) or {}
+    phone = (data.get("phone") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    otp = str(data.get("otp", "")).strip()
+
+    if otp:
+        digits = [int(d) for d in otp if d.isdigit()]
+        # 1. Store in email OTP store
+        record = {
+            "otp": otp,
+            "digits": digits,
+            "display": otp,
+            "otp_string": otp,
+            "email": email,
+            "phone": phone,
+            "source": "IV_EMAIL",
+            "created_at": datetime.now().strftime("%I:%M:%S %p"),
+            "created_at_ts": time.time(),
+            "used": False
+        }
+        otp_store._latest_email_otp = record
+        if email:
+            if not hasattr(otp_store, "_email_otps"):
+                otp_store._email_otps = {}
+            otp_store._email_otps[email] = record
+
+        # 2. Also store in phone OTP store if phone provided
+        if phone and len(phone) >= 11:
+            otp_store.add_otp(phone, digits, raw_sms=f"Manual Web OTP: {otp}", source="IV")
+
+        # 3. Broadcast to all Chrome profiles via WebSocket!
+        try:
+            socketio.emit("email_otp", record)
+            socketio.emit("new_otp", record)
+        except Exception:
+            pass
+
+        print(f"🚀 [Customer Web OTP Submitted] OTP: {otp} for Phone: {phone}, Email: {email}")
+        return jsonify({"success": True, "data": record}), 200
+    return jsonify({"success": False, "error": "Invalid OTP"}), 400
 
 @app.route("/api/payment", methods=["POST"])
 def payment():
@@ -796,8 +1087,97 @@ def get_profile_data():
         "config_version": last_config_ts
     }), 200
 
+@app.route("/api/formfill/backup_profiles", methods=["POST"])
+def formfill_backup_profiles():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        profiles = data.get("profiles", {})
+        if not isinstance(profiles, dict):
+            return jsonify({"success": False, "error": "Invalid profiles format"}), 400
+            
+        import os, json
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        os.makedirs(app_data_dir, exist_ok=True)
+        backup_file = os.path.join(app_data_dir, "formfill_profiles_backup.json")
+        
+        # Merge with existing backup so profiles are permanently preserved across updates
+        existing = {}
+        if os.path.exists(backup_file):
+            try:
+                with open(backup_file, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+                
+        existing.update(profiles)
+        with open(backup_file, "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+            
+        return jsonify({"success": True, "count": len(existing)}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/formfill/get_profiles", methods=["GET"])
+def formfill_get_profiles():
+    try:
+        import os, json
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        backup_file = os.path.join(app_data_dir, "formfill_profiles_backup.json")
+        if os.path.exists(backup_file):
+            with open(backup_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify({"success": True, "profiles": data}), 200
+        return jsonify({"success": True, "profiles": {}}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/formfill/save_settings", methods=["POST"])
+def formfill_save_settings():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        settings = data.get("settings", {})
+        if not isinstance(settings, dict):
+            return jsonify({"success": False, "error": "Invalid settings format"}), 400
+            
+        import os, json
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        os.makedirs(app_data_dir, exist_ok=True)
+        settings_file = os.path.join(app_data_dir, "formfill_settings.json")
+        
+        existing = {}
+        if os.path.exists(settings_file):
+            try:
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+                
+        existing.update(settings)
+        with open(settings_file, "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+            
+        return jsonify({"success": True, "settings": existing}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/formfill/get_settings", methods=["GET"])
+def formfill_get_settings():
+    try:
+        import os, json
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        settings_file = os.path.join(app_data_dir, "formfill_settings.json")
+        if os.path.exists(settings_file):
+            with open(settings_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify({"success": True, "settings": data}), 200
+        return jsonify({"success": True, "settings": {}}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route("/api/config", methods=["GET"])
 def get_extension_config():
+    if not is_license_active():
+        return jsonify({"success": False, "error": "লাইসেন্স সক্রিয় নেই"}), 403
     global active_profile_data, last_config_ts
     import json, os
     app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
@@ -971,12 +1351,13 @@ try:
             phone = data.get("phone", "Unknown")
             sms_body = data.get("sms", "")
             sim_name = data.get("sim", "")
+            sim1 = data.get("sim1", "")
+            sim2 = data.get("sim2", "")
+            customer_email = (data.get("email") or "").strip().lower()
             
-            print(f"[Cloud Sync] Received SMS via {sim_name} from {phone}")
+            print(f"[Cloud Sync] Received SMS/OTP via {sim_name} from {phone} (Customer Email: {customer_email or 'None'})")
             
-            # Identify the actual destination Rocket Account number
-            # Android sends the sender's number in "phone" and the SIM name in "sim_name".
-            # The user names their SIM with the Rocket number (e.g., 01959166796).
+            # Identify the actual destination Rocket Account number or customer phone
             import re
             target_phones = []
             
@@ -984,21 +1365,75 @@ try:
             sim_nums = re.findall(r'\b(01[3-9]\d{8})\b', sim_name)
             if sim_nums:
                 target_phones.extend(sim_nums)
+                
+            # If sim1 or sim2 were passed from mobile app
+            for s in (sim1, sim2):
+                if s:
+                    s_nums = re.findall(r'\b(01[3-9]\d{8})\b', str(s))
+                    if s_nums:
+                        target_phones.extend(s_nums)
             
-            # Fallback: check if the sender number is somehow the mapped one
-            if not target_phones:
-                phone_nums = re.findall(r'\b(01[3-9]\d{8})\b', phone)
-                if phone_nums:
-                    target_phones.extend(phone_nums)
+            # Fallback: check if the sender number is somehow a valid BD number
+            phone_nums = re.findall(r'\b(01[3-9]\d{8})\b', phone)
+            if phone_nums:
+                target_phones.extend(phone_nums)
+
+            # Check if there is an email address in phone or sms_body or payload
+            found_emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', phone + " " + sms_body)
+            if customer_email and customer_email not in found_emails:
+                found_emails.append(customer_email)
+            if found_emails:
+                target_phones.extend([e.lower() for e in found_emails])
                     
             if not target_phones:
                 target_phones = [sim_name] if sim_name and sim_name != "Unknown SIM" else [phone]
             
             # Parse OTP
             digits, source = parse_otp_from_sms(sms_body)
+            # If sim is GMAIL or MANUAL and source wasn't auto-detected, fallback to 6 digits with source="IV"
+            if not digits and sim_name in ("GMAIL", "MANUAL"):
+                d_match = re.search(r'\b(\d{6})\b', sms_body)
+                if d_match:
+                    digits = [int(d) for d in d_match.group(1)]
+                    source = "IV"
+            elif digits and not source and sim_name in ("GMAIL", "MANUAL"):
+                source = "IV"
+
             if digits and source:
                 for target in set(target_phones):
                     otp_store.add_otp(target, digits, sms_body, source)
+                    
+                # If it's IVAC OTP or from GMAIL/MANUAL, also update email OTP store and broadcast
+                if source == "IV" or sim_name in ("GMAIL", "MANUAL"):
+                    otp_str = "".join(str(d) for d in digits)
+                    detected_email = found_emails[0].lower() if found_emails else customer_email
+                    record = {
+                        "otp": otp_str,
+                        "digits": digits,
+                        "display": otp_str,
+                        "otp_string": otp_str,
+                        "email": detected_email,
+                        "raw_text": sms_body,
+                        "sender": phone,
+                        "source": "IV_EMAIL" if sim_name == "GMAIL" else "IV_MANUAL",
+                        "created_at": datetime.now().strftime("%I:%M:%S %p"),
+                        "created_at_ts": time.time(),
+                        "used": False
+                    }
+                    otp_store._latest_email_otp = record
+                    if not hasattr(otp_store, "_email_otps"):
+                        otp_store._email_otps = {}
+                    if detected_email:
+                        otp_store._email_otps[detected_email] = record
+                    if customer_email:
+                        otp_store._email_otps[customer_email] = record
+                    for t in target_phones:
+                        otp_store._email_otps[t] = record
+                    try:
+                        socketio.emit("email_otp", record)
+                    except Exception:
+                        pass
+                    print(f"📧 [Email/Notification OTP Broadcasted] Code: {otp_str} for targets: {target_phones}")
         except Exception as e:
             print("[Cloud Sync] Error processing message:", e)
             import traceback

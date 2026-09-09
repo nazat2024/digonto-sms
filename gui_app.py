@@ -103,9 +103,15 @@ class SmoothScrollableFrame(ctk.CTkScrollableFrame):
                         step = -int(event.delta / 6) or (-1 if event.delta > 0 else 1)
                         self._parent_canvas.xview("scroll", step, "units")
                 else:
-                    if self._parent_canvas.yview() != (0.0, 1.0):
+                    y_view = self._parent_canvas.yview()
+                    if y_view[0] > 0.001 or y_view[1] < 0.999:
                         # 60 pixels per 120-delta notch = 1 full card height! Instant, responsive, 0ms lag!
                         step = -int(event.delta / 2) or (-1 if event.delta > 0 else 1)
+                        if step < 0 and y_view[0] <= 0.0:
+                            self._parent_canvas.yview_moveto(0)
+                            return
+                        if step > 0 and y_view[1] >= 1.0:
+                            return
                         self._parent_canvas.yview("scroll", step, "units")
             elif sys.platform == "darwin":
                 self._parent_canvas.yview("scroll", -event.delta, "units")
@@ -248,6 +254,7 @@ class IVACApp(ctk.CTk):
         self.server_running = False
         self.server_thread = None
         self.config = self._load_config()
+        self._last_config_version = os.path.getmtime(CONFIG_FILE) if os.path.exists(CONFIG_FILE) else 0
         self.otp_data = {}
         self._expanded_phones = set()
         
@@ -324,6 +331,8 @@ class IVACApp(ctk.CTk):
         try:
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
+            if os.path.exists(CONFIG_FILE):
+                self._last_config_version = os.path.getmtime(CONFIG_FILE)
         except Exception:
             pass
     def _lockout_license(self, error_msg="আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!", status="blocked"):
@@ -703,7 +712,6 @@ class IVACApp(ctk.CTk):
         ).pack(side="right", pady=10)
         
         # ===== TABVIEW =====
-        # ===== TABVIEW =====
         self.tabview = ctk.CTkTabview(
             self,
             corner_radius=8,
@@ -722,6 +730,30 @@ class IVACApp(ctk.CTk):
         self.tab_payment = self.tabview.add("💳 Payment")
         self.tab_settings = self.tab_payment
         self.tab_license = self.tabview.add("🔑 License")
+        
+        # Permanently grid and map all tabs in OS memory (prevents unmap/remap lag and zero blank screen)
+        for name, tab in self.tabview._tab_dict.items():
+            tab.grid(
+                row=3, column=0, sticky="nsew",
+                padx=self.tabview._apply_widget_scaling(max(self.tabview._corner_radius, self.tabview._border_width)),
+                pady=self.tabview._apply_widget_scaling(max(self.tabview._corner_radius, self.tabview._border_width))
+            )
+            
+        # 0ms Instant Tab Switcher via hardware Z-stacking (tkraise)
+        def _raise_tab(name: str):
+            if name in self.tabview._tab_dict:
+                self.tabview._current_name = name
+                self.tabview._segmented_button.set(name)
+                self.tabview._tab_dict[name].tkraise()
+                self._on_tab_changed()
+            else:
+                raise ValueError(f"CTkTabview has no tab named '{name}'")
+
+        self.tabview._segmented_button.configure(command=_raise_tab)
+        self.tabview._segmented_button_callback = _raise_tab
+        self.tabview.set = _raise_tab
+        self.tabview._grid_forget_all_tabs = lambda *args, **kwargs: None
+        self.tabview._set_grid_current_tab = lambda *args, **kwargs: None
         
         # Auto sync hidden extension directory asynchronously (0ms UI impact)
         def _sync_ext():
@@ -744,16 +776,17 @@ class IVACApp(ctk.CTk):
         )
         self.footer_label.pack(pady=5)
 
-        # Ultra-Fast Startup: Only build initial active Home tab first!
-        self._loaded_tabs = {"🏠 Home"}
+        # Pre-build Home and Profiles immediately: BOTH are 100% pre-rendered and ready at launch!
+        self._loaded_tabs = {"🏠 Home", "👥 Profiles"}
         self._build_home_tab()
+        self._build_profiles_tab()
+        self.tabview._tab_dict["🏠 Home"].tkraise()
 
         # Background idle pre-warming: pre-renders secondary tabs silently so clicks are 0ms instant!
-        self.after(40, lambda: self._prewarm_tab("🔌 Extension"))
-        self.after(90, lambda: self._prewarm_tab("👥 Profiles"))
-        self.after(140, lambda: self._prewarm_tab("📨 Recent OTPs"))
-        self.after(190, lambda: self._prewarm_tab("💳 Payment"))
-        self.after(240, lambda: self._prewarm_tab("🔑 License"))
+        self.after(20, lambda: self._prewarm_tab("🔌 Extension"))
+        self.after(50, lambda: self._prewarm_tab("📨 Recent OTPs"))
+        self.after(80, lambda: self._prewarm_tab("💳 Payment"))
+        self.after(110, lambda: self._prewarm_tab("🔑 License"))
 
     def _prewarm_tab(self, tab_name: str):
         if not hasattr(self, '_loaded_tabs'):
@@ -782,9 +815,8 @@ class IVACApp(ctk.CTk):
             
         if selected not in self._loaded_tabs:
             self._prewarm_tab(selected)
+            self.update_idletasks()
         elif selected == "👥 Profiles":
-            if hasattr(self, "profile_scroll") and hasattr(self.profile_scroll, "ensure_mouse_wheel"):
-                self.profile_scroll.ensure_mouse_wheel()
             if getattr(self, "_profiles_tab_dirty", False):
                 self._profiles_tab_dirty = False
                 if hasattr(self, "_refresh_profiles_tab"):
@@ -797,7 +829,6 @@ class IVACApp(ctk.CTk):
 
     def select_tab(self, name: str):
         self.tabview.set(name)
-        self._on_tab_changed()
 
     # ===== HOME TAB =====
     def _build_home_tab(self):
@@ -1090,12 +1121,15 @@ class IVACApp(ctk.CTk):
                 server_cfg_version = data.get("config_version", 0)
                 if server_cfg_version and server_cfg_version != getattr(self, '_last_config_version', 0):
                     self._last_config_version = server_cfg_version
+                    old_profiles = list(self.config.get("profiles", []))
                     self._load_config()
-                    if hasattr(self, 'tabview') and self.tabview.get() == "👥 Profiles":
-                        if hasattr(self, '_refresh_profiles_tab'):
-                            self._refresh_profiles_tab()
-                    else:
-                        self._profiles_tab_dirty = True
+                    new_profiles = self.config.get("profiles", [])
+                    if old_profiles != new_profiles:
+                        if hasattr(self, 'tabview') and self.tabview.get() == "👥 Profiles":
+                            if hasattr(self, '_refresh_profiles_tab'):
+                                self._refresh_profiles_tab()
+                        else:
+                            self._profiles_tab_dirty = True
                     if hasattr(self, 'tabview') and self.tabview.get() in ("💳 Payment", "⚙️ Settings"):
                         if hasattr(self, '_refresh_rocket_list'):
                             self._refresh_rocket_list()
@@ -1363,102 +1397,159 @@ class IVACApp(ctk.CTk):
     
     # ===== PROFILES TAB =====
     def _build_profiles_tab(self):
+        import tkinter as tk
         tab = self.tab_profiles
         for w in tab.winfo_children():
             w.destroy()
         
         # Header Container
-        header_container = ctk.CTkFrame(tab, fg_color="transparent")
+        header_container = tk.Frame(tab, bg="#0a192f")
         header_container.pack(fill="x", padx=10, pady=(6, 4))
         
         # Left: Title & Count Badge
-        title_frame = ctk.CTkFrame(header_container, fg_color="transparent")
+        title_frame = tk.Frame(header_container, bg="#0a192f")
         title_frame.pack(side="left")
         
-        ctk.CTkLabel(
+        tk.Label(
             title_frame, text="🧩 Chrome Profiles",
-            font=ctk.CTkFont(size=15, weight="bold"),
-            text_color="#64ffda"
+            font=("Segoe UI", 13, "bold"),
+            fg="#64ffda", bg="#0a192f"
         ).pack(side="left")
         
-        self.lbl_profile_count = ctk.CTkLabel(
+        self.lbl_profile_count = tk.Label(
             title_frame, text="0 টি প্রোফাইল",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#38bdf8",
-            fg_color="#1e293b",
-            corner_radius=10,
+            font=("Segoe UI", 9, "bold"),
+            fg="#38bdf8", bg="#1e293b",
             padx=8, pady=2
         )
         self.lbl_profile_count.pack(side="left", padx=10)
         
         # Right: Action Buttons
-        btn_box = ctk.CTkFrame(header_container, fg_color="transparent")
+        btn_box = tk.Frame(header_container, bg="#0a192f")
         btn_box.pack(side="right")
         
-        ctk.CTkButton(
-            btn_box, text="🔄 রিলোড",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            width=75, height=32,
-            fg_color="#334155", hover_color="#475569",
-            corner_radius=6,
-            command=self._refresh_profiles_tab
-        ).pack(side="left", padx=4)
-        
-        ctk.CTkButton(
-            btn_box, text="➕ নতুন প্রোফাইল",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            width=120, height=32,
-            fg_color="#2563eb", hover_color="#1d4ed8",
-            corner_radius=6,
-            command=self._open_add_profile_dialog
-        ).pack(side="left", padx=4)
-        
-        ctk.CTkButton(
-            btn_box, text="🚀 সব ওপেন করুন",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            width=120, height=32,
-            fg_color="#059669", hover_color="#047857",
-            corner_radius=6,
-            command=self._launch_all_profiles
-        ).pack(side="left", padx=4)
+        def _make_hdr_btn(parent, text, bg, hover, cmd):
+            btn = tk.Label(
+                parent, text=text,
+                font=("Segoe UI", 9, "bold"),
+                bg=bg, fg="white",
+                padx=12, pady=5,
+                cursor="hand2", relief="flat"
+            )
+            btn.pack(side="left", padx=3)
+            btn.bind("<Enter>", lambda e: btn.configure(bg=hover))
+            btn.bind("<Leave>", lambda e: btn.configure(bg=bg))
+            btn.bind("<Button-1>", lambda e: cmd())
+            return btn
+            
+        _make_hdr_btn(btn_box, "🔄 রিলোড", "#334155", "#475569", self._refresh_profiles_tab)
+        _make_hdr_btn(btn_box, "➕ নতুন প্রোফাইল", "#2563eb", "#1d4ed8", self._open_add_profile_dialog)
+        _make_hdr_btn(btn_box, "🚀 সব ওপেন করুন", "#059669", "#047857", self._launch_all_profiles)
         
         # Sub Bar: Search Bar + Select All
-        sub_bar = ctk.CTkFrame(tab, fg_color="transparent")
+        sub_bar = tk.Frame(tab, bg="#0a192f")
         sub_bar.pack(fill="x", padx=10, pady=(2, 6))
         
-        self.search_entry = ctk.CTkEntry(
-            sub_bar,
-            placeholder_text="🔍 প্রোফাইল খুঁজুন... (নাম, মোবাইল নম্বর বা Profile ফোল্ডার)",
-            placeholder_text_color="#8892b0",
-            font=ctk.CTkFont(size=12),
-            height=34,
-            corner_radius=6,
-            border_width=1,
-            border_color="#233554",
-            fg_color="#112240"
+        search_wrap = tk.Frame(sub_bar, bg="#112240", highlightbackground="#233554", highlightthickness=1)
+        search_wrap.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        tk.Label(search_wrap, text="🔍", font=("Segoe UI", 10), fg="#8892b0", bg="#112240").pack(side="left", padx=(8, 4))
+        
+        self.search_entry = tk.Entry(
+            search_wrap,
+            font=("Segoe UI", 10),
+            bg="#112240", fg="#f8fafc",
+            insertbackground="#64ffda",
+            relief="flat", bd=0
         )
+        self.search_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
         self.search_entry.bind("<KeyRelease>", lambda *_: self._filter_profiles_search())
-        self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
         self._all_selected_state = True
-        self.btn_select_all = ctk.CTkButton(
+        self.btn_select_all = tk.Label(
             sub_bar,
             text="☑️ সব আনসিলেক্ট",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            width=120, height=34,
-            fg_color="#1e293b", hover_color="#334155",
-            corner_radius=6,
-            command=self._toggle_select_all_profiles
+            font=("Segoe UI", 9, "bold"),
+            bg="#1e293b", fg="#ffffff",
+            padx=14, pady=5,
+            cursor="hand2", relief="flat"
         )
         self.btn_select_all.pack(side="right")
+        self.btn_select_all.bind("<Enter>", lambda e: self.btn_select_all.configure(bg="#334155"))
+        self.btn_select_all.bind("<Leave>", lambda e: self.btn_select_all.configure(bg="#1e293b"))
+        self.btn_select_all.bind("<Button-1>", lambda e: self._toggle_select_all_profiles())
         
-        # Profile List Scrollable Frame
-        self.profile_scroll = SmoothScrollableFrame(tab, fg_color="transparent", scroll_speed=60)
-        self.profile_scroll.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        # Native High-Speed Scroll Container for Profiles Tab (Zero-lag, perfectly mapped)
+        scroll_wrap = tk.Frame(tab, bg="#0a192f", highlightbackground="#233554", highlightthickness=1)
+        scroll_wrap.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         
-        import tkinter as tk
-        self._profiles_container = tk.Frame(self.profile_scroll, bg="#0a192f")
-        self._profiles_container.pack(fill="both", expand=True)
+        self._profiles_canvas = tk.Canvas(scroll_wrap, bg="#0a192f", highlightthickness=0)
+        self._profiles_scrollbar = tk.Scrollbar(scroll_wrap, orient="vertical", command=self._profiles_canvas.yview)
+        self._profiles_canvas.configure(yscrollcommand=self._profiles_scrollbar.set)
+        
+        self._profiles_scrollbar.pack(side="right", fill="y")
+        self._profiles_canvas.pack(side="left", fill="both", expand=True)
+        
+        self._profiles_container = tk.Frame(self._profiles_canvas, bg="#0a192f")
+        self._profiles_canvas_win = self._profiles_canvas.create_window((0, 0), window=self._profiles_container, anchor="nw")
+        
+        def _on_profiles_configure(event=None):
+            if not hasattr(self, "_profiles_canvas") or not self._profiles_canvas.winfo_exists():
+                return
+            bbox = self._profiles_canvas.bbox("all")
+            if not bbox:
+                return
+            content_h = bbox[3] - bbox[1]
+            canvas_h = self._profiles_canvas.winfo_height()
+            eff_h = max(content_h, canvas_h)
+            self._profiles_canvas.configure(scrollregion=(0, 0, bbox[2], eff_h))
+            if hasattr(self, "_profiles_canvas_win"):
+                canvas_w = self._profiles_canvas.winfo_width()
+                if canvas_w > 1:
+                    self._profiles_canvas.itemconfig(self._profiles_canvas_win, width=canvas_w)
+            
+            # Auto-hide scrollbar when content fits
+            if content_h <= canvas_h:
+                if self._profiles_scrollbar.winfo_ismapped():
+                    self._profiles_scrollbar.pack_forget()
+                self._profiles_canvas.yview_moveto(0)
+            else:
+                if not self._profiles_scrollbar.winfo_ismapped():
+                    self._profiles_scrollbar.pack(side="right", fill="y")
+                    
+        self._profiles_container.bind("<Configure>", _on_profiles_configure)
+        self._profiles_canvas.bind("<Configure>", lambda e: _on_profiles_configure())
+        self._on_profiles_configure = _on_profiles_configure
+        
+        def _on_profiles_mousewheel(event):
+            if not hasattr(self, "_profiles_canvas") or not self._profiles_canvas.winfo_exists():
+                return
+            bbox = self._profiles_canvas.bbox("all")
+            if not bbox:
+                return
+            content_h = bbox[3] - bbox[1]
+            canvas_h = self._profiles_canvas.winfo_height()
+            if content_h <= canvas_h:
+                return "break"
+                
+            y_view = self._profiles_canvas.yview()
+            if event.delta > 0:
+                if y_view[0] <= 0.001:
+                    return "break"
+                self._profiles_canvas.yview_scroll(-2, "units")
+            else:
+                if y_view[1] >= 0.999:
+                    return "break"
+                self._profiles_canvas.yview_scroll(2, "units")
+            return "break"
+            
+        def _bind_profiles_wheel(widget):
+            widget.bind("<MouseWheel>", _on_profiles_mousewheel, add="+")
+            
+        _bind_profiles_wheel(self._profiles_canvas)
+        _bind_profiles_wheel(self._profiles_scrollbar)
+        _bind_profiles_wheel(self._profiles_container)
+        self._bind_profiles_wheel = _bind_profiles_wheel
         
         self._build_profile_cards()
 
@@ -1487,10 +1578,16 @@ class IVACApp(ctk.CTk):
                 bg="#112240",
                 justify="center"
             ).pack()
+            if hasattr(self, "_on_profiles_configure"):
+                self._on_profiles_configure()
             return
             
+        # Fast Synchronous Direct Render - Instant response for all profiles!
         for i, p in enumerate(all_profiles):
             self._create_fast_profile_row(self._profiles_container, p, i)
+            
+        if hasattr(self, "_on_profiles_configure"):
+            self._on_profiles_configure()
             
         if hasattr(self, "search_entry") and self.search_entry.winfo_exists():
             if self.search_entry.get().strip():
@@ -1504,8 +1601,8 @@ class IVACApp(ctk.CTk):
         password = str(p.get("password", "") or "").strip()
         enabled = p.get("enabled", True)
         
-        row = tk.Frame(parent, bg="#112240", height=52)
-        row.pack(fill="x", pady=3, padx=2)
+        row = tk.Frame(parent, bg="#112240", height=48)
+        row.pack(fill="x", pady=2, padx=4)
         row.pack_propagate(False)
         
         # Left Accent Status Indicator Bar
@@ -1514,7 +1611,7 @@ class IVACApp(ctk.CTk):
         
         # Checkbox with instant status update
         cb = tk.Label(
-            row, text="\u2713" if enabled else "",
+            row, text="✓" if enabled else "",
             font=("Segoe UI Symbol", 10, "bold"),
             bg="#059669" if enabled else "#1e293b",
             fg="white", width=2, height=1,
@@ -1526,7 +1623,7 @@ class IVACApp(ctk.CTk):
             new_val = not p.get("enabled", True)
             p["enabled"] = new_val
             cb.configure(
-                text="\u2713" if new_val else "",
+                text="✓" if new_val else "",
                 bg="#059669" if new_val else "#1e293b"
             )
             accent.configure(bg="#10b981" if new_val else "#334155")
@@ -1535,26 +1632,23 @@ class IVACApp(ctk.CTk):
         cb.bind("<Button-1>", toggle_cb)
         
         # Actions Frame - Packed side="right" FIRST so buttons are ALWAYS visible
-        actions = tk.Frame(row, bg="#112240")
-        actions.pack(side="right", padx=10)
-        
         def make_btn(btn_parent, text, bg, hover, cmd):
             lbl = tk.Label(
                 btn_parent, text=text,
                 font=("Segoe UI", 9, "bold"),
                 bg=bg, fg="white",
-                padx=12, pady=4,
+                padx=10, pady=3,
                 cursor="hand2", relief="flat"
             )
-            lbl.pack(side="left", padx=3)
+            lbl.pack(side="right", padx=3)
             lbl.bind("<Enter>", lambda e: lbl.configure(bg=hover))
             lbl.bind("<Leave>", lambda e: lbl.configure(bg=bg))
             lbl.bind("<Button-1>", lambda e: cmd())
             return lbl
             
-        make_btn(actions, "Edit", "#1e3a8a", "#2563eb", lambda: self._open_edit_profile_dialog(p, index))
-        make_btn(actions, "Open", "#059669", "#047857", lambda: self._launch_profile(p))
-        make_btn(actions, "Hide", "#dc2626", "#b91c1c", lambda: self._delete_profile(index))
+        btn_hide = make_btn(row, "Hide", "#dc2626", "#b91c1c", lambda: self._delete_profile(index))
+        btn_open = make_btn(row, "Open", "#059669", "#047857", lambda: self._launch_profile(p))
+        btn_edit = make_btn(row, "Edit", "#1e3a8a", "#2563eb", lambda: self._open_edit_profile_dialog(p, index))
         
         # Center Info Column
         info = tk.Frame(row, bg="#112240")
@@ -1571,6 +1665,10 @@ class IVACApp(ctk.CTk):
         l2 = tk.Label(info, text=details_str, font=("Segoe UI", 8), fg="#8892b0", bg="#112240", anchor="w")
         l2.pack(anchor="w")
         
+        if hasattr(self, "_bind_profiles_wheel"):
+            for elem in (row, accent, cb, btn_hide, btn_open, btn_edit, info, l1, l2):
+                self._bind_profiles_wheel(elem)
+                
         item_record = {
             "row": row,
             "profile": p,
@@ -1594,7 +1692,7 @@ class IVACApp(ctk.CTk):
             match = not query or (query in item["search_text"])
             if match:
                 if not item["visible"]:
-                    item["row"].pack(fill="x", pady=3, padx=2)
+                    item["row"].pack(fill="x", pady=2, padx=4)
                     item["visible"] = True
                 count += 1
             else:
@@ -1608,6 +1706,9 @@ class IVACApp(ctk.CTk):
                 self.lbl_profile_count.configure(text=f"{count}/{total} টি প্রোফাইল")
             else:
                 self.lbl_profile_count.configure(text=f"{total} টি প্রোফাইল")
+                
+        if hasattr(self, "_on_profiles_configure"):
+            self._on_profiles_configure()
 
     def _toggle_select_all_profiles(self):
         if not hasattr(self, "_profile_row_items") or not self._profile_row_items:
@@ -1620,7 +1721,7 @@ class IVACApp(ctk.CTk):
             p = item["profile"]
             p["enabled"] = new_state
             item["cb"].configure(
-                text="\u2713" if new_state else "",
+                text="✓" if new_state else "",
                 bg="#059669" if new_state else "#1e293b"
             )
             item["accent"].configure(bg="#10b981" if new_state else "#334155")
@@ -2318,38 +2419,85 @@ class IVACApp(ctk.CTk):
         scroll_wrap = tk.Frame(update_card, bg="#0a192f", highlightbackground="#233554", highlightthickness=1)
         scroll_wrap.pack(fill="x", padx=15, pady=(0, 15))
         
-        self._ext_canvas = tk.Canvas(scroll_wrap, bg="#0a192f", highlightthickness=0, height=420)
+        self._ext_canvas = tk.Canvas(scroll_wrap, bg="#0a192f", highlightthickness=0, height=120)
         self._ext_scrollbar = tk.Scrollbar(scroll_wrap, orient="vertical", command=self._ext_canvas.yview)
         self._ext_canvas.configure(yscrollcommand=self._ext_scrollbar.set)
         
-        self._ext_scrollbar.pack(side="right", fill="y")
         self._ext_canvas.pack(side="left", fill="both", expand=True)
         
         self._ext_profiles_container = tk.Frame(self._ext_canvas, bg="#0a192f")
         self._ext_canvas_window = self._ext_canvas.create_window((0, 0), window=self._ext_profiles_container, anchor="nw")
         
+        MAX_CANVAS_HEIGHT = 380
+        MIN_CANVAS_HEIGHT = 86
+        
         def _on_ext_configure(e=None):
-            if hasattr(self, "_ext_canvas") and self._ext_canvas.winfo_exists():
-                self._ext_canvas.configure(scrollregion=self._ext_canvas.bbox("all"))
-                c_w = self._ext_canvas.winfo_width()
-                if c_w > 10:
-                    self._ext_canvas.itemconfig(self._ext_canvas_window, width=c_w)
+            if not hasattr(self, "_ext_canvas") or not self._ext_canvas.winfo_exists():
+                return
+            c_w = self._ext_canvas.winfo_width()
+            bbox = self._ext_canvas.bbox("all")
+            if not bbox:
+                return
+            content_h = bbox[3] - bbox[1]
             
+            # Dynamic height so few profiles (e.g. 3) fit snugly without giant empty void!
+            desired_h = min(max(content_h + 4, MIN_CANVAS_HEIGHT), MAX_CANVAS_HEIGHT)
+            cur_h = self._ext_canvas.winfo_height()
+            if abs(cur_h - desired_h) > 2:
+                self._ext_canvas.configure(height=desired_h)
+                cur_h = desired_h
+                
+            eff_h = max(content_h, cur_h)
+            self._ext_canvas.configure(scrollregion=(0, 0, c_w, eff_h))
+            
+            if c_w > 10:
+                self._ext_canvas.itemconfig(self._ext_canvas_window, width=c_w)
+                
+            if content_h <= cur_h:
+                self._ext_canvas.yview_moveto(0)
+                if hasattr(self, "_ext_scrollbar") and self._ext_scrollbar.winfo_ismapped():
+                    self._ext_scrollbar.pack_forget()
+            else:
+                if hasattr(self, "_ext_scrollbar") and not self._ext_scrollbar.winfo_ismapped():
+                    self._ext_scrollbar.pack(side="right", fill="y")
+                    
+        self._on_ext_configure = _on_ext_configure
         self._ext_profiles_container.bind("<Configure>", _on_ext_configure)
         self._ext_canvas.bind("<Configure>", lambda e: self._ext_canvas.itemconfig(self._ext_canvas_window, width=e.width))
         
         def _on_ext_mousewheel(e):
-            if hasattr(self, "_ext_canvas") and self._ext_canvas.winfo_exists():
-                if hasattr(e, "num") and e.num == 4:
-                    step = -2
-                elif hasattr(e, "num") and e.num == 5:
-                    step = 2
-                elif sys.platform == "darwin":
-                    step = -int(e.delta)
-                else:
-                    step = -int(e.delta / 40) or (-1 if e.delta > 0 else 1)
-                self._ext_canvas.yview_scroll(step, "units")
+            if not hasattr(self, "_ext_canvas") or not self._ext_canvas.winfo_exists():
+                return "break"
+            bbox = self._ext_canvas.bbox("all")
+            if bbox and (bbox[3] - bbox[1]) <= self._ext_canvas.winfo_height():
+                self._ext_canvas.yview_moveto(0)
+                return "break"
+                
+            y_view = self._ext_canvas.yview()
+            if y_view[0] <= 0.001 and y_view[1] >= 0.999:
+                self._ext_canvas.yview_moveto(0)
+                return "break"
+                
+            if hasattr(e, "num") and e.num == 4:
+                step = -2
+            elif hasattr(e, "num") and e.num == 5:
+                step = 2
+            elif sys.platform == "darwin":
+                step = -int(e.delta)
+            else:
+                step = -int(e.delta / 40) or (-1 if e.delta > 0 else 1)
+                
+            # Prevent scrolling past top or bottom
+            if step < 0 and y_view[0] <= 0.0:
+                self._ext_canvas.yview_moveto(0)
+                return "break"
+            if step > 0 and y_view[1] >= 1.0:
+                return "break"
+                
+            self._ext_canvas.yview_scroll(step, "units")
             return "break"
+            
+        self._on_ext_mousewheel = _on_ext_mousewheel
             
         def _bind_ext_wheel(widget):
             try:
@@ -2410,12 +2558,11 @@ class IVACApp(ctk.CTk):
                     font=("Segoe UI", 10), fg="#64748b", bg="#112240"
                 )
                 empty_lbl.pack()
-                if hasattr(self, "_bind_ext_wheel"):
-                    self._bind_ext_wheel(empty_box)
-                    self._bind_ext_wheel(empty_lbl)
+                if hasattr(self, "_on_ext_configure"):
+                    self._on_ext_configure()
                 return
-                
-            for s in statuses:
+
+            def _render_row(s):
                 has_ext = s.get("has_ext", False)
                 name = s.get("name", "")
                 p_dir = s.get("dir", "")
@@ -2484,7 +2631,14 @@ class IVACApp(ctk.CTk):
                 if hasattr(self, "_bind_ext_wheel"):
                     for elem in (row, badge, btn_tab, lbl_title, lbl_dir):
                         self._bind_ext_wheel(elem)
-                        
+
+            # Direct smooth render without chunk popping or flickering
+            for s in statuses:
+                _render_row(s)
+                
+            if hasattr(self, "_on_ext_configure"):
+                self._on_ext_configure()
+                
         self.run_in_background(cpm.get_profiles_extension_status, _update_ui)
 
     def _add_existing_chrome_profile_to_tab(self, p_dir, name, btn_widget=None):

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Edit Profile</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+        :root {
+            --primary: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            --primary-hover: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+            --primary-solid: #4f46e5;
+            --success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --success-hover: linear-gradient(135deg, #059669 0%, #047857 100%);
+            --success-solid: #10b981;
+            --danger: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --bg-main: #f8fafc;
+            --card-bg: #ffffff;
+            --border-color: #e2e8f0;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.02);
+            --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 30px 15px;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 0;
+            color: var(--text-main);
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        h2 {
+            font-size: 15px;
+            font-weight: 700;
+            margin-top: 35px;
+            margin-bottom: 16px;
+            color: var(--text-main);
+            border-left: 4px solid var(--primary-solid);
+            padding-left: 12px;
+            letter-spacing: 0.2px;
+            text-transform: uppercase;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px 16px;
+            background: #ffffff;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+        }
+
+        @media (max-width: 768px) {
+            .form-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            font-size: 11.5px;
+            margin-bottom: 6px;
+            color: var(--text-sub);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 13.5px;
+            color: var(--text-main);
+            background-color: #f8fafc;
+            transition: var(--transition);
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            background-color: #ffffff;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+        }
+
+        .button-bar {
+            margin-top: 10px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 15px;
+        }
+
+        button {
+            padding: 10px 24px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13.5px;
+            transition: var(--transition);
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.25);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            letter-spacing: 0.1px;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);
+            background: var(--primary-hover);
+        }
+
+        button:active {
+            transform: translateY(0);
+            transform: scale(0.98);
+        }
+
+        .status {
+            font-size: 13px;
+            font-weight: 700;
+            color: #065f46;
+            background: #d1fae5;
+            padding: 6px 14px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid #a7f3d0;
+            transition: var(--transition);
+        }
+
+        .status:empty {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Edit Profile: <span id="profileName" style="color: #007bff;"></span></h1>
+
+        <div class="button-bar">
+            <span class="status"></span>
+            <button class="saveButton">Save Changes</button>
+        </div>
+
+        <h2>Personal Details</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="surname">Surname</label><input type="text" id="surname"></div>
+            <div class="form-group"><label for="givenName">Given Name</label><input type="text" id="givenName"></div>
+            <div class="form-group">
+                <label for="gender">Gender</label>
+                <select id="gender">
+                    <option value="">Select gender</option>
+                    <option value="M">MALE</option>
+                    <option value="F">FEMALE</option>
+                    <option value="X">TRANSGENDER</option>
+                </select>
+            </div>
+            <div class="form-group"><label for="dob">Date of Birth (dd/mm/yyyy)</label><input type="text" id="dob">
+            </div>
+            <div class="form-group"><label for="pobTown">Place of Birth (Town/City)</label><input type="text"
+                    id="pobTown"></div>
+            <div class="form-group"><label for="pobCountry">Place of Birth (Country)</label><input type="text"
+                    id="pobCountry"></div>
+            <div class="form-group"><label for="citizenId">Citizenship / National ID No</label><input type="text"
+                    id="citizenId"></div>
+            <div class="form-group">
+                <label for="religion">Religion</label>
+                <select id="religion">
+                    <option value="">Select Religion</option>
+                    <option value="BAHAI">BAHAI</option>
+                    <option value="BUDDHISM">BUDDHISM</option>
+                    <option value="CHRISTIAN">CHRISTIAN</option>
+                    <option value="HINDU">HINDU</option>
+                    <option value="ISLAM">ISLAM</option>
+                    <option value="JAINISM">JAINISM</option>
+                    <option value="JUDAISM">JUDAISM</option>
+                    <option value="OTHERS">OTHERS</option>
+                    <option value="PARSI">PARSI</option>
+                    <option value="SIKH">SIKH</option>
+                    <option value="ZOROASTRIAN">ZOROASTRIAN</option>
+                </select>
+            </div>
+            <div class="form-group"><label for="identity_marks">Visible Identification Marks</label><input type="text"
+                    id="identity_marks"></div>
+            <div class="form-group">
+                <label for="education">Educational Qualification</label>
+                <select id="education">
+                    <option value="">Select Education</option>
+                    <option value="BELOW MATRICULATION">BELOW MATRICULATION</option>
+                    <option value="GRADUATE">GRADUATE</option>
+                    <option value="HIGHER SECONDARY">HIGHER SECONDARY</option>
+                    <option value="ILLITERATE">ILLITERATE</option>
+                    <option value="MATRICULATION">MATRICULATION</option>
+                    <option value="NA BEING MINOR">NA BEING MINOR</option>
+                    <option value="OTHERS">OTHERS</option>
+                    <option value="POST GRADUATE">POST GRADUATE</option>
+                    <option value="PROFESSIONAL">PROFESSIONAL</option>
+                </select>
+            </div>
+            <div class="form-group"><label for="nationality">Nationality</label><input type="text" id="nationality">
+            </div>
+        </div>
+
+        <h2>Passport Details</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="passNo">Passport No.</label><input type="text" id="passNo"></div>
+            <div class="form-group"><label for="passPlace">Passport Place of Issue</label><input type="text"
+                    id="passPlace"></div>
+            <div class="form-group"><label for="passDate">Passport Issue Date (dd/mm/yyyy)</label><input type="text"
+                    id="passDate"></div>
+            <div class="form-group"><label for="passExpire">Passport Expiry Date (dd/mm/yyyy)</label><input type="text"
+                    id="passExpire"></div>
+        </div>
+
+        <h2>Any other valid Passport / Previous Passport Details</h2>
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="other_ppt_held">Any Other Passport/IC Held?</label>
+                <select id="other_ppt_held">
+                    <option value="NO">NO</option>
+                    <option value="YES">YES</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="other_ppt_no">Previous / Other Passport No.</label>
+                <input type="text" id="other_ppt_no" placeholder="e.g. BJ0080653">
+            </div>
+            <div class="form-group">
+                <label for="other_ppt_issue_date">Date of Issue (dd/mm/yyyy)</label>
+                <input type="text" id="other_ppt_issue_date" placeholder="dd/mm/yyyy (Optional)">
+            </div>
+            <div class="form-group">
+                <label for="other_ppt_place">Place of Issue</label>
+                <input type="text" id="other_ppt_place" value="DHAKA">
+            </div>
+            <div class="form-group">
+                <label for="other_ppt_country">Country/Region of Issue</label>
+                <input type="text" id="other_ppt_country" value="BANGLADESH">
+            </div>
+            <div class="form-group">
+                <label for="other_ppt_nat">Nationality Mentioned Therein</label>
+                <input type="text" id="other_ppt_nat" value="BANGLADESH">
+            </div>
+        </div>
+
+        <h2>Contact Details (Present)</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="pres_add1">Present Address 1</label><input type="text" id="pres_add1">
+            </div>
+            <div class="form-group"><label for="pres_add2">Present Address 2</label><input type="text" id="pres_add2">
+            </div>
+            <div class="form-group"><label for="pres_add3">Present City/Town</label><input type="text" id="pres_add3">
+            </div>
+            <div class="form-group"><label for="pres_country">Present Country</label><input type="text"
+                    id="pres_country"></div>
+            <div class="form-group"><label for="pincode">Pincode</label><input type="text" id="pincode"></div>
+            <div class="form-group"><label for="pres_phone">Phone No</label><input type="text" id="pres_phone"></div>
+            <div class="form-group"><label for="isd_code1">ISD Code</label><input type="text" id="isd_code1"></div>
+            <div class="form-group"><label for="mobile">Mobile No</label><input type="text" id="mobile"></div>
+            <div class="form-group"><label for="email_id">Email Address</label><input type="text" id="email_id"></div>
+        </div>
+
+        <h2>Contact Details (Permanent)</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="perm_address1">Permanent Address 1</label><input type="text"
+                    id="perm_address1"></div>
+            <div class="form-group"><label for="perm_address2">Permanent Address 2</label><input type="text"
+                    id="perm_address2"></div>
+            <div class="form-group"><label for="perm_address3">Permanent City/Town</label><input type="text"
+                    id="perm_address3"></div>
+        </div>
+
+        <h2>Family Details</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="fthrname">Father's Name</label><input type="text" id="fthrname"></div>
+            <div class="form-group"><label for="father_nationality">Father's Nationality</label><input type="text"
+                    id="father_nationality"></div>
+            <div class="form-group"><label for="father_place_of_birth">Father's Place of Birth</label><input type="text"
+                    id="father_place_of_birth"></div>
+            <div class="form-group"><label for="mother_name">Mother's Name</label><input type="text" id="mother_name">
+            </div>
+            <div class="form-group"><label for="mother_place_of_birth">Mother's Place of Birth</label><input type="text"
+                    id="mother_place_of_birth"></div>
+            <div class="form-group"><label for="marital_status">Marital Status (0=Married, 1=Single)</label><input
+                    type="text" id="marital_status"></div>
+            <div class="form-group"><label for="spouse_name">Spouse's Name</label><input type="text" id="spouse_name">
+            </div>
+            <div class="form-group"><label for="spouse_place_of_birth">Spouse's Place of Birth</label><input type="text"
+                    id="spouse_place_of_birth"></div>
+            <div class="form-group"><label for="grandparent_flag2">Grandparents from Pakistan? (YES/NO)</label><input
+                    type="text" id="grandparent_flag2"></div>
+        </div>
+
+        <h2>Profession Details</h2>
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="occupation">Present Occupation</label>
+                <select id="occupation">
+                    <option value="">Select Occupation</option>
+                    <option value="AIR FORCE">AIR FORCE</option>
+                    <option value="BUSINESS PERSON">BUSINESS PERSON</option>
+                    <option value="CAMERAMAN">CAMERAMAN</option>
+                    <option value="CHARITY/SOCIAL WORKER">CHARITY/SOCIAL WORKER</option>
+                    <option value="CHARTERED ACCOUNTANT">CHARTERED ACCOUNTANT</option>
+                    <option value="COLLEGE/UNIVERSITY TEACHER">COLLEGE/UNIVERSITY TEACHER</option>
+                    <option value="DIPLOMAT">DIPLOMAT</option>
+                    <option value="DOCTOR">DOCTOR</option>
+                    <option value="ENGINEER">ENGINEER</option>
+                    <option value="FILM PRODUCER">FILM PRODUCER</option>
+                    <option value="GOVERNMENT SERVICE">GOVERNMENT SERVICE</option>
+                    <option value="HOUSE WIFE">HOUSE WIFE</option>
+                    <option value="JOURNALIST">JOURNALIST</option>
+                    <option value="LABOUR">LABOUR</option>
+                    <option value="LAWYER">LAWYER</option>
+                    <option value="MEDIA">MEDIA</option>
+                    <option value="MILITARY">MILITARY</option>
+                    <option value="MISSIONARY">MISSIONARY</option>
+                    <option value="NAVY">NAVY</option>
+                    <option value="NEWS BROADCASTER">NEWS BROADCASTER</option>
+                    <option value="OFFICIAL">OFFICIAL</option>
+                    <option value="OTHERS">OTHERS</option>
+                    <option value="POLICE">POLICE</option>
+                    <option value="PRESS">PRESS</option>
+                    <option value="PRIVATE SERVICE">PRIVATE SERVICE</option>
+                    <option value="PUBLISHER">PUBLISHER</option>
+                    <option value="REPORTER">REPORTER</option>
+                    <option value="RESEARCHER">RESEARCHER</option>
+                    <option value="RETIRED">RETIRED</option>
+                    <option value="SEA MAN">SEA MAN</option>
+                    <option value="SELF EMPLOYED/ FREELANCER">SELF EMPLOYED/ FREELANCER</option>
+                    <option value="STUDENT">STUDENT</option>
+                    <option value="TRADER">TRADER</option>
+                    <option value="TV PRODUCER">TV PRODUCER</option>
+                    <option value="UN-EMPLOYED">UN-EMPLOYED</option>
+                    <option value="UN OFFICIAL">UN OFFICIAL</option>
+                    <option value="WORKER">WORKER</option>
+                    <option value="WRITER">WRITER</option>
+                </select>
+            </div>
+            <div class="form-group"><label for="empname">Employer Name/Business</label><input type="text" id="empname">
+            </div>
+            <div class="form-group"><label for="empdesignation">Designation</label><input type="text"
+                    id="empdesignation"></div>
+            <div class="form-group"><label for="empaddress">Employer Address</label><input type="text" id="empaddress">
+            </div>
+        </div>
+
+        <h2>Visa Details (Medical)</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="hsptNameMsn">Hospital Name</label><input type="text" id="hsptNameMsn">
+            </div>
+            <div class="form-group"><label for="hsptAddMsn">Hospital Address</label><input type="text" id="hsptAddMsn">
+            </div>
+            <div class="form-group"><label for="docNameMsn">Doctor Name</label><input type="text" id="docNameMsn"></div>
+            <div class="form-group"><label for="phMsn">Hospital Phone</label><input type="text" id="phMsn"></div>
+            <div class="form-group"><label for="emailMsn">Hospital Email</label><input type="text" id="emailMsn"></div>
+            <div class="form-group"><label for="illness">Illness</label><input type="text" id="illness"></div>
+        </div>
+
+        <h2>Visa Details (General)</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="places_to_visit">Places to be Visited</label><input type="text"
+                    id="places_to_visit"></div>
+            <div class="form-group"><label for="places_to_visit_country">Places to be Visited (Country / Box 2)</label><input
+                    type="text" id="places_to_visit_country"></div>
+            <div class="form-group"><label for="duration">Visa Duration (Months)</label><input type="text"
+                    id="duration"></div>
+            <div class="form-group"><label for="jouryney_id">Expected Date of Journey (dd/mm/yyyy)</label><input
+                    type="text" id="jouryney_id"></div>
+            <div class="form-group">
+                <label for="visa_entry_id">No. of Entries</label>
+                <select id="visa_entry_id">
+                    <option value="1">SINGLE</option>
+                    <option value="4">TRIPLE</option>
+                    <option value="3">DOUBLE</option>
+                    <option value="2">MULTIPLE</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="entrypoint">Port of Arrival</label>
+                <select id="entrypoint">
+                    <option value="">Select entry point</option>
+                    <option value="BY AIR">BY AIR</option>
+                    <option value="BY AIR/ HARIDASPUR">BY AIR/ HARIDASPUR</option>
+                    <option value="BY RAIL CHITPUR">BY RAIL CHITPUR</option>
+                    <option value="BY RAIL GEDE">BY RAIL GEDE</option>
+                    <option value="BY RAIL GEDE/BY AIR">BY RAIL GEDE/BY AIR</option>
+                    <option value="BY RAIL GEDE/BYROAD HARIDASPUR">BY RAIL GEDE/BYROAD HARIDASPUR</option>
+                    <option value="BY RAIL NEW JALPAIGURI">BY RAIL NEW JALPAIGURI</option>
+                    <option value="BY RAIL NISCHINTPUR">BY RAIL NISCHINTPUR</option>
+                    <option value="BY RAIL PETRAPOLE">BY RAIL PETRAPOLE</option>
+                    <option value="BY ROAD AGARTALA">BY ROAD AGARTALA</option>
+                    <option value="BY ROAD BAGHMARA">BY ROAD BAGHMARA</option>
+                    <option value="BY ROAD BELONIA">BY ROAD BELONIA</option>
+                    <option value="BY ROAD BHOLAGONJ">BY ROAD BHOLAGONJ</option>
+                    <option value="BY ROAD CHANGRABANDHA">BY ROAD CHANGRABANDHA</option>
+                    <option value="BY ROAD CHANGRABANDHA/JAYGAON">BY ROAD CHANGRABANDHA/JAYGAON</option>
+                    <option value="BY ROAD CHANGRABANDHA/RANIGANJ">BY ROAD CHANGRABANDHA/RANIGANJ</option>
+                    <option value="BY ROAD DALU">BY ROAD DALU</option>
+                    <option value="BY ROAD DAWKI">BY ROAD DAWKI</option>
+                    <option value="BY ROAD DHALIGHAT">BY ROAD DHALIGHAT</option>
+                    <option value="BY ROAD DHUBRI">BY ROAD DHUBRI</option>
+                    <option value="BY ROAD GEDE">BY ROAD GEDE</option>
+                    <option value="BY ROAD GHOJADANGA">BY ROAD GHOJADANGA</option>
+                    <option value="BY ROAD GOLAKGANJ">BY ROAD GOLAKGANJ</option>
+                    <option value="BY ROAD HALDIBARI">BY ROAD HALDIBARI</option>
+                    <option value="BY ROAD HARIDASPUR">BY ROAD HARIDASPUR</option>
+                    <option value="BY ROAD HILI">BY ROAD HILI</option>
+                    <option value="BY ROAD JAIGAON">BY ROAD JAIGAON</option>
+                    <option value="BY ROAD JAIGAON/PHULBARI">BY ROAD JAIGAON/PHULBARI</option>
+                    <option value="BY ROAD KAILASHAHAR">BY ROAD KAILASHAHAR</option>
+                    <option value="BY ROAD KARIMGANJ">BY ROAD KARIMGANJ</option>
+                    <option value="BY ROAD KHOWAI">BY ROAD KHOWAI</option>
+                    <option value="BY ROAD LALGOLAGHAT">BY ROAD LALGOLAGHAT</option>
+                    <option value="BY ROAD MAHADIPUR">BY ROAD MAHADIPUR</option>
+                    <option value="BY ROAD MANKARCHAR">BY ROAD MANKARCHAR</option>
+                    <option value="BY ROAD MUHURIGHAT">BY ROAD MUHURIGHAT</option>
+                    <option value="BY ROAD PHULBARI">BY ROAD PHULBARI</option>
+                    <option value="BY ROAD PHULBARI/JAIGAON">BY ROAD PHULBARI/JAIGAON</option>
+                    <option value="BY ROAD PHULBARI/RANIGANJ">BY ROAD PHULBARI/RANIGANJ</option>
+                    <option value="BY ROAD RADHIKAPUR">BY ROAD RADHIKAPUR</option>
+                    <option value="BY ROAD RANIGANJ">BY ROAD RANIGANJ</option>
+                    <option value="BY ROAD RANIGANJ/PHULBARI">BY ROAD RANIGANJ/PHULBARI</option>
+                    <option value="BY ROAD SABROOM">BY ROAD SABROOM</option>
+                    <option value="BY ROAD SONAHAT">BY ROAD SONAHAT</option>
+                    <option value="BY ROAD SRIMANTPUR">BY ROAD SRIMANTPUR</option>
+                    <option value="BY ROAD SUTERKANDI">BY ROAD SUTERKANDI</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="exitpoint">Port of Exit</label>
+                <select id="exitpoint">
+                    <option value="">Select exit point</option>
+                    <option value="BY AIR">BY AIR</option>
+                    <option value="BY AIR/ HARIDASPUR">BY AIR/ HARIDASPUR</option>
+                    <option value="BY RAIL CHITPUR">BY RAIL CHITPUR</option>
+                    <option value="BY RAIL GEDE">BY RAIL GEDE</option>
+                    <option value="BY RAIL GEDE/BY AIR">BY RAIL GEDE/BY AIR</option>
+                    <option value="BY RAIL GEDE/BYROAD HARIDASPUR">BY RAIL GEDE/BYROAD HARIDASPUR</option>
+                    <option value="BY RAIL NEW JALPAIGURI">BY RAIL NEW JALPAIGURI</option>
+                    <option value="BY RAIL NISCHINTPUR">BY RAIL NISCHINTPUR</option>
+                    <option value="BY RAIL PETRAPOLE">BY RAIL PETRAPOLE</option>
+                    <option value="BY ROAD AGARTALA">BY ROAD AGARTALA</option>
+                    <option value="BY ROAD BAGHMARA">BY ROAD BAGHMARA</option>
+                    <option value="BY ROAD BELONIA">BY ROAD BELONIA</option>
+                    <option value="BY ROAD BHOLAGONJ">BY ROAD BHOLAGONJ</option>
+                    <option value="BY ROAD CHANGRABANDHA">BY ROAD CHANGRABANDHA</option>
+                    <option value="BY ROAD CHANGRABANDHA/JAYGAON">BY ROAD CHANGRABANDHA/JAYGAON</option>
+                    <option value="BY ROAD CHANGRABANDHA/RANIGANJ">BY ROAD CHANGRABANDHA/RANIGANJ</option>
+                    <option value="BY ROAD DALU">BY ROAD DALU</option>
+                    <option value="BY ROAD DAWKI">BY ROAD DAWKI</option>
+                    <option value="BY ROAD DHALIGHAT">BY ROAD DHALIGHAT</option>
+                    <option value="BY ROAD DHUBRI">BY ROAD DHUBRI</option>
+                    <option value="BY ROAD GEDE">BY ROAD GEDE</option>
+                    <option value="BY ROAD GHOJADANGA">BY ROAD GHOJADANGA</option>
+                    <option value="BY ROAD GOLAKGANJ">BY ROAD GOLAKGANJ</option>
+                    <option value="BY ROAD HALDIBARI">BY ROAD HALDIBARI</option>
+                    <option value="BY ROAD HARIDASPUR">BY ROAD HARIDASPUR</option>
+                    <option value="BY ROAD HILI">BY ROAD HILI</option>
+                    <option value="BY ROAD JAIGAON">BY ROAD JAIGAON</option>
+                    <option value="BY ROAD JAIGAON/PHULBARI">BY ROAD JAIGAON/PHULBARI</option>
+                    <option value="BY ROAD KAILASHAHAR">BY ROAD KAILASHAHAR</option>
+                    <option value="BY ROAD KARIMGANJ">BY ROAD KARIMGANJ</option>
+                    <option value="BY ROAD KHOWAI">BY ROAD KHOWAI</option>
+                    <option value="BY ROAD LALGOLAGHAT">BY ROAD LALGOLAGHAT</option>
+                    <option value="BY ROAD MAHADIPUR">BY ROAD MAHADIPUR</option>
+                    <option value="BY ROAD MANKARCHAR">BY ROAD MANKARCHAR</option>
+                    <option value="BY ROAD MUHURIGHAT">BY ROAD MUHURIGHAT</option>
+                    <option value="BY ROAD PHULBARI">BY ROAD PHULBARI</option>
+                    <option value="BY ROAD PHULBARI/JAIGAON">BY ROAD PHULBARI/JAIGAON</option>
+                    <option value="BY ROAD PHULBARI/RANIGANJ">BY ROAD PHULBARI/RANIGANJ</option>
+                    <option value="BY ROAD RADHIKAPUR">BY ROAD RADHIKAPUR</option>
+                    <option value="BY ROAD RANIGANJ">BY ROAD RANIGANJ</option>
+                    <option value="BY ROAD RANIGANJ/PHULBARI">BY ROAD RANIGANJ/PHULBARI</option>
+                    <option value="BY ROAD SABROOM">BY ROAD SABROOM</option>
+                    <option value="BY ROAD SONAHAT">BY ROAD SONAHAT</option>
+                    <option value="BY ROAD SRIMANTPUR">BY ROAD SRIMANTPUR</option>
+                    <option value="BY ROAD SUTERKANDI">BY ROAD SUTERKANDI</option>
+                </select>
+            </div>
+        </div>
+
+        <h2>Previous Visit Details</h2>
+        <div class="form-grid">
+            <div class="form-group"><label for="prv_visit_add1">Previous Stay Address</label><input type="text"
+                    id="prv_visit_add1"></div>
+            <div class="form-group"><label for="visited_city">Cities Visited</label><input type="text"
+                    id="visited_city"></div>
+            <div class="form-group"><label for="old_visa_no">Previous Visa No.</label><input type="text"
+                    id="old_visa_no"></div>
+            <div class="form-group">
+                <label for="old_visa_type_id">Previous Visa Type ID</label>
+                <select id="old_visa_type_id">
+                    <option value="">Select visa type</option>
+                    <option value="1">BUSINESS VISA</option>
+                    <option value="4">CONFERENCE VISA</option>
+                    <option value="11">DIPLOMATIC VISA</option>
+                    <option value="87">DOUBLE ENTRY</option>
+                    <option value="9">EMPLOYMENT VISA</option>
+                    <option value="6">ENTRY VISA</option>
+                    <option value="84">FILM VISA</option>
+                    <option value="8">JOURNALIST VISA</option>
+                    <option value="16">MEDICAL VISA</option>
+                    <option value="7">MISSIONARY VISA</option>
+                    <option value="63">MOUNTAINEERING VISA</option>
+                    <option value="12">OFFICIAL VISA</option>
+                    <option value="64">PILGRIMES VISA</option>
+                    <option value="2">STUDENT VISA</option>
+                    <option value="3">TOURIST VISA</option>
+                    <option value="5">TRANSIT VISA</option>
+                    <option value="86">UN DIPLOMAT</option>
+                    <option value="17">UN OFFICIAL</option>
+                    <option value="76">VISIT VISA</option>
+                </select>
+            </div>
+            <div class="form-group"><label for="oldvisaissueplace">Previous Visa Place of Issue</label><input
+                    type="text" id="oldvisaissueplace"></div>
+            <div class="form-group"><label for="oldvisaissuedateRaw">Previous Visa Issue Date (Raw)</label><input
+                    type="text" id="oldvisaissuedateRaw"></div>
+            <div class="form-group"><label for="refuse_flag2">Previously Refused/Deported? (YES/NO)</label><input
+                    type="text" id="refuse_flag2"></div>
+            <div class="form-group"><label for="country_visited">Countries Visited (Last 10yrs)</label><input
+                    type="text" id="country_visited"></div>
+        </div>
+
+        <div class="button-bar">
+            <span class="status"></span>
+            <button class="saveButton">Save Changes</button>
+        </div>
+    </div>
+    <script src="editor.js"></script>
+</body>
+
+</html>

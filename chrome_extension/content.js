@@ -1,4 +1,10 @@
 
+// ===== HOST DETECTION (GMAIL & PROTON MAIL) =====
+const isGmailHost = window.location.hostname.includes('mail.google.com');
+const isProtonHost = window.location.hostname.includes('mail.proton.me');
+const isWebmailPage = isGmailHost || isProtonHost;
+let webmailAutoRefreshActive = true;
+
 // ===== PAYMENT METHOD DETECTOR & INTERACTION TRACKER =====
 function detectPaymentMethodOnPage() {
     try {
@@ -170,9 +176,6 @@ function sendRecordPayment(paymentData, callback) {
 function updateProfileLabel(phone) {
     if (phone && phone.length >= 10) {
         currentProfileLabel = `Profile (${phone})`;
-        try {
-            chrome.storage.local.set({ profile_label: currentProfileLabel, ivac_phone: phone });
-        } catch(e) {}
     }
 }
 
@@ -209,10 +212,21 @@ setInterval(() => {
         const text = (document.body ? document.body.innerText : '').toLowerCase();
 
         // 1. Phone number detection on Login page
-        if (url.includes('signin') || text.includes('sign in') || text.includes('your contact number')) {
-            const phoneInput = document.querySelector('input[type="tel"], input[placeholder*="contact"], input[placeholder*="01"]');
-            if (phoneInput && phoneInput.value && phoneInput.value.length >= 11) {
-                updateProfileLabel(phoneInput.value.trim());
+        if (url.includes('signin') || text.includes('sign in') || text.includes('your contact number') || url.includes('appointment.ivacbd.com')) {
+            const phoneInput = findIvacLoginPhoneInput();
+            if (phoneInput && phoneInput.value && !isProgrammaticFilling) {
+                const digits = phoneInput.value.replace(/[^0-9]/g, '');
+                if (digits.length === 11 && digits.startsWith('01')) {
+                    chrome.storage.local.get(['ivac_phone'], (res) => {
+                        if (res.ivac_phone !== digits) {
+                            chrome.storage.local.set({
+                                ivac_phone: digits,
+                                profile_label: `Profile (${digits})`
+                            });
+                            updateProfileLabel(digits);
+                        }
+                    });
+                }
             }
         }
 
@@ -477,6 +491,50 @@ function autoSwitchProfile(gateway) {
 }
 
 // Auto-capture phone from input fields on IVAC site
+function extractBdMobile(str) {
+    if (!str) return null;
+    const clean = String(str).replace(/[^0-9]/g, '');
+    const m = clean.match(/(01[3-9]\d{8})/);
+    return m ? m[1] : null;
+}
+
+function findIvacLoginPhoneInput() {
+    const inputs = Array.from(document.querySelectorAll('input'));
+    // 1. Direct attribute match
+    for (const inp of inputs) {
+        const type = (inp.type || 'text').toLowerCase();
+        if (type === 'password' || type === 'hidden' || type === 'checkbox' || type === 'radio' || inp.maxLength === 1) continue;
+        const name = (inp.name || '').toLowerCase();
+        const id = (inp.id || '').toLowerCase();
+        const ph = (inp.placeholder || '').toLowerCase();
+
+        if (type === 'tel') return inp;
+        if (ph.includes('01') || ph.includes('contact') || ph.includes('phone') || ph.includes('mobile')) return inp;
+        if (name.includes('phone') || name.includes('mobile') || name.includes('contact')) return inp;
+        if (id.includes('phone') || id.includes('mobile') || id.includes('contact')) return inp;
+    }
+
+    // 2. Surrounding label / container match (e.g., "Your Contact Number")
+    for (const inp of inputs) {
+        const type = (inp.type || 'text').toLowerCase();
+        if (type === 'password' || type === 'hidden' || type === 'checkbox' || type === 'radio' || inp.maxLength === 1) continue;
+        const parent = inp.closest('div, form, label, p, tr, td');
+        if (parent && /(contact number|mobile number|phone number|contact)/i.test(parent.textContent)) {
+            return inp;
+        }
+    }
+
+    // 3. Any input that currently contains an 11-digit BD mobile number
+    for (const inp of inputs) {
+        const type = (inp.type || 'text').toLowerCase();
+        if (type === 'password' || type === 'hidden' || type === 'checkbox' || type === 'radio' || inp.maxLength === 1) continue;
+        const val = (inp.value || '').replace(/[^0-9]/g, '');
+        if (val.length === 11 && val.startsWith('01')) return inp;
+    }
+
+    return null;
+}
+
 document.addEventListener('input', handlePhoneCapture);
 document.addEventListener('change', handlePhoneCapture);
 document.addEventListener('focusout', handlePhoneCapture);
@@ -488,27 +546,41 @@ function handlePhoneCapture(e) {
 }
 
 function checkInputForPhone(inputEl) {
+    if (!inputEl) return;
     const type = (inputEl.type || 'text').toLowerCase();
-    if (type === 'text' || type === 'tel' || type === 'number') {
-        const val = (inputEl.value || '').replace(/[^0-9]/g, '');
-        const m = val.match(phoneRegex);
-        if (m) {
-            chrome.storage.local.get(['ivac_phone'], (res) => {
-                if (res.ivac_phone !== m[1]) {
-                    chrome.storage.local.set({ ivac_phone: m[1] });
-                }
-            });
-        }
+    if (type === 'password' || type === 'hidden' || type === 'checkbox' || type === 'radio' || inputEl.maxLength === 1) return;
+    
+    const val = (inputEl.value || '').replace(/[^0-9]/g, '');
+    const bdMobile = extractBdMobile(val);
+    if (bdMobile) {
+        chrome.storage.local.get(['ivac_phone'], (res) => {
+            if (res.ivac_phone !== bdMobile) {
+                chrome.storage.local.set({
+                    ivac_phone: bdMobile,
+                    profile_label: `Profile (${bdMobile})`
+                });
+                updateProfileLabel(bdMobile);
+            }
+        });
     }
 }
 
-// Bulletproof fallback: Scan all inputs periodically (for Chrome Autofill or JS injected values)
-setInterval(() => {
-    try {
-        const inputs = document.querySelectorAll('input');
-        inputs.forEach(inp => checkInputForPhone(inp));
-    } catch (e) {}
-}, 2000);
+// Document event listeners handle phone capture safely on user input/change
+
+// Answer queries from popup regarding current page phone number
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request && request.action === 'getLoginPagePhone') {
+        const pInput = findIvacLoginPhoneInput();
+        const pDigits = pInput ? (pInput.value || '').replace(/[^0-9]/g, '') : '';
+        const passInputs = Array.from(document.querySelectorAll('input[type="password"]')).filter(i => i.maxLength !== 1);
+        const passVal = passInputs[0] ? passInputs[0].value : '';
+        sendResponse({
+            phone: (pDigits.length === 11 && pDigits.startsWith('01')) ? pDigits : '',
+            password: passVal || ''
+        });
+        return true;
+    }
+});
 
 // ===== AUTO-FILL SIGN-IN CREDENTIALS (Mobile Number & Password) =====
 function setNativeInputValue(element, value) {
@@ -534,13 +606,14 @@ function setNativeInputValue(element, value) {
     }
 }
 
+let isProgrammaticFilling = false;
+
 function autoFillLoginCredentials() {
     const url = window.location.href.toLowerCase();
     
     // STRICT GUARD: Only run on the actual signin / login page!
-    // NEVER run on verify, otp, payment, appointment, or application pages!
     if (url.includes('verify') || url.includes('otp') || url.includes('payment') || url.includes('checkout')) return;
-    if (!url.includes('/signin') && !url.includes('/login')) return;
+    if (!url.includes('/signin') && !url.includes('/login') && !url.includes('appointment.ivacbd.com')) return;
 
     chrome.storage.local.get(['ivac_phone', 'ivac_password', 'ext_enabled'], (st) => {
         if (st.ext_enabled === false) return;
@@ -548,48 +621,89 @@ function autoFillLoginCredentials() {
         let phone = (st.ivac_phone || '').trim();
         let pass = (st.ivac_password || '').trim();
 
-        if (!phone && !pass) return;
+        const phoneInput = findIvacLoginPhoneInput();
+        if (phoneInput) {
+            const cleanVal = (phoneInput.value || '').replace(/[^0-9]/g, '');
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
 
-        // 1. Find and fill Contact Number input ONLY if 11 digits present
-        if (phone && phone.length >= 11) {
-            const inputs = Array.from(document.querySelectorAll('input'));
-            const phoneInputs = inputs.filter(inp => {
-                const type = (inp.type || 'text').toLowerCase();
-                const name = (inp.name || '').toLowerCase();
-                const id = (inp.id || '').toLowerCase();
-                const ph = (inp.placeholder || '').toLowerCase();
-                if (type === 'password' || type === 'hidden' || type === 'checkbox' || type === 'radio' || inp.maxLength === 1) return false;
-                return ph.includes('01') || ph.includes('contact') || ph.includes('phone') || ph.includes('mobile') ||
-                       name.includes('phone') || name.includes('mobile') || name.includes('contact') ||
-                       id.includes('phone') || id.includes('mobile') || id.includes('contact') ||
-                       type === 'tel';
-            });
-            
-            const phoneInput = phoneInputs[0] || null;
-            if (phoneInput) {
-                const cleanVal = (phoneInput.value || '').replace(/[^0-9]/g, '');
-                const cleanPhone = phone.replace(/[^0-9]/g, '');
+            // CRITICAL: If the page already has a valid 11-digit BD number, adopt it if different
+            if (cleanVal.length === 11 && cleanVal.startsWith('01')) {
                 if (cleanVal !== cleanPhone) {
-                    setNativeInputValue(phoneInput, phone);
+                    chrome.storage.local.set({
+                        ivac_phone: cleanVal,
+                        profile_label: `Profile (${cleanVal})`
+                    });
+                    updateProfileLabel(cleanVal);
                 }
+            } else if (cleanVal.length === 0 && cleanPhone.length === 11) {
+                // Only autofill if the field is completely empty!
+                isProgrammaticFilling = true;
+                setNativeInputValue(phoneInput, phone);
+                isProgrammaticFilling = false;
+            }
+
+            // Real-time listener for user typing / change
+            if (!phoneInput.dataset.ivacAutoSaveAttached) {
+                phoneInput.dataset.ivacAutoSaveAttached = 'true';
+                const syncLive = () => {
+                    if (isProgrammaticFilling) return;
+                    const typed = (phoneInput.value || '').replace(/[^0-9]/g, '');
+                    if (typed.length === 11 && typed.startsWith('01')) {
+                        chrome.storage.local.get(['ivac_phone'], (r) => {
+                            if (r.ivac_phone !== typed) {
+                                chrome.storage.local.set({
+                                    ivac_phone: typed,
+                                    profile_label: `Profile (${typed})`
+                                });
+                                updateProfileLabel(typed);
+                            }
+                        });
+                    }
+                };
+                phoneInput.addEventListener('input', syncLive);
+                phoneInput.addEventListener('change', syncLive);
+                phoneInput.addEventListener('blur', syncLive);
             }
         }
 
-        // 2. Find and fill Password input ONLY if password present
-        if (pass && pass.length > 0) {
-            const passInputs = Array.from(document.querySelectorAll('input[type="password"]')).filter(i => i.maxLength !== 1);
-            const passInput = passInputs[0] || null;
-            if (passInput && passInput.value !== pass) {
+        // Find and fill Password input
+        const passInputs = Array.from(document.querySelectorAll('input[type="password"]')).filter(i => i.maxLength !== 1);
+        const passInput = passInputs[0] || null;
+        if (passInput) {
+            const currentPassVal = passInput.value || '';
+            const isBullets = /^[•●*]+$/.test(currentPassVal);
+            if (currentPassVal.length >= 4 && !isBullets) {
+                if (!pass || pass !== currentPassVal) {
+                    chrome.storage.local.set({ ivac_password: currentPassVal });
+                }
+            } else if (currentPassVal.length === 0 && pass && pass.length > 0) {
+                isProgrammaticFilling = true;
                 setNativeInputValue(passInput, pass);
+                isProgrammaticFilling = false;
+            }
+            if (!passInput.dataset.ivacAutoSaveAttached) {
+                passInput.dataset.ivacAutoSaveAttached = 'true';
+                const syncPass = () => {
+                    if (isProgrammaticFilling) return;
+                    const val = passInput.value || '';
+                    if (val.length >= 4 && !/^[•●*]+$/.test(val)) {
+                        chrome.storage.local.set({ ivac_password: val });
+                    }
+                };
+                passInput.addEventListener('input', syncPass);
+                passInput.addEventListener('change', syncPass);
+                passInput.addEventListener('blur', syncPass);
             }
         }
     });
 }
 
-// Continuously auto-fill login credentials while on signin page
-setInterval(autoFillLoginCredentials, 600);
+// Targeted autofill triggers without thrashing intervals
 document.addEventListener('DOMContentLoaded', autoFillLoginCredentials);
 window.addEventListener('load', autoFillLoginCredentials);
+setTimeout(autoFillLoginCredentials, 400);
+setTimeout(autoFillLoginCredentials, 1200);
+setTimeout(autoFillLoginCredentials, 2500);
 
 // Extract #profile= from URL if launched from desktop app or shortcut
 (function initProfileFromUrl() {
@@ -607,43 +721,14 @@ window.addEventListener('load', autoFillLoginCredentials);
     } catch(e) {}
 })();
 
-// Real-time listener for credentials changes from Desktop App
+// Real-time listener for credentials changes
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.ivac_phone || changes.ivac_password)) {
-        if (typeof autoFillLoginCredentials === 'function') {
+        if (!isProgrammaticFilling && typeof autoFillLoginCredentials === 'function') {
             autoFillLoginCredentials();
         }
     }
 });
-
-// Periodic background sync directly from Desktop App backend on signin page
-setInterval(() => {
-    try {
-        const url = window.location.href.toLowerCase();
-        if (url.includes('/signin') || url.includes('/login')) {
-            chrome.storage.local.get(['my_chrome_profile', 'ivac_phone', 'ivac_password'], (st) => {
-                const prof = st.my_chrome_profile || '';
-                chrome.runtime.sendMessage({ action: 'getProfileData', profile: prof }, (res) => {
-                    if (chrome.runtime.lastError || !res || !res.success || !res.data) return;
-                    const data = res.data;
-                    if (data && data.profile) {
-                        const sPhone = (data.profile.phone || '').trim();
-                        const sPass = data.profile.password || '';
-                        const curPhone = (st.ivac_phone || '').trim();
-                        const curPass = st.ivac_password || '';
-                        if (sPhone !== curPhone || sPass !== curPass) {
-                            chrome.storage.local.set({ ivac_phone: sPhone, ivac_password: sPass }, () => {
-                                if (typeof autoFillLoginCredentials === 'function') {
-                                    autoFillLoginCredentials();
-                                }
-                            });
-                        }
-                    }
-                });
-            });
-        }
-    } catch(e) {}
-}, 2000);
 
 // ===== FLOATING PIN WIDGET (injected into the webpage DOM) =====
 let pinWidgetEl = null;
@@ -837,8 +922,26 @@ function createPinWidget() {
                     </div>
                 </div>
 
-
-
+                <!-- Live Webmail Auto-Refresh & OTP Reader Panel (Shown ONLY on Gmail & Proton Mail) -->
+                <div id="webmail-refresh-panel" style="display: ${isWebmailPage ? 'block' : 'none'}; margin-top: 5px; padding: 5px 6px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                        <span id="webmail-service-badge" style="font-size: 8.5px; font-weight: 800; color: #166534; text-transform: uppercase;">📧 ${isProtonHost ? 'Proton Mail' : isGmailHost ? 'Gmail' : 'Webmail'}</span>
+                        <span id="webmail-pulse-dot" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #22c55e;" title="লাইভ মনিটরিং"></span>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                        <button id="webmail-autorefresh-btn" style="flex: 1; background: #059669; color: #fff; border: none; border-radius: 4px; padding: 3px 6px; font-size: 9.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;">
+                            <span id="webmail-autorefresh-text">🔄 অটো রিলোড: চালু</span>
+                        </button>
+                        <span id="webmail-timer-badge" style="font-size: 9px; font-weight: 800; color: #047857; font-family: monospace; background: #fff; padding: 2px 4px; border: 1px solid #bbf7d0; border-radius: 3px;">3s</span>
+                    </div>
+                    <!-- Quick Folder Nav Buttons (Inbox, Spam with unread counter, All Search) -->
+                    <div style="display: flex; gap: 3px; margin-top: 4px;">
+                        <button id="webmail-btn-inbox" type="button" style="flex: 1; padding: 2.5px 3px; font-size: 8.5px; font-weight: 700; border-radius: 4px; border: 1px solid #cbd5e1; background: #fff; color: #334155; cursor: pointer;" title="ইনবক্স ফোল্ডারে যান">📥 ইনবক্স</button>
+                        <button id="webmail-btn-spam" type="button" style="flex: 1; padding: 2.5px 3px; font-size: 8.5px; font-weight: 700; border-radius: 4px; border: 1px solid #fca5a5; background: #fff; color: #b91c1c; cursor: pointer;" title="স্প্যাম ফোল্ডারে যান">⚠️ স্প্যাম <span id="webmail-spam-badge" style="color:#ef4444; font-weight:800;"></span></button>
+                        <button id="webmail-btn-all" type="button" style="flex: 1.2; padding: 2.5px 3px; font-size: 8.5px; font-weight: 700; border-radius: 4px; border: 1px solid #93c5fd; background: #eff6ff; color: #1d4ed8; cursor: pointer;" title="ইনবক্স ও স্প্যাম একসাথে খুঁজুন">🔍 ইনবক্স+স্প্যাম</button>
+                    </div>
+                    <div id="webmail-status-text" style="font-size: 8.5px; color: #64748b; margin-top: 3px; text-align: center;">IVAC ইমেইল মনিটর করা হচ্ছে...</div>
+                </div>
 
             </div>
         </div>
@@ -857,6 +960,43 @@ function createPinWidget() {
         pinBody.style.display = widgetMinimized ? 'none' : 'block';
         minBtn.textContent = widgetMinimized ? '+' : '-';
     });
+
+    // Webmail Auto Refresh Toggle
+    const webmailAutoBtn = shadow.getElementById('webmail-autorefresh-btn');
+    if (webmailAutoBtn) {
+        webmailAutoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.__toggleWebmailAutoRefresh === 'function') {
+                window.__toggleWebmailAutoRefresh();
+            }
+        });
+    }
+
+    // Webmail Folder Navigation Buttons (Inbox, Spam, All Search)
+    const btnInbox = shadow.getElementById('webmail-btn-inbox');
+    if (btnInbox) {
+        btnInbox.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isGmailHost) window.location.hash = '#inbox';
+            else if (isProtonHost) window.location.pathname = '/inbox';
+        });
+    }
+    const btnSpam = shadow.getElementById('webmail-btn-spam');
+    if (btnSpam) {
+        btnSpam.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isGmailHost) window.location.hash = '#spam';
+            else if (isProtonHost) window.location.pathname = '/spam';
+        });
+    }
+    const btnAll = shadow.getElementById('webmail-btn-all');
+    if (btnAll) {
+        btnAll.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isGmailHost) window.location.hash = '#search/in%3Aanywhere+ivac';
+            else if (isProtonHost) window.location.hash = '#allmail';
+        });
+    }
 
     // Make draggable
     const pinBox = shadow.getElementById('pin-box');
@@ -909,6 +1049,10 @@ function createPinWidget() {
             setTimeout(() => { btn.textContent = originalText; }, 1000);
         } else if (action === 'delete-link') {
             chrome.storage.local.remove('payment_link', () => {
+                updateWidgetOtp(otpBox);
+            });
+        } else if (action === 'delete-email-otp') {
+            chrome.runtime.sendMessage({ action: 'clearEmailOtp' }, () => {
                 updateWidgetOtp(otpBox);
             });
         }
@@ -986,7 +1130,7 @@ async function updateWidgetOtp(box) {
 
     try {
     // Always get the freshest data directly from storage! No out-of-sync tabs.
-    const res = await new Promise(r => chrome.storage.local.get(['ext_enabled', 'ivac_phone', 'rocket_accounts', 'active_rocket_id', 'payment_link'], (result) => {
+    const res = await new Promise(r => chrome.storage.local.get(['ext_enabled', 'ivac_phone', 'ivac_email', 'rocket_accounts', 'active_rocket_id', 'payment_link', 'latest_email_otp'], (result) => {
         if (chrome.runtime.lastError) {
             r({});
         } else {
@@ -1002,6 +1146,7 @@ async function updateWidgetOtp(box) {
     }
 
     const currentSavedPhone = res.ivac_phone || "";
+    const currentSavedEmail = (res.ivac_email || "").trim().toLowerCase();
     const currentRocketPhone = getActiveRocketPhone(res.rocket_accounts, res.active_rocket_id);
 
     let html = '';
@@ -1058,6 +1203,31 @@ async function updateWidgetOtp(box) {
         } catch(e) {}
     }
 
+    // Check Email OTP with strict multi-profile isolation
+    const emailOtpData = res.latest_email_otp || null;
+    if (emailOtpData && emailOtpData.otp && (Date.now() - emailOtpData.timestamp < 300000)) {
+        const otpEmail = (emailOtpData.email || '').trim().toLowerCase();
+        if (!currentSavedEmail || !otpEmail || currentSavedEmail === otpEmail) {
+            if (found) html += '<div class="divider"></div>';
+            const isUsed = !!emailOtpData.used;
+            const statusBadge = isUsed ? '<span class="status-badge badge-used">Used</span>' : '<span class="status-badge badge-unused">Unused</span>';
+            const valColor = isUsed ? '#64748b' : '#0284c7';
+            const emailTagLabel = otpEmail ? `✉️ ${otpEmail}` : '✉️ IVAC Email';
+            html += `<div class="otp-tag-row">
+                         <span class="otp-tag" style="color:#0284c7;" title="${otpEmail}">${emailTagLabel}</span>
+                         ${statusBadge}
+                     </div>
+                     <div class="otp-row">
+                         <div class="otp-val" style="color:${valColor};">${emailOtpData.otp}</div>
+                         <div>
+                             <button class="action-btn" data-action="copy" data-otp="${emailOtpData.otp}" title="Copy">📋</button>
+                             <button class="action-btn" data-action="delete-email-otp" title="Delete">🗑️</button>
+                         </div>
+                     </div>`;
+            found = true;
+        }
+    }
+
     // Check Payment Link
     if (res.payment_link) {
         if (found) html += `<div class="divider"></div>`;
@@ -1074,18 +1244,20 @@ async function updateWidgetOtp(box) {
 
     if (!found) {
         let text = "কোনো নতুন OTP নেই";
-        if (currentSavedPhone) {
-            const dotHtml = getDevDot(currentSavedPhone);
-            text = `<b>${currentSavedPhone}</b>${dotHtml} এর OTP নেই`;
+        if (currentSavedPhone || currentSavedEmail) {
+            const phonePart = currentSavedPhone ? `<b>${currentSavedPhone}</b>${getDevDot(currentSavedPhone)}` : '';
+            const emailPart = currentSavedEmail ? `<span style="color:#0284c7; font-size:9.5px; font-weight:700;">${currentSavedEmail}</span>` : '';
+            const targets = [phonePart, emailPart].filter(Boolean).join(' / ');
+            text = `${targets} এর OTP নেই`;
         } else {
             text = `ফোন নম্বর পাওয়া যায়নি!`;
         }
-        box.innerHTML = `<span class="c-gray" style="font-size:10px; display:flex; align-items:center; justify-content:center; gap:2px;">${text}</span>`;
+        box.innerHTML = `<span class="c-gray" style="font-size:10px; display:flex; align-items:center; justify-content:center; gap:3px; flex-wrap:wrap;">${text}</span>`;
     } else {
         box.innerHTML = html;
     }
     } catch(e) {
-        // Extension context invalidated â€” silently ignore (happens after extension reload)
+        // Extension context invalidated — silently ignore (happens after extension reload)
     }
 }
 
@@ -1131,23 +1303,51 @@ async function fetchAndFillOtp(otpInputs, isSingleBox) {
     if (!isLicenseValid) return;
     if (document.visibilityState !== 'visible') return;
 
-    // Get freshest phone number
-    const res = await new Promise(r => chrome.storage.local.get(['ivac_phone'], r));
+    // Get freshest phone & email number
+    const res = await new Promise(r => chrome.storage.local.get(['ivac_phone', 'ivac_email'], r));
     const currentSavedPhone = res.ivac_phone || "";
-    if (!currentSavedPhone || currentSavedPhone.length < 11) return;
+    const currentSavedEmail = (res.ivac_email || "").trim().toLowerCase();
+    if ((!currentSavedPhone || currentSavedPhone.length < 11) && !currentSavedEmail) return;
 
     try {
-        // STRICTLY request source: 'IV' and check used === false
-        const d = await new Promise(r => chrome.runtime.sendMessage({ 
-            action: 'claimAndFetchOtp', 
-            phone: currentSavedPhone, 
-            source: 'IV' 
-        }, r));
-        
-        if (d && d.success && d.data && d.data.digits && !d.data.used && d.data.source === 'IV') {
-            fillOtpNative(otpInputs, d.data.digits, isSingleBox);
-            chrome.runtime.sendMessage({ action: 'markUsed', phone: currentSavedPhone, source: 'IV' });
-            emitActivity('login_otp_filled', 'Login OTP গ্রহণ ও পূরণ', 'Phone: ' + currentSavedPhone + ', OTP: ' + d.data.digits.join(''), 0, 'info');
+        // 1. Try SMS OTP first if phone is configured
+        if (currentSavedPhone && currentSavedPhone.length >= 11) {
+            const d = await new Promise(r => chrome.runtime.sendMessage({ 
+                action: 'claimAndFetchOtp', 
+                phone: currentSavedPhone, 
+                source: 'IV' 
+            }, r));
+            
+            if (d && d.success && d.data && d.data.digits && !d.data.used && d.data.source === 'IV') {
+                fillOtpNative(otpInputs, d.data.digits, isSingleBox);
+                chrome.runtime.sendMessage({ action: 'markUsed', phone: currentSavedPhone, source: 'IV' });
+                emitActivity('login_otp_filled', 'Login OTP গ্রহণ ও পূরণ', 'Phone: ' + currentSavedPhone + ', OTP: ' + d.data.digits.join(''), 0, 'info');
+                return;
+            }
+        }
+
+        // 2. Try Email OTP if SMS OTP was not found or not yet available
+        if (currentSavedEmail) {
+            const emailResp = await new Promise(r => chrome.runtime.sendMessage({ 
+                action: 'fetchEmailOtp', 
+                email: currentSavedEmail 
+            }, r));
+            if (emailResp && emailResp.success && emailResp.data && emailResp.data.otp && !emailResp.data.used) {
+                const otpEmail = (emailResp.data.email || '').trim().toLowerCase();
+                // STRICT MULTI-PROFILE ISOLATION CHECK:
+                // Only fill if OTP's email strictly matches this profile's configured email!
+                if (otpEmail && currentSavedEmail && otpEmail !== currentSavedEmail) {
+                    console.warn(`[IVAC Master Pro] Rejected Email OTP for ${otpEmail} (Current Profile is: ${currentSavedEmail})`);
+                    return;
+                }
+
+                const digits = String(emailResp.data.otp).split('').map(Number);
+                if (digits.length === 6 || (isSingleBox && digits.length >= 4)) {
+                    fillOtpNative(otpInputs, digits, isSingleBox);
+                    chrome.runtime.sendMessage({ action: 'markEmailOtpUsed' });
+                    emitActivity('login_otp_filled', 'Login Email OTP গ্রহণ ও পূরণ', 'Email (' + currentSavedEmail + ') OTP: ' + emailResp.data.otp, 0, 'info');
+                }
+            }
         }
     } catch(e) {}
 }
@@ -3113,6 +3313,408 @@ function getResolvedPaymentAccount(res) {
             });
         } catch(e) {}
     }, 180);
+})();
+
+// =========================================================================
+// ===== WEBMAIL (GMAIL & PROTON MAIL) AUTO-REFRESH & OTP READER ENGINE =====
+// =========================================================================
+(function initWebmailEngine() {
+    if (!isWebmailPage) return;
+
+    console.log('[IVAC Master Pro] Webmail page detected:', isProtonHost ? 'Proton Mail' : 'Gmail');
+
+    let webmailAutoRefreshActive = true;
+    let lastProcessedEmailOtp = null;
+    let reloadSecCountdown = 3;
+    let detectedLoggedInEmail = null;
+
+    // Detect logged in email from document title, account avatar, or page metadata
+    function detectLoggedInEmail() {
+        let email = null;
+
+        // 1. Scan document.title
+        // Gmail format: "Inbox (441) - nazat796@gmail.com" or "nazat796@gmail.com - Gmail"
+        // Proton format: "Inbox | user@proton.me"
+        const titleMatch = (document.title || '').match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+        if (titleMatch && titleMatch[1]) {
+            email = titleMatch[1].trim().toLowerCase();
+        }
+
+        // 2. Scan Avatar / Account button in DOM
+        if (!email) {
+            if (isGmailHost) {
+                const avatar = document.querySelector('a[aria-label*="@"], div[aria-label*="@"], img[aria-label*="@"], a[href*="SignOutOptions"], a[href*="accounts.google.com"], [data-identifier]');
+                if (avatar) {
+                    const aria = (avatar.getAttribute('aria-label') || avatar.getAttribute('title') || avatar.getAttribute('data-identifier') || '');
+                    const m = aria.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+                    if (m && m[1]) email = m[1].trim().toLowerCase();
+                }
+            } else if (isProtonHost) {
+                const protonUser = document.querySelector('button[data-testid*="user-dropdown"], .user-dropdown-text, span[title*="@"], [data-testid="heading:userdropdown"]');
+                if (protonUser) {
+                    const txt = (protonUser.textContent || protonUser.getAttribute('title') || protonUser.getAttribute('aria-label') || '');
+                    const m = txt.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+                    if (m && m[1]) email = m[1].trim().toLowerCase();
+                }
+            }
+        }
+
+        // 3. Fallback: Scan mailto links
+        if (!email) {
+            const mailto = document.querySelector('a[href^="mailto:"]');
+            if (mailto) {
+                const m = mailto.href.match(/mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+                if (m && m[1]) email = m[1].trim().toLowerCase();
+            }
+        }
+
+        if (email && email !== detectedLoggedInEmail) {
+            detectedLoggedInEmail = email;
+            console.log('📧 [IVAC Master Pro] Logged-in email detected:', email);
+
+            // Auto-save to storage and automatically populate ivac_email so user doesn't need to type it!
+            chrome.storage.local.get(['ivac_email', 'detected_webmail_email'], (st) => {
+                const updates = { detected_webmail_email: email };
+                if (!st.ivac_email || st.ivac_email === st.detected_webmail_email) {
+                    updates.ivac_email = email;
+                }
+                chrome.storage.local.set(updates);
+            });
+
+            // Update floating pin widget UI immediately
+            if (shadowDomRoot) {
+                const badge = shadowDomRoot.getElementById('webmail-service-badge');
+                if (badge) {
+                    badge.textContent = `📧 ${isProtonHost ? 'Proton' : 'Gmail'} (${email})`;
+                    badge.title = `লগইন ইমেইল: ${email}`;
+                }
+                const statusTxt = shadowDomRoot.getElementById('webmail-status-text');
+                if (statusTxt && !statusTxt.textContent.includes('OTP')) {
+                    statusTxt.textContent = `${email} এর IVAC ওটিপি মনিটর করা হচ্ছে...`;
+                }
+            }
+        }
+
+        return detectedLoggedInEmail || email;
+    }
+
+    // Toggle function for floating pin widget
+    window.__toggleWebmailAutoRefresh = function() {
+        webmailAutoRefreshActive = !webmailAutoRefreshActive;
+        if (shadowDomRoot) {
+            const autoBtn = shadowDomRoot.getElementById('webmail-autorefresh-btn');
+            const btnText = shadowDomRoot.getElementById('webmail-autorefresh-text');
+            const pulseDot = shadowDomRoot.getElementById('webmail-pulse-dot');
+            const statusTxt = shadowDomRoot.getElementById('webmail-status-text');
+            const currentMail = detectedLoggedInEmail || '';
+            if (webmailAutoRefreshActive) {
+                if (btnText) btnText.textContent = '🔄 অটো রিলোড: চালু';
+                if (autoBtn) autoBtn.style.background = '#059669';
+                if (pulseDot) pulseDot.style.background = '#22c55e';
+                if (statusTxt) statusTxt.textContent = currentMail ? `${currentMail} এর IVAC ওটিপি মনিটর করা হচ্ছে...` : 'IVAC ইমেইল মনিটর করা হচ্ছে...';
+                reloadSecCountdown = 3;
+            } else {
+                if (btnText) btnText.textContent = '🔄 অটো রিলোড: বন্ধ';
+                if (autoBtn) autoBtn.style.background = '#94a3b8';
+                if (pulseDot) pulseDot.style.background = '#94a3b8';
+                if (statusTxt) statusTxt.textContent = 'অটো রিলোড বন্ধ রাখা হয়েছে';
+            }
+        }
+    };
+
+    // Send heartbeat to background with detected email so popup dot turns GREEN
+    function sendHeartbeat() {
+        const currentEmail = detectLoggedInEmail() || detectedLoggedInEmail || '';
+        chrome.runtime.sendMessage({
+            action: 'webmailHeartbeat',
+            service: isProtonHost ? 'proton' : 'gmail',
+            email: currentEmail,
+            active: webmailAutoRefreshActive
+        }).catch(() => {});
+    }
+    sendHeartbeat();
+    setInterval(sendHeartbeat, 3000);
+
+    // Native reload clicker without full page reload
+    function performWebmailRefresh() {
+        if (!webmailAutoRefreshActive) return;
+        try {
+            if (isGmailHost) {
+                // Gmail toolbar reload button selectors
+                const gmailBtn = document.querySelector('div[gh="tm"] div[act="20"]') ||
+                                 document.querySelector('div[act="20"]') ||
+                                 document.querySelector('div[role="button"][data-tooltip*="Refresh" i]') ||
+                                 document.querySelector('div[role="button"][aria-label*="Refresh" i]') ||
+                                 document.querySelector('div[role="button"][data-tooltip*="রিলোড" i]') ||
+                                 document.querySelector('div[role="button"][aria-label*="রিলোড" i]');
+                if (gmailBtn) {
+                    gmailBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                    gmailBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                    gmailBtn.click();
+                }
+            } else if (isProtonHost) {
+                // Proton Mail inbox reload button selectors
+                const protonBtn = document.querySelector('button[title*="Refresh" i], button[aria-label*="Refresh" i], button[data-testid*="refresh" i]') ||
+                                  document.querySelector('button[data-testid="navigation-link:inbox"]') ||
+                                  document.querySelector('a[href*="/inbox"]');
+                if (protonBtn) {
+                    protonBtn.click();
+                }
+            }
+        } catch(e) {
+            console.warn('[IVAC Master Pro] Webmail refresh error:', e);
+        }
+    }
+
+    // Refresh countdown & auto-trigger
+    setInterval(() => {
+        if (!webmailAutoRefreshActive) return;
+        reloadSecCountdown--;
+        if (shadowDomRoot) {
+            const timerBadge = shadowDomRoot.getElementById('webmail-timer-badge');
+            if (timerBadge) timerBadge.textContent = reloadSecCountdown + 's';
+        }
+        if (reloadSecCountdown <= 0) {
+            reloadSecCountdown = 3;
+            performWebmailRefresh();
+        }
+    }, 1000);
+
+    // Word to digit dictionary
+    const WORD_DIGITS = {
+        'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+        'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9
+    };
+
+    function parseEmailOtp(text) {
+        if (!text || typeof text !== 'string') return null;
+
+        // Pattern 1: Spelled-out sequence e.g. "prompted One-Eight-Two-Seven-One-Zero ."
+        const promptedMatch = text.match(/prompted\s+([A-Za-z\- ]+?)(?:\s*\.|\s*<|\s*\n|$)/i);
+        if (promptedMatch && promptedMatch[1]) {
+            const tokens = promptedMatch[1].toLowerCase().split(/[\s\-]+/);
+            const digits = [];
+            for (const tok of tokens) {
+                const c = tok.trim();
+                if (c in WORD_DIGITS) {
+                    digits.push(WORD_DIGITS[c]);
+                }
+            }
+            if (digits.length === 6 || digits.length === 4) {
+                return digits.join('');
+            }
+        }
+
+        // Pattern 1.5: Sequence of spelled-out digits anywhere in text
+        const wordSeqMatch = text.match(/\b((?:zero|one|two|three|four|five|six|seven|eight|nine)(?:[\s\-]+(?:zero|one|two|three|four|five|six|seven|eight|nine)){3,5})\b/i);
+        if (wordSeqMatch && wordSeqMatch[1]) {
+            const tokens = wordSeqMatch[1].toLowerCase().split(/[\s\-]+/);
+            const digits = [];
+            for (const tok of tokens) {
+                const c = tok.trim();
+                if (c in WORD_DIGITS) {
+                    digits.push(WORD_DIGITS[c]);
+                }
+            }
+            if (digits.length === 6 || digits.length === 4) {
+                return digits.join('');
+            }
+        }
+
+        // Pattern 2: Explicit OTP label e.g. "OTP: 182710", "Verification code: 182710", "sequence 182710"
+        const labeledMatch = text.match(/(?:otp|code|verification|sequence)[^\d]{1,25}(\d{4,6})\b/i);
+        if (labeledMatch && labeledMatch[1]) {
+            return labeledMatch[1];
+        }
+
+        // Pattern 3: Standalone 6-digit if text mentions IVAC or Appointment
+        if (/ivac|appointment/i.test(text)) {
+            const standAlone = text.match(/\b(\d{6})\b/);
+            if (standAlone && standAlone[1]) {
+                return standAlone[1];
+            }
+        }
+
+        return null;
+    }
+
+    let autoSpamCheckCooldown = 0;
+
+    function processLatestOtp(otp, rawText) {
+        if (!otp) return;
+        if (otp === lastProcessedEmailOtp) return;
+        lastProcessedEmailOtp = otp;
+        const currentEmail = detectLoggedInEmail() || detectedLoggedInEmail || '';
+        console.log('🔥 [IVAC Master Pro] LATEST Email OTP Found:', otp, 'for email:', currentEmail);
+        chrome.runtime.sendMessage({
+            action: 'newEmailOtp',
+            otp: otp,
+            email: currentEmail,
+            rawText: (rawText || '').substring(0, 300),
+            sender: 'info@appointment.ivacbd.com',
+            timestamp: Date.now()
+        });
+
+        if (shadowDomRoot) {
+            const statusTxt = shadowDomRoot.getElementById('webmail-status-text');
+            if (statusTxt) {
+                statusTxt.innerHTML = `<span style="color:#059669; font-weight:800;">✅ সর্বশেষ OTP: ${otp}</span>`;
+            }
+            const otpDisplay = shadowDomRoot.getElementById('otp-display');
+            if (otpDisplay && typeof updateWidgetOtp === 'function') {
+                updateWidgetOtp(otpDisplay);
+            }
+        }
+    }
+
+    function getSpamUnreadCount() {
+        if (isGmailHost) {
+            const spamLinks = Array.from(document.querySelectorAll('a[href*="#spam"], a[aria-label*="Spam" i], a[aria-label*="স্প্যাম" i], a[title*="Spam" i], div[data-tooltip*="Spam" i], div[role="navigation"] a'));
+            for (const el of spamLinks) {
+                const href = el.getAttribute('href') || '';
+                const aria = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+                const txt = el.textContent || '';
+                if (href.includes('#spam') || aria.toLowerCase().includes('spam') || aria.includes('স্প্যাম') || txt.toLowerCase().includes('spam') || txt.includes('স্প্যাম')) {
+                    const m = (aria + ' ' + txt).match(/(\d+)/);
+                    if (m && m[1]) return parseInt(m[1], 10);
+                }
+            }
+        } else if (isProtonHost) {
+            const spamEl = document.querySelector('a[href*="/spam"], [data-testid="navigation-link:spam"]');
+            if (spamEl) {
+                const m = (spamEl.textContent || spamEl.getAttribute('aria-label') || '').match(/(\d+)/);
+                if (m && m[1]) return parseInt(m[1], 10);
+            }
+        }
+        return 0;
+    }
+
+    function updateSpamStatus() {
+        const spamCount = getSpamUnreadCount();
+        if (shadowDomRoot) {
+            const spamBadge = shadowDomRoot.getElementById('webmail-spam-badge');
+            if (spamBadge) {
+                if (spamCount > 0) {
+                    spamBadge.textContent = `(${spamCount})`;
+                    spamBadge.style.color = '#ef4444';
+                    spamBadge.style.fontWeight = '800';
+                } else {
+                    spamBadge.textContent = '';
+                }
+            }
+
+            const currentHash = window.location.hash || '';
+            const statusTxt = shadowDomRoot.getElementById('webmail-status-text');
+
+            if (currentHash.includes('#spam')) {
+                if (statusTxt && !statusTxt.textContent.includes('সর্বশেষ OTP')) {
+                    statusTxt.innerHTML = `<span style="color:#b91c1c; font-weight:700;">⚠️ স্প্যাম ফোল্ডার মনিটর করা হচ্ছে...</span>`;
+                }
+            } else if (currentHash.includes('#search/in%3Aanywhere')) {
+                if (statusTxt && !statusTxt.textContent.includes('সর্বশেষ OTP')) {
+                    statusTxt.innerHTML = `<span style="color:#1d4ed8; font-weight:700;">🔍 ইনবক্স ও স্প্যাম একসাথে মনিটর হচ্ছে...</span>`;
+                }
+            } else if (spamCount > 0 && !currentHash.includes('#spam')) {
+                if (statusTxt && !statusTxt.textContent.includes('সর্বশেষ OTP')) {
+                    statusTxt.innerHTML = `<span id="wm-inline-spam-link" style="color:#dc2626; font-weight:800; cursor:pointer; text-decoration:underline;">⚠️ স্প্যামে ${spamCount}টি নতুন ইমেইল! দেখতে ক্লিক করুন</span>`;
+                    const link = shadowDomRoot.getElementById('wm-inline-spam-link');
+                    if (link) {
+                        link.onclick = () => { window.location.hash = '#spam'; };
+                    }
+                }
+            }
+        }
+
+        // Auto-check Spam if unread spam is detected and user is in Inbox
+        if (webmailAutoRefreshActive && spamCount > 0 && isGmailHost) {
+            const currentHash = window.location.hash || '';
+            const now = Date.now();
+            if (!currentHash.includes('#spam') && !currentHash.includes('#search/in%3Aanywhere') && now - autoSpamCheckCooldown > 12000) {
+                autoSpamCheckCooldown = now;
+                console.log('⚠️ [IVAC Master Pro] Unread spam detected, auto-searching Inbox + Spam...');
+                window.location.hash = '#search/in%3Aanywhere+ivac';
+            }
+        }
+    }
+
+    function scanEmailElements() {
+        // Continuous detection of email
+        detectLoggedInEmail();
+
+        // Check Spam folder status & update badge
+        updateSpamStatus();
+
+        // 1. Scan open email body (NEWEST message is at the BOTTOM in a thread!)
+        let messageEls = [];
+        if (isProtonHost) {
+            messageEls = Array.from(document.querySelectorAll('.message-content, div[data-testid="message-view"], .content-container, article'));
+        } else if (isGmailHost) {
+            messageEls = Array.from(document.querySelectorAll('div.a3s.aiL, div[role="main"] .ii.gt, div.adn.ads'));
+        }
+
+        // Search from bottom to top (newest message first)
+        for (let i = messageEls.length - 1; i >= 0; i--) {
+            const el = messageEls[i];
+            const txt = el.innerText || el.textContent || '';
+            const lower = txt.toLowerCase();
+            if (lower.includes('ivac') || lower.includes('appointment') || lower.includes('sequence') || lower.includes('verification')) {
+                const otp = parseEmailOtp(txt);
+                if (otp) {
+                    processLatestOtp(otp, txt);
+                    return; // CRITICAL: STOP! Never scan older messages in thread!
+                }
+            }
+        }
+
+        // If an email body is currently open on screen, do NOT scan the background list!
+        const hasOpenEmail = (isGmailHost && document.querySelector('div.a3s.aiL')) ||
+                             (isProtonHost && document.querySelector('.message-content, div[data-testid="message-view"]'));
+        if (hasOpenEmail) {
+            return;
+        }
+
+        // 2. Scan email list rows (NEWEST email is at the TOP [rows[0]]!)
+        if (isProtonHost) {
+            const rows = document.querySelectorAll('div[data-testid="item"], div.item-container, div[role="row"]');
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i];
+                const txt = r.innerText || r.textContent || '';
+                if (txt.includes('IVAC') || txt.includes('appointment.ivacbd.com') || txt.includes('Verification OTP')) {
+                    const otp = parseEmailOtp(txt);
+                    if (otp) {
+                        processLatestOtp(otp, txt);
+                        const isUnread = r.classList.contains('unread') || r.querySelector('.unread, [aria-label*="unread" i]');
+                        if (isUnread) r.click();
+                        return; // CRITICAL: STOP at the newest IVAC email! Never check older rows!
+                    }
+                    // Snippet truncated: open the row to read full body
+                    r.click();
+                    return; // STOP!
+                }
+            }
+        } else if (isGmailHost) {
+            const rows = document.querySelectorAll('tr.zA, tr[role="row"]');
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i];
+                const txt = r.innerText || r.textContent || '';
+                if (txt.includes('IVAC') || txt.includes('appointment.ivacbd.com') || txt.includes('Verification OTP')) {
+                    const otp = parseEmailOtp(txt);
+                    if (otp) {
+                        processLatestOtp(otp, txt);
+                        const isUnread = r.classList.contains('zE');
+                        if (isUnread) r.click();
+                        return; // CRITICAL: STOP at the newest IVAC email! Never check older rows!
+                    }
+                    // Snippet truncated or partial: open the row to read full body
+                    r.click();
+                    return; // STOP!
+                }
+            }
+        }
+    }
+
+    // Gentle polling interval (no heavy DOM observer)
+    setInterval(scanEmailElements, 1500);
 })();
 
 

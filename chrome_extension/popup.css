@@ -55,6 +55,33 @@ html, body {
     gap: 4px;
 }
 
+.header-formfill-btn {
+    background: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.header-formfill-btn:hover {
+    background: #ffffff;
+    color: #047857;
+    border-color: #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.header-formfill-btn:active {
+    transform: scale(0.96);
+}
+
 /* Container */
 .container {
     padding: 5px 6px;

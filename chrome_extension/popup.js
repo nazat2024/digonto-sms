@@ -46,6 +46,7 @@
     }
 document.addEventListener('DOMContentLoaded', () => {
     const extToggle = document.getElementById('ext-toggle');
+    const emailInput = document.getElementById('manual-email-input');
     const phoneInput = document.getElementById('manual-phone-input');
     const passInput = document.getElementById('manual-pass-input');
     const toggleIvacPassBtn = document.getElementById('toggle-ivac-pass-btn');
@@ -80,6 +81,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const addPreferredDateBtn = document.getElementById('add-preferred-date-btn');
     const preferredDatesList = document.getElementById('preferred-dates-list');
 
+    // Open FormFill Integrated Side Panel with Desktop License Gate
+    const btnOpenFormFill = document.getElementById('btn-open-formfill');
+    if (btnOpenFormFill) {
+        btnOpenFormFill.addEventListener('click', (e) => {
+            e.preventDefault();
+            chrome.runtime.sendMessage({ action: 'checkLicenseStatus' }, async (resp) => {
+                if (!resp || resp.active !== true) {
+                    alert("⚠️ IVAC Master Pro ডেস্কটপ সফটওয়্যার চালু নেই অথবা লাইসেন্স সক্রিয় নেই!\nঅনুগ্রহ করে IVAC Master Pro ডেস্কটপ সফটওয়্যার চালু করে লাইসেন্স অ্যাক্টিভ করুন।");
+                    return;
+                }
+                try {
+                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                    if (tab) {
+                        await chrome.storage.local.set({ activeSidePanelPath: 'formfill.html' });
+                        if (chrome.sidePanel && typeof chrome.sidePanel.setOptions === 'function') {
+                            await chrome.sidePanel.setOptions({ path: 'formfill.html' });
+                            await chrome.sidePanel.setOptions({ tabId: tab.id, path: 'formfill.html' }).catch(() => {});
+                            if (typeof chrome.sidePanel.open === 'function') {
+                                await chrome.sidePanel.open({ tabId: tab.id, windowId: tab.windowId || undefined });
+                            }
+                        } else {
+                            chrome.tabs.create({ url: chrome.runtime.getURL('formfill.html') });
+                        }
+                        window.close();
+                    }
+                } catch (err) {
+                    chrome.tabs.create({ url: chrome.runtime.getURL('formfill.html') });
+                    window.close();
+                }
+            });
+        });
+    }
+
     let preferredDates = [];
     let slotBookingEnabled = true;
 
@@ -105,14 +139,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!profilesList || !profilesList.length) return;
         
         // 1. Check local extension storage
-        const st = await new Promise(r => chrome.storage.local.get(['my_chrome_profile', 'my_profile_name'], r));
+        const st = await new Promise(r => chrome.storage.local.get(['my_chrome_profile', 'my_profile_name', 'ivac_phone'], r));
         if (st && st.my_chrome_profile) {
             currentProfileDir = st.my_chrome_profile;
             currentProfileName = st.my_profile_name || "";
             return;
         }
+
+        const phoneToCheck = currentPhone || (st ? st.ivac_phone : '');
+
+        // 2. Match by phone if currently saved (highest accuracy)
+        if (phoneToCheck) {
+            const cleanP = phoneToCheck.replace(/[^0-9]/g, '');
+            if (cleanP.length === 11) {
+                for (const p of profilesList) {
+                    if (p.phone && p.phone.replace(/[^0-9]/g, '') === cleanP) {
+                        currentProfileDir = p.chrome_profile || "";
+                        currentProfileName = p.name || "";
+                        chrome.storage.local.set({
+                            my_chrome_profile: currentProfileDir,
+                            my_profile_name: currentProfileName
+                        });
+                        return;
+                    }
+                }
+            }
+        }
         
-        // 2. Check bookmarks
+        // 3. Check bookmarks
         try {
             if (chrome.bookmarks && chrome.bookmarks.getTree) {
                 const tree = await new Promise(r => chrome.bookmarks.getTree(r));
@@ -129,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const cleanT = t.replace(" - Google Search", "").trim().toLowerCase();
                     for (const p of profilesList) {
                         const pName = (p.name || "").trim().toLowerCase();
-                        if (pName && (cleanT === pName || t.toLowerCase().includes(pName))) {
+                        if (pName && (cleanT === pName || t.toLowerCase().includes(pName) || pName.includes(cleanT))) {
                             currentProfileDir = p.chrome_profile || "";
                             currentProfileName = p.name || "";
                             chrome.storage.local.set({
@@ -143,24 +197,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch(e) {}
         
-        // 3. Match by phone if currently saved
-        if (!currentProfileDir && currentPhone) {
-            const cleanP = currentPhone.replace(/[^0-9]/g, '');
-            for (const p of profilesList) {
-                if (p.phone && p.phone.replace(/[^0-9]/g, '') === cleanP) {
-                    currentProfileDir = p.chrome_profile || "";
-                    currentProfileName = p.name || "";
-                    chrome.storage.local.set({
-                        my_chrome_profile: currentProfileDir,
-                        my_profile_name: currentProfileName
-                    });
-                    return;
-                }
-            }
-        }
-        
-        // 4. Fallback: if server has active_profile, use it
-        if (!currentProfileDir && latestServerStatus && latestServerStatus.active_profile) {
+        // 4. Fallback: if server has active_profile and local has no phone
+        if (!currentProfileDir && !currentPhone && latestServerStatus && latestServerStatus.active_profile) {
             const ap = latestServerStatus.active_profile;
             if (ap.chrome_profile) {
                 currentProfileDir = ap.chrome_profile;
@@ -243,26 +281,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== 1. Load initial state =====
     chrome.storage.local.get([
-        'ext_enabled', 'ivac_phone', 'ivac_password',
+        'ext_enabled', 'ivac_email', 'detected_webmail_email', 'ivac_phone', 'ivac_password',
         'saved_webfiles', 'webfile_enabled', 'webfile_mode',
         'rocket_accounts', 'active_rocket_id', 'payment_enabled', 'payment_mode', 'payment_link', 'payment_methods', 'slot_booking_enabled', 'preferred_dates'
     ], (result) => {
         if (result.ext_enabled !== undefined) {
             extToggle.checked = result.ext_enabled;
         }
+        if (result.ivac_email && emailInput) {
+            emailInput.value = result.ivac_email;
+        } else if (result.detected_webmail_email && emailInput && !emailInput.value) {
+            emailInput.value = result.detected_webmail_email;
+            chrome.storage.local.set({ ivac_email: result.detected_webmail_email });
+        }
+        updateEmailStatusDot();
         if (result.ivac_phone) {
             currentPhone = result.ivac_phone;
             phoneInput.value = currentPhone;
-    phoneInput.addEventListener('blur', () => {
-        const ph = phoneInput.value.replace(/[^0-9]/g, '');
-        if (ph.length >= 11) {
-            chrome.storage.local.set({
-                ivac_phone: ph,
-                profile_label: `Profile (${ph})`
+        } else {
+            // Query active tab (e.g. login page) to instantly pick up phone number
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs && tabs[0] && tabs[0].id) {
+                    chrome.tabs.sendMessage(tabs[0].id, { action: 'getLoginPagePhone' }, (resp) => {
+                        if (!chrome.runtime.lastError && resp && resp.phone) {
+                            if (phoneInput && (!phoneInput.value || phoneInput.value.length < 11)) {
+                                phoneInput.value = resp.phone;
+                                currentPhone = resp.phone;
+                                chrome.storage.local.set({
+                                    ivac_phone: resp.phone,
+                                    profile_label: `Profile (${resp.phone})`
+                                });
+                                if (resp.password && passInput && !passInput.value) {
+                                    passInput.value = resp.password;
+                                    chrome.storage.local.set({ ivac_password: resp.password });
+                                }
+                                updateStatus();
+                            }
+                        }
+                    });
+                }
             });
         }
-    });
+
+        if (emailInput) {
+            emailInput.addEventListener('input', autoSaveCredentials);
+            emailInput.addEventListener('change', autoSaveCredentials);
+            emailInput.addEventListener('blur', autoSaveCredentials);
         }
+
+        if (phoneInput) {
+            phoneInput.addEventListener('input', autoSaveCredentials);
+            phoneInput.addEventListener('change', autoSaveCredentials);
+            phoneInput.addEventListener('blur', autoSaveCredentials);
+        }
+
         if (result.ivac_password && passInput) {
             passInput.value = result.ivac_password;
         }
@@ -681,40 +753,147 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Removed Eye buttons for rocket since we don't have the add input anymore
 
-    // ===== Auto Save IVAC phone & password on typing/backspace =====
-    function autoSaveCredentials() {
-        const phone = phoneInput ? phoneInput.value.trim() : '';
-        const pass = passInput ? passInput.value : '';
-        
-        currentPhone = phone;
-        const profileLabel = currentPhone ? `Profile (${currentPhone})` : (currentProfileName || `Profile`);
-        const dataToSave = {
-            ivac_phone: currentPhone,
-            ivac_password: pass,
-            profile_label: profileLabel
-        };
-        
-        chrome.storage.local.set(dataToSave, () => {
-            updateStatus();
-            // Sync with local desktop app backend in REAL-TIME
-            fetch('http://127.0.0.1:5000/api/profile/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chrome_profile: currentProfileDir,
-                    name: currentProfileName,
-                    phone: currentPhone,
-                    password: pass
-                })
-            }).catch(() => {});
+    // ===== Email Status Dot Updater =====
+    function updateEmailStatusDot() {
+        const ivacEmailDot = document.getElementById('ivac-email-status-dot');
+        if (!ivacEmailDot) return;
+        const emailVal = emailInput ? emailInput.value.trim().toLowerCase() : '';
+
+        chrome.runtime.sendMessage({ action: 'checkWebmailStatus' }, (resp) => {
+            const detectedMail = (!chrome.runtime.lastError && resp && resp.email) ? resp.email.trim().toLowerCase() : '';
+            const isActive = !chrome.runtime.lastError && resp && resp.active;
+            const serviceName = (resp && resp.service === 'proton') ? 'Proton Mail' : 'Gmail';
+
+            // 1. If input is empty, auto-populate from detected email!
+            if (!emailVal) {
+                if (detectedMail) {
+                    if (emailInput) emailInput.value = detectedMail;
+                    chrome.storage.local.set({ ivac_email: detectedMail, detected_webmail_email: detectedMail });
+                    ivacEmailDot.className = 'dot green';
+                    ivacEmailDot.title = `ইমেইল মিলেছে! ${serviceName} (${detectedMail}) সংযুক্ত ও লাইভ 🟢`;
+                    return;
+                }
+                chrome.storage.local.get(['detected_webmail_email'], (st) => {
+                    if (st.detected_webmail_email && emailInput && !emailInput.value) {
+                        emailInput.value = st.detected_webmail_email;
+                        chrome.storage.local.set({ ivac_email: st.detected_webmail_email });
+                        updateEmailStatusDot();
+                        return;
+                    }
+                    ivacEmailDot.className = 'dot gray';
+                    ivacEmailDot.title = 'ইমেইল দেওয়া হয়নি ⚪';
+                });
+                return;
+            }
+
+            // 2. If tab is not open / active
+            if (!isActive) {
+                chrome.tabs.query({}, (tabs) => {
+                    const hasMailTab = (tabs || []).some(t => t.url && (t.url.includes('mail.google.com') || t.url.includes('mail.proton.me')));
+                    if (hasMailTab) {
+                        ivacEmailDot.className = 'dot amber';
+                        ivacEmailDot.title = `${serviceName} লোড হচ্ছে... 🟡`;
+                    } else {
+                        ivacEmailDot.className = 'dot red';
+                        ivacEmailDot.title = 'Gmail বা Proton Mail ট্যাব খোলা নেই 🔴';
+                    }
+                });
+                return;
+            }
+
+            // 3. Strict verification: GREEN ONLY IF MATCHES!
+            // "আর সেই email id ই extrention এ না বসালে তো সবুজ dot উঠবে না"
+            if (detectedMail) {
+                if (detectedMail === emailVal) {
+                    ivacEmailDot.className = 'dot green';
+                    ivacEmailDot.title = `ইমেইল মিলেছে! ${serviceName} (${detectedMail}) সংযুক্ত ও লাইভ 🟢`;
+                } else {
+                    ivacEmailDot.className = 'dot red';
+                    ivacEmailDot.title = `ইমেইল মেলেনি! ট্যাবে খোলা: ${detectedMail}, কিন্তু বক্সে দেওয়া: ${emailVal} 🔴`;
+                }
+            } else {
+                // Tab is open but email address not yet detected
+                ivacEmailDot.className = 'dot amber';
+                ivacEmailDot.title = `${serviceName} এ ইমেইল অ্যাড্রেস ডিটেক্ট করা হচ্ছে... 🟡`;
+            }
         });
+    }
+
+    // Live periodic check for email status dot
+    setInterval(updateEmailStatusDot, 2500);
+
+    // Real-time listener for background updates
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local') {
+            if (changes.detected_webmail_email || changes.ivac_email) {
+                const newMail = (changes.ivac_email && changes.ivac_email.newValue) || 
+                                (changes.detected_webmail_email && changes.detected_webmail_email.newValue);
+                if (newMail && emailInput && !emailInput.value) {
+                    emailInput.value = newMail;
+                }
+                updateEmailStatusDot();
+            }
+        }
+    });
+
+    // ===== Auto Save IVAC email, phone & password with debouncing =====
+    let saveCredsDebounce = null;
+    function autoSaveCredentials() {
+        if (saveCredsDebounce) clearTimeout(saveCredsDebounce);
+        saveCredsDebounce = setTimeout(() => {
+            const phone = phoneInput ? phoneInput.value.replace(/[^0-9]/g, '') : '';
+            const pass = passInput ? passInput.value : '';
+            const email = emailInput ? emailInput.value.trim() : '';
+            
+            currentPhone = phone;
+            const profileLabel = currentPhone ? `Profile (${currentPhone})` : (currentProfileName || `Profile`);
+            const dataToSave = {
+                ivac_phone: currentPhone,
+                ivac_password: pass,
+                ivac_email: email,
+                profile_label: profileLabel
+            };
+            
+            chrome.storage.local.set(dataToSave, () => {
+                const ivacDot = document.getElementById('ivac-phone-status-dot');
+                if (ivacDot) {
+                    const ivacStat = getPhoneDeviceStatus(currentPhone);
+                    ivacDot.className = `dot ${ivacStat.dotClass}`;
+                    ivacDot.title = `IVAC: ${ivacStat.label}`;
+                }
+                updateEmailStatusDot();
+                // Sync with local desktop app backend in REAL-TIME
+                fetch('http://127.0.0.1:5000/api/profile/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chrome_profile: currentProfileDir,
+                        name: currentProfileName,
+                        phone: currentPhone,
+                        password: pass,
+                        email: email
+                    })
+                }).then(() => {
+                    if (allServerProfiles && allServerProfiles.length) {
+                        const mp = allServerProfiles.find(p => 
+                            (currentProfileDir && p.chrome_profile === currentProfileDir) ||
+                            (currentProfileName && p.name === currentProfileName)
+                        );
+                        if (mp) {
+                            mp.phone = currentPhone;
+                            mp.password = pass;
+                            mp.email = email;
+                        }
+                    }
+                }).catch(() => {});
+            });
+        }, 300);
     }
 
     if (passInput) {
         passInput.addEventListener('input', autoSaveCredentials);
-    }
-    if (phoneInput) {
-        phoneInput.addEventListener('input', autoSaveCredentials);
+        passInput.addEventListener('change', autoSaveCredentials);
+        passInput.addEventListener('blur', autoSaveCredentials);
     }
     if (savePhoneBtn) {
         savePhoneBtn.addEventListener('click', autoSaveCredentials);
@@ -767,11 +946,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (namespace === 'local') {
             if (changes.ivac_phone) {
                 currentPhone = changes.ivac_phone.newValue;
-                phoneInput.value = currentPhone;
-                updateStatus();
+                if (phoneInput && document.activeElement !== phoneInput) {
+                    phoneInput.value = currentPhone || '';
+                }
+                const ivacDot = document.getElementById('ivac-phone-status-dot');
+                if (ivacDot) {
+                    const ivacStat = getPhoneDeviceStatus(currentPhone);
+                    ivacDot.className = `dot ${ivacStat.dotClass}`;
+                    ivacDot.title = `IVAC: ${ivacStat.label}`;
+                }
             }
             if (changes.ivac_password && passInput) {
-                passInput.value = changes.ivac_password.newValue || '';
+                if (document.activeElement !== passInput) {
+                    passInput.value = changes.ivac_password.newValue || '';
+                }
             }
         }
     });
@@ -1059,6 +1247,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ivacDot.title = `IVAC: ${ivacStat.label}`;
                 }
                 updatePaymentAccountDots();
+                updateEmailStatusDot();
 
 
                 // Update device count badge
@@ -1093,30 +1282,50 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         const isTypingPhone = (document.activeElement === phoneInput);
                         const isTypingPass = (document.activeElement === passInput);
-                        
+                        const curInputPhone = phoneInput ? phoneInput.value.replace(/[^0-9]/g, '') : '';
+                        const curInputPass = passInput ? passInput.value : '';
+
                         let needsStorageUpdate = false;
                         const storageUpdate = {};
                         
-                        if (!isTypingPhone && phoneInput && phoneInput.value !== serverPhone) {
+                        // ONLY populate from server if local inputs are completely empty
+                        if (!curInputPhone && serverPhone && serverPhone.length === 11 && !isTypingPhone) {
                             phoneInput.value = serverPhone;
                             currentPhone = serverPhone;
                             storageUpdate.ivac_phone = serverPhone;
                             needsStorageUpdate = true;
                         }
-                        if (!isTypingPass && passInput && passInput.value !== serverPass) {
+                        if (!curInputPass && serverPass && !isTypingPass) {
                             passInput.value = serverPass;
                             storageUpdate.ivac_password = serverPass;
                             needsStorageUpdate = true;
                         }
                         
+                        // If local has valid phone, but server is missing it or different, sync local to server
+                        if (curInputPhone && curInputPhone.length === 11 && curInputPhone.startsWith('01') && curInputPhone !== serverPhone) {
+                            fetch('http://127.0.0.1:5000/api/profile/sync', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    chrome_profile: currentProfileDir,
+                                    name: currentProfileName,
+                                    phone: curInputPhone,
+                                    password: curInputPass || serverPass
+                                })
+                            }).then(() => {
+                                myProfile.phone = curInputPhone;
+                            }).catch(() => {});
+                        }
+                        
                         if (needsStorageUpdate) {
                             chrome.storage.local.set(storageUpdate);
-                            const ivacDot = document.getElementById('ivac-phone-status-dot');
-                            if (ivacDot) {
-                                const ivacStat = getPhoneDeviceStatus(currentPhone);
-                                ivacDot.className = `dot ${ivacStat.dotClass}`;
-                                ivacDot.title = `IVAC: ${ivacStat.label}`;
-                            }
+                        }
+                        
+                        const ivacDot = document.getElementById('ivac-phone-status-dot');
+                        if (ivacDot) {
+                            const ivacStat = getPhoneDeviceStatus(currentPhone || curInputPhone);
+                            ivacDot.className = `dot ${ivacStat.dotClass}`;
+                            ivacDot.title = `IVAC: ${ivacStat.label}`;
                         }
                     }
                 }
@@ -1145,6 +1354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ivacDot.title = "সার্ভার বন্ধ";
             }
             updatePaymentAccountDots();
+            updateEmailStatusDot();
 
             return;
         }
@@ -1200,7 +1410,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Open Native Chrome Side Panel
+    // Open Native Chrome Side Panel (Registration Panel)
     const openSidebarBtn = document.getElementById('open-sidebar-btn');
     if (openSidebarBtn) {
         openSidebarBtn.addEventListener('click', async (e) => {
@@ -1208,8 +1418,13 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 if (tab) {
+                    await chrome.storage.local.set({ activeSidePanelPath: 'sidepanel.html' });
+                    if (chrome.sidePanel && typeof chrome.sidePanel.setOptions === 'function') {
+                        await chrome.sidePanel.setOptions({ path: 'sidepanel.html' });
+                        await chrome.sidePanel.setOptions({ tabId: tab.id, path: 'sidepanel.html' }).catch(() => {});
+                    }
                     if (chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
-                        await chrome.sidePanel.open({ tabId: tab.id });
+                        await chrome.sidePanel.open({ tabId: tab.id, windowId: tab.windowId || undefined });
                     }
                     window.close();
                 }
