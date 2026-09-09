@@ -9,8 +9,6 @@ chrome.storage.local.get(['rocket_accounts'], (res) => {
 // ===== OTP CLAIM LOCK =====
 const otpClaims = {};
 
-// ===== WEBMAIL STATUS TRACKING =====
-let lastWebmailHeartbeat = { active: false, service: null, timestamp: 0 };
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
@@ -368,62 +366,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
-    // ===== WEBMAIL HEARTBEAT & STATUS =====
-    if (request.action === 'webmailHeartbeat') {
-        const mail = (request.email || '').trim().toLowerCase();
-        lastWebmailHeartbeat = {
-            active: true,
-            service: request.service || 'gmail',
-            email: mail,
-            timestamp: Date.now()
-        };
-        if (mail) {
-            chrome.storage.local.get(['ivac_email', 'detected_webmail_email'], (st) => {
-                const updates = { detected_webmail_email: mail };
-                if (!st.ivac_email || st.ivac_email === st.detected_webmail_email) {
-                    updates.ivac_email = mail;
-                }
-                chrome.storage.local.set(updates);
-            });
-        }
-        sendResponse({ success: true });
-        return true;
-    }
-
-    if (request.action === 'checkWebmailStatus') {
-        const isRecentlyActive = (Date.now() - lastWebmailHeartbeat.timestamp < 10000);
-        chrome.storage.local.get(['detected_webmail_email', 'ivac_email'], (st) => {
-            const knownMail = lastWebmailHeartbeat.email || st.detected_webmail_email || '';
-            if (isRecentlyActive && lastWebmailHeartbeat.active) {
-                sendResponse({ active: true, service: lastWebmailHeartbeat.service, email: knownMail });
-            } else {
-                chrome.tabs.query({}, (tabs) => {
-                    const mailTabs = (tabs || []).filter(t => t.url && (t.url.includes('mail.google.com') || t.url.includes('mail.proton.me')));
-                    if (mailTabs.length > 0) {
-                        const isProton = mailTabs.some(t => t.url.includes('mail.proton.me'));
-                        let titleEmail = knownMail;
-                        if (!titleEmail) {
-                            for (const tab of mailTabs) {
-                                const m = (tab.title || '').match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
-                                if (m && m[1]) {
-                                    titleEmail = m[1].trim().toLowerCase();
-                                    break;
-                                }
-                            }
-                        }
-                        sendResponse({ active: true, service: isProton ? 'proton' : 'gmail', email: titleEmail, count: mailTabs.length });
-                    } else {
-                        sendResponse({ active: false, service: null, email: '', count: 0 });
-                    }
-                });
-            }
-        });
-        return true;
-    }
-
     // ===== EMAIL OTP HANDLING =====
     if (request.action === 'newEmailOtp') {
-        const targetEmail = (request.email || lastWebmailHeartbeat.email || '').trim().toLowerCase();
+        const targetEmail = (request.email || '').trim().toLowerCase();
         const otpData = {
             otp: request.otp,
             rawText: request.rawText || '',

@@ -428,10 +428,12 @@ def get_status():
     online_count = 0
     online_phones = []
     offline_phones = []
+    online_emails = []
+    offline_emails = []
     
     # Ultra-fast in-memory iteration without disk I/O or redundant regex
     for dev_id, data in list(connected_devices.items()):
-        # Mark online if seen within 12 seconds
+        # Mark online if seen within 7 seconds
         is_seen = (current_time - data.get("last_seen", 0) <= 7.0)
         data["online"] = is_seen
         
@@ -446,16 +448,23 @@ def get_status():
             phone_matches = re.findall(r'\b(01[3-9]\d{8})\b', f"{data.get('sim1_name','')} {data.get('sim2_name','')} {data.get('custom_name','')} {data.get('device_name','')}")
             data["phones"] = phone_matches
             
+        dev_email = (data.get("email") or "").strip().lower()
         if is_on:
             online_phones.extend(phone_matches)
+            if dev_email:
+                online_emails.append(dev_email)
         else:
             offline_phones.extend(phone_matches)
+            if dev_email:
+                offline_emails.append(dev_email)
             
         devices.append(data)
         
     total_count = len(devices)
     online_phones = list(set(online_phones))
     offline_phones = list(set(offline_phones))
+    online_emails = list(set(online_emails))
+    offline_emails = list(set(offline_emails))
     rocket_accounts, profiles = get_cached_config_data()
 
     return jsonify({
@@ -468,6 +477,8 @@ def get_status():
         "devices_status": f"{online_count}/{total_count}",
         "online_phones": online_phones,
         "offline_phones": offline_phones,
+        "online_emails": online_emails,
+        "offline_emails": offline_emails,
         "config_version": last_config_ts,
         "active_profile": active_profile_data,
         "profiles": profiles,
@@ -1305,6 +1316,7 @@ try:
                         
                     sim1 = sys_data.get("sim1_name", "")
                     sim2 = sys_data.get("sim2_name", "")
+                    c_email = (sys_data.get("email") or "").strip().lower()
                     c_name = saved_devices[dev_id].get("custom_name", dev_model)
                     import re
                     phone_matches = re.findall(r'\b(01[3-9]\d{8})\b', f"{sim1} {sim2} {c_name} {dev_model}")
@@ -1316,6 +1328,7 @@ try:
                         "is_active": saved_devices[dev_id].get("is_active", True),
                         "sim1_name": sim1,
                         "sim2_name": sim2,
+                        "email": c_email,
                         "phones": phone_matches,
                         "last_seen": time.time(),
                         "online": True

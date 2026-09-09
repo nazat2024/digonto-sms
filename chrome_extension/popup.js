@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== 1. Load initial state =====
     chrome.storage.local.get([
-        'ext_enabled', 'ivac_email', 'detected_webmail_email', 'ivac_phone', 'ivac_password',
+        'ext_enabled', 'ivac_email', 'ivac_phone', 'ivac_password',
         'saved_webfiles', 'webfile_enabled', 'webfile_mode',
         'rocket_accounts', 'active_rocket_id', 'payment_enabled', 'payment_mode', 'payment_link', 'payment_methods', 'slot_booking_enabled', 'preferred_dates'
     ], (result) => {
@@ -290,9 +290,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (result.ivac_email && emailInput) {
             emailInput.value = result.ivac_email;
-        } else if (result.detected_webmail_email && emailInput && !emailInput.value) {
-            emailInput.value = result.detected_webmail_email;
-            chrome.storage.local.set({ ivac_email: result.detected_webmail_email });
         }
         updateEmailStatusDot();
         if (result.ivac_phone) {
@@ -759,64 +756,58 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ivacEmailDot) return;
         const emailVal = emailInput ? emailInput.value.trim().toLowerCase() : '';
 
-        chrome.runtime.sendMessage({ action: 'checkWebmailStatus' }, (resp) => {
-            const detectedMail = (!chrome.runtime.lastError && resp && resp.email) ? resp.email.trim().toLowerCase() : '';
-            const isActive = !chrome.runtime.lastError && resp && resp.active;
-            const serviceName = (resp && resp.service === 'proton') ? 'Proton Mail' : 'Gmail';
+        if (!emailVal) {
+            ivacEmailDot.className = 'dot gray';
+            ivacEmailDot.title = 'ইমেইল দেওয়া হয়নি ⚪';
+            return;
+        }
 
-            // 1. If input is empty, auto-populate from detected email!
-            if (!emailVal) {
-                if (detectedMail) {
-                    if (emailInput) emailInput.value = detectedMail;
-                    chrome.storage.local.set({ ivac_email: detectedMail, detected_webmail_email: detectedMail });
+        const isValidEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(emailVal);
+        if (!isValidEmail) {
+            ivacEmailDot.className = 'dot gray';
+            ivacEmailDot.title = 'সঠিক ইমেইল ফরম্যাট দিন ⚪';
+            return;
+        }
+
+        if (!latestServerStatus) {
+            ivacEmailDot.className = 'dot red';
+            ivacEmailDot.title = 'সার্ভার বন্ধ 🔴';
+            return;
+        }
+
+        const onlineEmails = latestServerStatus.online_emails || [];
+        const offlineEmails = latestServerStatus.offline_emails || [];
+        const devices = latestServerStatus.devices || [];
+
+        if (onlineEmails.includes(emailVal)) {
+            ivacEmailDot.className = 'dot green';
+            ivacEmailDot.title = `মোবাইল অ্যাপ সংযুক্ত ও লাইভ (${emailVal}) 🟢`;
+            return;
+        }
+
+        if (offlineEmails.includes(emailVal)) {
+            ivacEmailDot.className = 'dot red';
+            ivacEmailDot.title = `মোবাইল অ্যাপ অফলাইনে আছে (${emailVal}) 🔴`;
+            return;
+        }
+
+        for (const dev of devices) {
+            const devEmail = (dev.email || '').trim().toLowerCase();
+            if (devEmail === emailVal) {
+                if (dev.online && dev.is_active !== false) {
                     ivacEmailDot.className = 'dot green';
-                    ivacEmailDot.title = `ইমেইল মিলেছে! ${serviceName} (${detectedMail}) সংযুক্ত ও লাইভ 🟢`;
+                    ivacEmailDot.title = `${dev.custom_name || dev.device_name || 'মোবাইল অ্যাপ'} সংযুক্ত ও লাইভ (${emailVal}) 🟢`;
                     return;
-                }
-                chrome.storage.local.get(['detected_webmail_email'], (st) => {
-                    if (st.detected_webmail_email && emailInput && !emailInput.value) {
-                        emailInput.value = st.detected_webmail_email;
-                        chrome.storage.local.set({ ivac_email: st.detected_webmail_email });
-                        updateEmailStatusDot();
-                        return;
-                    }
-                    ivacEmailDot.className = 'dot gray';
-                    ivacEmailDot.title = 'ইমেইল দেওয়া হয়নি ⚪';
-                });
-                return;
-            }
-
-            // 2. If tab is not open / active
-            if (!isActive) {
-                chrome.tabs.query({}, (tabs) => {
-                    const hasMailTab = (tabs || []).some(t => t.url && (t.url.includes('mail.google.com') || t.url.includes('mail.proton.me')));
-                    if (hasMailTab) {
-                        ivacEmailDot.className = 'dot amber';
-                        ivacEmailDot.title = `${serviceName} লোড হচ্ছে... 🟡`;
-                    } else {
-                        ivacEmailDot.className = 'dot red';
-                        ivacEmailDot.title = 'Gmail বা Proton Mail ট্যাব খোলা নেই 🔴';
-                    }
-                });
-                return;
-            }
-
-            // 3. Strict verification: GREEN ONLY IF MATCHES!
-            // "আর সেই email id ই extrention এ না বসালে তো সবুজ dot উঠবে না"
-            if (detectedMail) {
-                if (detectedMail === emailVal) {
-                    ivacEmailDot.className = 'dot green';
-                    ivacEmailDot.title = `ইমেইল মিলেছে! ${serviceName} (${detectedMail}) সংযুক্ত ও লাইভ 🟢`;
                 } else {
                     ivacEmailDot.className = 'dot red';
-                    ivacEmailDot.title = `ইমেইল মেলেনি! ট্যাবে খোলা: ${detectedMail}, কিন্তু বক্সে দেওয়া: ${emailVal} 🔴`;
+                    ivacEmailDot.title = `${dev.custom_name || dev.device_name || 'মোবাইল অ্যাপ'} অফলাইনে আছে 🔴`;
+                    return;
                 }
-            } else {
-                // Tab is open but email address not yet detected
-                ivacEmailDot.className = 'dot amber';
-                ivacEmailDot.title = `${serviceName} এ ইমেইল অ্যাড্রেস ডিটেক্ট করা হচ্ছে... 🟡`;
             }
-        });
+        }
+
+        ivacEmailDot.className = 'dot amber';
+        ivacEmailDot.title = `ইমেইল প্রস্তুত (${emailVal}) — মোবাইল অ্যাপের কানেকশনের অপেক্ষায়... 🟡`;
     }
 
     // Live periodic check for email status dot
@@ -825,10 +816,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Real-time listener for background updates
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local') {
-            if (changes.detected_webmail_email || changes.ivac_email) {
-                const newMail = (changes.ivac_email && changes.ivac_email.newValue) || 
-                                (changes.detected_webmail_email && changes.detected_webmail_email.newValue);
-                if (newMail && emailInput && !emailInput.value) {
+            if (changes.ivac_email) {
+                const newMail = changes.ivac_email.newValue;
+                if (newMail && emailInput && emailInput.value !== newMail) {
                     emailInput.value = newMail;
                 }
                 updateEmailStatusDot();
