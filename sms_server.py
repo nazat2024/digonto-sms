@@ -1364,11 +1364,8 @@ try:
             phone = data.get("phone", "Unknown")
             sms_body = data.get("sms", "")
             sim_name = data.get("sim", "")
-            sim1 = data.get("sim1", "")
-            sim2 = data.get("sim2", "")
-            customer_email = (data.get("email") or "").strip().lower()
             
-            print(f"[Cloud Sync] Received SMS/OTP via {sim_name} from {phone} (Customer Email: {customer_email or 'None'})")
+            print(f"[Cloud Sync] Received SMS via {sim_name} from {phone}")
             
             # Identify the actual destination Rocket Account number or customer phone
             import re
@@ -1378,75 +1375,22 @@ try:
             sim_nums = re.findall(r'\b(01[3-9]\d{8})\b', sim_name)
             if sim_nums:
                 target_phones.extend(sim_nums)
-                
-            # If sim1 or sim2 were passed from mobile app
-            for s in (sim1, sim2):
-                if s:
-                    s_nums = re.findall(r'\b(01[3-9]\d{8})\b', str(s))
-                    if s_nums:
-                        target_phones.extend(s_nums)
             
             # Fallback: check if the sender number is somehow a valid BD number
-            phone_nums = re.findall(r'\b(01[3-9]\d{8})\b', phone)
-            if phone_nums:
-                target_phones.extend(phone_nums)
-
-            # Check if there is an email address in phone or sms_body or payload
-            found_emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', phone + " " + sms_body)
-            if customer_email and customer_email not in found_emails:
-                found_emails.append(customer_email)
-            if found_emails:
-                target_phones.extend([e.lower() for e in found_emails])
+            if not target_phones:
+                phone_nums = re.findall(r'\b(01[3-9]\d{8})\b', phone)
+                if phone_nums:
+                    target_phones.extend(phone_nums)
                     
             if not target_phones:
                 target_phones = [sim_name] if sim_name and sim_name != "Unknown SIM" else [phone]
             
             # Parse OTP
             digits, source = parse_otp_from_sms(sms_body)
-            # If sim is GMAIL or MANUAL and source wasn't auto-detected, fallback to 6 digits with source="IV"
-            if not digits and sim_name in ("GMAIL", "MANUAL"):
-                d_match = re.search(r'\b(\d{6})\b', sms_body)
-                if d_match:
-                    digits = [int(d) for d in d_match.group(1)]
-                    source = "IV"
-            elif digits and not source and sim_name in ("GMAIL", "MANUAL"):
-                source = "IV"
-
             if digits and source:
                 for target in set(target_phones):
                     otp_store.add_otp(target, digits, sms_body, source)
-                    
-                # If it's IVAC OTP or from GMAIL/MANUAL, also update email OTP store and broadcast
-                if source == "IV" or sim_name in ("GMAIL", "MANUAL"):
-                    otp_str = "".join(str(d) for d in digits)
-                    detected_email = found_emails[0].lower() if found_emails else customer_email
-                    record = {
-                        "otp": otp_str,
-                        "digits": digits,
-                        "display": otp_str,
-                        "otp_string": otp_str,
-                        "email": detected_email,
-                        "raw_text": sms_body,
-                        "sender": phone,
-                        "source": "IV_EMAIL" if sim_name == "GMAIL" else "IV_MANUAL",
-                        "created_at": datetime.now().strftime("%I:%M:%S %p"),
-                        "created_at_ts": time.time(),
-                        "used": False
-                    }
-                    otp_store._latest_email_otp = record
-                    if not hasattr(otp_store, "_email_otps"):
-                        otp_store._email_otps = {}
-                    if detected_email:
-                        otp_store._email_otps[detected_email] = record
-                    if customer_email:
-                        otp_store._email_otps[customer_email] = record
-                    for t in target_phones:
-                        otp_store._email_otps[t] = record
-                    try:
-                        socketio.emit("email_otp", record)
-                    except Exception:
-                        pass
-                    print(f"📧 [Email/Notification OTP Broadcasted] Code: {otp_str} for targets: {target_phones}")
+                    print(f"✅ [OTP Stored] Code: {''.join(str(d) for d in digits)} for {target} (source: {source})")
         except Exception as e:
             print("[Cloud Sync] Error processing message:", e)
             import traceback

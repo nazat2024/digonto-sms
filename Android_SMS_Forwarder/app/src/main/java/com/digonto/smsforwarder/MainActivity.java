@@ -31,9 +31,9 @@ import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
 
-    private TextInputEditText pairingCodeInput, sim1Input, sim2Input, gmailInput, etManualOtp;
-    private TextView tvSim1Operator, tvSim2Operator, tvEmailSyncStatus;
-    private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnAutoDetectSim, btnHistory, btnEnableEmailSync, btnSendManualOtp;
+    private TextInputEditText pairingCodeInput, sim1Input, sim2Input;
+    private TextView tvSim1Operator, tvSim2Operator;
+    private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnAutoDetectSim, btnHistory;
     private TextView btnCancelAddDesktop, tvDesktopCount;
     private LinearLayout layoutPairingInputBox;
     private ChipGroup chipGroupDesktops;
@@ -80,57 +80,6 @@ public class MainActivity extends AppCompatActivity {
         
         statusText = findViewById(R.id.statusText);
         statusIcon = findViewById(R.id.statusIcon);
-
-        tvEmailSyncStatus = findViewById(R.id.tvEmailSyncStatus);
-        btnEnableEmailSync = findViewById(R.id.btnEnableEmailSync);
-        etManualOtp = findViewById(R.id.etManualOtp);
-        btnSendManualOtp = findViewById(R.id.btnSendManualOtp);
-
-        if (btnEnableEmailSync != null) {
-            btnEnableEmailSync.setOnClickListener(v -> {
-                try {
-                    Intent intent = new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
-                    startActivity(intent);
-                    Toast.makeText(this, "Enable 'IVAC Master Pro' Notification Access", Toast.LENGTH_LONG).show();
-                } catch (Exception e) {
-                    Toast.makeText(this, "Could not open settings", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-
-        if (btnSendManualOtp != null) {
-            btnSendManualOtp.setOnClickListener(v -> {
-                String otp = etManualOtp.getText() != null ? etManualOtp.getText().toString().trim() : "";
-                if (otp.length() < 4) {
-                    Toast.makeText(this, "Please enter a valid OTP (4-6 digits)", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-
-                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-                if (imm != null) {
-                    imm.hideSoftInputFromWindow(etManualOtp.getWindowToken(), 0);
-                }
-
-                String customerEmail = prefs.getString("customer_email", "");
-                String sender = (customerEmail != null && !customerEmail.isEmpty()) ? customerEmail : "MANUAL_ENTRY";
-
-                long logId = -1;
-                try {
-                    logId = SmsLogDbHelper.getInstance(getApplicationContext()).insertLog(
-                            sender, "IVAC OTP: " + otp, "MANUAL", SmsLog.STATUS_SENDING
-                    );
-                } catch (Exception ignored) {}
-
-                if (MqttService.instance != null) {
-                    MqttService.instance.publishSms(logId, sender, "IVAC OTP: " + otp, "MANUAL");
-                    Toast.makeText(this, "✅ OTP Desktop-এ পাঠানো হয়েছে: " + otp, Toast.LENGTH_SHORT).show();
-                    etManualOtp.setText("");
-                } else {
-                    Toast.makeText(this, "Connecting to desktop... Please retry in 3 seconds", Toast.LENGTH_SHORT).show();
-                    startMqttService();
-                }
-            });
-        }
 
         // History Button Click Listener
         btnHistory.setOnClickListener(v -> {
@@ -179,12 +128,6 @@ public class MainActivity extends AppCompatActivity {
         sim1Input.setText(savedSim1);
         sim2Input.setText(savedSim2);
 
-        gmailInput = findViewById(R.id.gmailInput);
-        String savedEmail = prefs.getString("customer_email", "");
-        if (gmailInput != null) {
-            gmailInput.setText(savedEmail);
-        }
-
         if (!savedOp1.isEmpty()) {
             tvSim1Operator.setText("📶 " + savedOp1);
             updateSimHint(sim1Input, savedOp1);
@@ -194,8 +137,8 @@ public class MainActivity extends AppCompatActivity {
             updateSimHint(sim2Input, savedOp2);
         }
 
-        // If either has a real saved phone number or email, lock them. Otherwise unlock so user can type directly!
-        if (!savedSim1.isEmpty() || !savedSim2.isEmpty() || !savedEmail.isEmpty()) {
+        // If either has a real saved phone number, lock them. Otherwise unlock so user can type directly!
+        if (!savedSim1.isEmpty() || !savedSim2.isEmpty()) {
             lockSimInputs();
         } else {
             unlockSimInputs();
@@ -216,7 +159,6 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 String num1 = sim1Input.getText() != null ? sim1Input.getText().toString().trim() : "";
                 String num2 = sim2Input.getText() != null ? sim2Input.getText().toString().trim() : "";
-                String email = (gmailInput != null && gmailInput.getText() != null) ? gmailInput.getText().toString().trim().toLowerCase() : "";
 
                 String op1 = prefs.getString("sim1_operator", "Banglalink");
                 String op2 = prefs.getString("sim2_operator", "Grameenphone");
@@ -230,10 +172,9 @@ public class MainActivity extends AppCompatActivity {
                     .putString("sim2_number", num2)
                     .putString("sim1_name", name1)
                     .putString("sim2_name", name2)
-                    .putString("customer_email", email)
                     .apply();
 
-                Toast.makeText(this, "Configuration Saved!", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "SIM Numbers Saved!", Toast.LENGTH_SHORT).show();
                 lockSimInputs();
             }
         });
@@ -408,7 +349,6 @@ public class MainActivity extends AppCompatActivity {
         isSimLocked = true;
         sim1Input.setEnabled(false);
         sim2Input.setEnabled(false);
-        if (gmailInput != null) gmailInput.setEnabled(false);
         btnSaveSim.setText("EDIT");
         btnSaveSim.setTextColor(android.graphics.Color.parseColor("#0284C7"));
         if (MqttService.instance != null) {
@@ -420,7 +360,6 @@ public class MainActivity extends AppCompatActivity {
         isSimLocked = false;
         sim1Input.setEnabled(true);
         sim2Input.setEnabled(true);
-        if (gmailInput != null) gmailInput.setEnabled(true);
         btnSaveSim.setText("SAVE");
         btnSaveSim.setTextColor(android.graphics.Color.parseColor("#10B981"));
     }
@@ -480,9 +419,7 @@ public class MainActivity extends AppCompatActivity {
             hasNotif = androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED;
         }
         
-        boolean hasEmail = PermissionsActivity.isNotificationListenerEnabled(this);
-
-        return hasSms && hasPhone && hasBattery && hasNotif && hasEmail;
+        return hasSms && hasPhone && hasBattery && hasNotif;
     }
 
     private void loadChips() {
@@ -547,24 +484,9 @@ public class MainActivity extends AppCompatActivity {
             if (MqttService.instance != null) {
                 MqttService.instance.sendSinglePing();
             }
-            updateEmailSyncUI();
         } else {
             startActivity(new Intent(this, PermissionsActivity.class));
             finish();
-        }
-    }
-
-    private void updateEmailSyncUI() {
-        if (tvEmailSyncStatus == null) return;
-        boolean isEnabled = PermissionsActivity.isNotificationListenerEnabled(this);
-        if (isEnabled) {
-            tvEmailSyncStatus.setText("Active");
-            tvEmailSyncStatus.setTextColor(0xFF10B981);
-            if (btnEnableEmailSync != null) btnEnableEmailSync.setVisibility(View.GONE);
-        } else {
-            tvEmailSyncStatus.setText("Inactive");
-            tvEmailSyncStatus.setTextColor(0xFFDC2626);
-            if (btnEnableEmailSync != null) btnEnableEmailSync.setVisibility(View.VISIBLE);
         }
     }
 

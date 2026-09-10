@@ -21,7 +21,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 
 public class PermissionsActivity extends AppCompatActivity {
 
-    private SwitchMaterial switchSms, switchPhone, switchBattery, switchNotification, switchEmailListener;
+    private SwitchMaterial switchSms, switchPhone, switchBattery, switchNotification;
     private Button btnContinue;
 
     @Override
@@ -45,7 +45,6 @@ public class PermissionsActivity extends AppCompatActivity {
         switchPhone = findViewById(R.id.switchPhone);
         switchBattery = findViewById(R.id.switchBattery);
         switchNotification = findViewById(R.id.switchNotification);
-        switchEmailListener = findViewById(R.id.switchEmailListener);
         btnContinue = findViewById(R.id.btnContinue);
 
         setupPermissionSwitches();
@@ -119,16 +118,6 @@ public class PermissionsActivity extends AppCompatActivity {
                 switchNotification.setChecked(true);
             }
         });
-
-        switchEmailListener.setOnClickListener(v -> {
-            try {
-                Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
-                startActivity(intent);
-                Toast.makeText(this, "Enable 'IVAC Master Pro' Notification Access", Toast.LENGTH_LONG).show();
-            } catch (Exception e) {
-                Toast.makeText(this, "Could not open Notification Listener Settings", Toast.LENGTH_SHORT).show();
-            }
-        });
     }
 
     private void checkPermissionsAndUpdateUI() {
@@ -151,10 +140,7 @@ public class PermissionsActivity extends AppCompatActivity {
         }
         switchNotification.setChecked(hasNotif);
 
-        boolean hasEmail = isNotificationListenerEnabled(this);
-        switchEmailListener.setChecked(hasEmail);
-
-        if (hasSms && hasPhone && hasBattery && hasNotif && hasEmail) {
+        if (hasSms && hasPhone && hasBattery && hasNotif) {
             btnContinue.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#3B82F6")));
         } else {
             btnContinue.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#9CA3AF")));
@@ -176,17 +162,7 @@ public class PermissionsActivity extends AppCompatActivity {
             hasNotif = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
         }
         
-        boolean hasEmail = isNotificationListenerEnabled(this);
-
-        return hasSms && hasPhone && hasBattery && hasNotif && hasEmail;
-    }
-
-    public static boolean isNotificationListenerEnabled(Context context) {
-        try {
-            return androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.getPackageName());
-        } catch (Exception e) {
-            return false;
-        }
+        return hasSms && hasPhone && hasBattery && hasNotif;
     }
 
     private void goToMainActivity() {

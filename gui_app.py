@@ -1047,7 +1047,6 @@ class IVACApp(ctk.CTk):
                     sims = []
                     if dev.get("sim1_name"): sims.append(dev["sim1_name"])
                     if dev.get("sim2_name"): sims.append(dev["sim2_name"])
-                    if dev.get("email"): sims.append(f"✉️ {dev['email']}")
                     sim_text = " | ".join(sims) if sims else "No SIM set"
                     
                     status_icon = "🟢" if is_online else "⚪"
