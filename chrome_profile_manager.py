@@ -1448,7 +1448,7 @@ def create_chrome_profile(
     shortcut_path = os.path.join(desktop_dir, f"{safe_shortcut_name}.lnk")
     encoded_prof = urllib.parse.quote(profile_dir)
     target_url = f"{DEFAULT_IVAC_SIGNIN_URL}#profile={encoded_prof}"
-    cmd_args = f'--profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --load-extension="{safe_ext}" {target_url}'
+    cmd_args = f'--profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --load-extension="{safe_ext}" {target_url}'
     create_desktop_shortcut(shortcut_path, chrome_exe, cmd_args)
     # 8. Launch Chrome instantly
     if launch_now:
@@ -1474,6 +1474,9 @@ def launch_profile(profile_dir: str, extension_path: str = None) -> bool:
         chrome_exe,
         f"--profile-directory={profile_dir}",
         "--disable-features=PrivateNetworkAccessPermissionPrompt",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
         f"--load-extension={safe_ext}",
         target_url
     ]

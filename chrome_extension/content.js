@@ -144,10 +144,57 @@ function initProfileIdentity() {
                     emitActivity('ext_disabled', 'Extension বন্ধ (Off)', 'গ্রাহক এই প্রোফাইলে এক্সটেনশন অফ রেখেছেন', 0, 'warning');
                 }
             }
+            // Periodically ping local server while page is open (guarantees profile stays active even if service worker sleeps)
+            setInterval(() => {
+                try {
+                    chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone', 'ext_enabled'], (s) => {
+                        if (chrome.runtime.lastError) return;
+                        const pId = s.profile_id || currentProfileId;
+                        const phone = s.ivac_phone || '';
+                        const pLabel = phone ? `Profile (${phone})` : (s.profile_label || currentProfileLabel);
+                        const isAct = s.ext_enabled !== false;
+                        fetch('http://127.0.0.1:5000/api/activity/heartbeat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                profile_id: pId,
+                                profile_label: pLabel,
+                                is_active: isAct
+                            })
+                        }).catch(() => {});
+                    });
+                } catch(e) {}
+            }, 20000);
         });
     } catch(e) {}
 }
 initProfileIdentity();
+
+// ===== ZERO-SLEEP SERVICE WORKER KEEP-ALIVE PORT =====
+let keepAlivePort = null;
+function maintainHotAwakePort() {
+    try {
+        if (chrome.runtime && typeof chrome.runtime.connect === 'function') {
+            keepAlivePort = chrome.runtime.connect({ name: 'keepAlive_hotAwake' });
+            keepAlivePort.onDisconnect.addListener(() => {
+                keepAlivePort = null;
+                setTimeout(maintainHotAwakePort, 2000);
+            });
+        }
+    } catch (e) {
+        setTimeout(maintainHotAwakePort, 4000);
+    }
+}
+maintainHotAwakePort();
+setInterval(() => {
+    try {
+        if (keepAlivePort) {
+            keepAlivePort.disconnect();
+            keepAlivePort = null;
+        }
+        maintainHotAwakePort();
+    } catch(e) {}
+}, 240000);
 
 function sendRecordPayment(paymentData, callback) {
     const amt1 = (paymentData && paymentData.amount_1) || parseFloat(sessionStorage.getItem('sess_amount_1')) || 0;
@@ -2454,11 +2501,11 @@ setInterval(() => {
                     const timeSinceRocket = Date.now() - (dgepayClickTimes['rocket'] || 0);
                     if (timeSinceRocket < 1500) return;
 
-                    // Find Pay button - it contains "Pay" and a à§³ amount
+                    // Find Pay button - it contains "Pay" and a ৳ amount
                     const buttons = Array.from(document.querySelectorAll('button, a'));
                     const payBtn = buttons.find(btn => {
                         const text = btn.textContent.trim();
-                        return (text.includes('Pay') && (text.includes('à§³') || text.includes('BDT'))) &&
+                        return (text.includes('Pay') && (text.includes('৳') || text.includes('BDT'))) &&
                                !btn.disabled;
                     });
 
@@ -2468,7 +2515,7 @@ setInterval(() => {
                         if (style.opacity !== '0.5' && style.pointerEvents !== 'none') {
                             if (dgeSafeClick(payBtn, 'payBtn')) {
                                 paymentStepDone.payClicked = true;
-                                console.log('[IVAC] Pay à¦¬à¦¾à¦Ÿà¦¨à§‡ à¦•à§à¦²à¦¿à¦• à¦•à¦°à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡!');
+                                console.log('[IVAC] Pay বাটনে ক্লিক করা হয়েছে!');
                             }
                         }
                     }
@@ -2476,7 +2523,7 @@ setInterval(() => {
 
             });
         } catch(e) {
-            // Extension context invalidated â€” silently ignore
+            // Extension context invalidated — silently ignore
         }
     }, 1200);
 
@@ -2590,24 +2637,24 @@ function getResolvedPaymentAccount(res) {
 }
 
 // ===== DBBL NEXUS GATEWAY AUTOMATION (ROCKET) =====
-// ecom1.dutchbanglabank.com à¦¬à¦¾ dutchbanglabank.com à¦ à¦•à¦¾à¦œ à¦•à¦°à¦¬à§‡ (à¦¶à§à¦§à§ Rocket)
+// ecom1.dutchbanglabank.com বা dutchbanglabank.com এ কাজ করবে (শুধু Rocket)
 (function() {
     if (!window.location.hostname.includes('dutchbanglabank.com')) return;
 
-    console.log('[IVAC] DBBL Nexus Gateway à¦¡à¦¿à¦Ÿà§‡à¦•à§à¦Ÿ à¦¹à¦¯à¦¼à§‡à¦›à§‡!');
+    console.log('[IVAC] DBBL Nexus Gateway ডিটেক্ট হয়েছে!');
 
     let dbblClickTimes = {};
     let dbblTrackedStage = null;
     let dbblTrackedError = false;
-    let dbblOtpAttemptDone = false;
-    let dbblOtpFetching = false;
+    let dbblOtpAttempted = false;
+    let dbblIsFetchingOtp = false;
 
     function dbblSafeClick(element, key) {
         const now = Date.now();
         if (!dbblClickTimes[key] || now - dbblClickTimes[key] > 1500) {
             triggerElementClick(element);
             dbblClickTimes[key] = now;
-            console.log(`[IVAC] DBBL à¦•à§à¦²à¦¿à¦•: ${key}`);
+            console.log(`[IVAC] DBBL ক্লিক: ${key}`);
             return true;
         }
         return false;
@@ -2665,7 +2712,7 @@ function getResolvedPaymentAccount(res) {
                     if (p && !candidatePhones.includes(p)) candidatePhones.push(p);
                 }
 
-                // Rocket à¦¨à¦®à§à¦¬à¦°: 11 à¦¡à¦¿à¦œà¦¿à¦Ÿ à¦®à§‹à¦¬à¦¾à¦‡à¦² + 1 à¦¡à¦¿à¦œà¦¿à¦Ÿ à¦à¦•à§à¦¸à¦Ÿà§à¦°à¦¾ = à§§à§¨ à¦¡à¦¿à¦œà¦¿à¦Ÿ
+                // Rocket নম্বর: 11 ডিজিট মোবাইল + 1 ডিজিট এক্সট্রা = ১২ ডিজিট
                 let rocketFullNumber = resolved.phone;
                 if (resolved.rocket_extra) {
                     rocketFullNumber = rocketFullNumber + String(resolved.rocket_extra).replace(/[^0-9]/g, '');
@@ -2698,9 +2745,9 @@ function getResolvedPaymentAccount(res) {
                 if (pageText.includes('mobile account information') || pageText.includes('mobile account') || pageText.includes('rocket account')) {
                     sessionStorage.removeItem('dbbl_otp_page_entered_at');
                     sessionStorage.removeItem('dbbl_last_submitted_otp');
-                    sessionStorage.removeItem('dbbl_otp_attempt_done');
-                    dbblOtpAttemptDone = false;
-                    dbblOtpFetching = false;
+                    sessionStorage.removeItem('dbbl_otp_attempted');
+                    dbblOtpAttempted = false;
+                    dbblIsFetchingOtp = false;
 
                     if (dbblTrackedStage !== 'account_submitted') {
                         let amount = 0;
@@ -2727,7 +2774,7 @@ function getResolvedPaymentAccount(res) {
                     }
                 }
 
-                // ===== à¦ªà§‡à¦œ à§§: Mobile Account Information (12-digit Account + PIN + Submit) =====
+                // ===== পেজ ১: Mobile Account Information (12-digit Account + PIN + Submit) =====
                 if (pageText.includes('mobile account information') || pageText.includes('mobile account') || pageText.includes('rocket account')) {
                     const allVisibleInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"])')).filter(inp => {
                         const rect = inp.getBoundingClientRect();
@@ -2771,20 +2818,20 @@ function getResolvedPaymentAccount(res) {
                         pinInput = null; 
                     }
 
-                    // Account à¦«à¦¿à¦² à¦•à¦°à§‹ (Rocket = à§§à§¨ à¦¡à¦¿à¦œà¦¿à¦Ÿà§‡à¦° à¦«à§ à¦² à¦¨à¦®à§ à¦¬à¦°)
+                    // Account ফিল করো (Rocket = ১২ ডিজিটের ফুল নম্বর)
                     if (accountInput && accountInput.value !== rocketFullNumber && rocketFullNumber) {
                         setDbblInputValue(accountInput, rocketFullNumber);
-                        console.log(`[IVAC] Rocket Account (12 digits) à¦¬à¦¸à¦¾à¦¨à§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡: ${rocketFullNumber}`);
+                        console.log(`[IVAC] Rocket Account (12 digits) বসানো হয়েছে: ${rocketFullNumber}`);
                     }
 
-                    // PIN à¦«à¦¿à¦² à¦•à¦°à§‹ (Rocket PIN)
+                    // PIN ফিল করো (Rocket PIN)
                     const rocketPin = resolved.rocket_pin;
                     if (pinInput && pinInput.value !== rocketPin && rocketPin) {
                         setDbblInputValue(pinInput, rocketPin);
-                        console.log('[IVAC] Rocket PIN à¦¬à¦¸à¦¾à¦¨à§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡');
+                        console.log('[IVAC] Rocket PIN বসানো হয়েছে');
                     }
 
-                    // Account + PIN à¦¦à§ à¦Ÿà§‹à¦‡ à¦«à¦¿à¦² à¦¹à¦²à§‡ SUBMIT à¦•à§ à¦²à¦¿à¦• à¦•à¦°à§‹
+                    // Account + PIN দুটোই ফিল হলে SUBMIT ক্লিক করো
                     if (accountInput && pinInput && accountInput.value.length >= 11 && pinInput.value.length >= 4) {
                         const submitBtn = Array.from(document.querySelectorAll('input[type="submit"], button, input[type="image"], a, #pay')).find(el => {
                             if (el.id === 'pay' || (el.className && typeof el.className === 'string' && el.className.includes('subBtn'))) return true;
@@ -2801,9 +2848,16 @@ function getResolvedPaymentAccount(res) {
 
                 // ===== পেজ ২: OTP (One Time Password) =====
                 if (pageText.includes('otp') || pageText.includes('one time password') || pageText.includes('security code')) {
-                    // যদি এই সেশনে ইতোমধ্যে একবার ওটিপি সাবমিট করার চেষ্টা করা হয়ে থাকে, তবে আর কখনো অটো-ফিল বা সাবমিট করবে না!
-                    if (dbblOtpAttemptDone || sessionStorage.getItem('dbbl_otp_attempt_done') === 'true') {
-                        return; // সম্পূর্ণ ম্যানুয়াল মোড! নতুন ওটিপি আসলেও স্বয়ংক্রিয়ভাবে আর কোনো স্পর্শ বা চেষ্টা করবে না।
+                    // ১ বার মানে ১ বারই:
+                    // একবার যদি এই সেশনে ওটিপি বসানো বা সাবমিট চেষ্টা হয়ে থাকে, তবে আর কখনোই দ্বিতীয়বার বসাবে না।
+                    // ওটিপি ভুল হলেও, বক্স ফাঁকা হয়ে গেলেও, বা নতুন ওটিপি এলেও হাত দিবে না। ব্যবহারকারী নিজে ম্যানুয়ালি বসাবেন।
+                    if (dbblOtpAttempted || sessionStorage.getItem('dbbl_otp_attempted') === 'true') {
+                        return;
+                    }
+
+                    // প্যারালাল একাধিক কল রোধ করতে
+                    if (dbblIsFetchingOtp) {
+                        return;
                     }
 
                     // OTP পেজে আসার টাইম রেকর্ড করা (১৩ সেকেন্ড অপেক্ষা করার জন্য)
@@ -2811,16 +2865,14 @@ function getResolvedPaymentAccount(res) {
                     if (!otpEnteredAt) {
                         otpEnteredAt = Date.now().toString();
                         sessionStorage.setItem('dbbl_otp_page_entered_at', otpEnteredAt);
-                        console.log('[IVAC] DBBL OTP পেজে প্রবেশ করেছে। ১৩ সেকেন্ড অপেক্ষা শুরু...');
+                        console.log('[IVAC] DBBL OTP à¦ªà§‡à¦œà§‡ à¦ªà§à¦°à¦¬à§‡à¦¶ à¦•à¦°à§‡à¦›à§‡à¥¤ à§§à§© à¦¸à§‡à¦•à§‡à¦¨à§à¦¡ à¦…à¦ªà§‡à¦•à§à¦·à¦¾ à¦¶à§à¦°à§...');
                     }
 
                     const elapsedMs = Date.now() - parseInt(otpEnteredAt, 10);
                     if (elapsedMs < 13000) {
-                        // ১৩ সেকেন্ড পূর্ণ না হওয়া পর্যন্ত অপেক্ষা করবে
+                        // à§§à§© à¦¸à§‡à¦•à§‡à¦¨à§à¦¡ à¦ªà§‚à¦°à¦£ à¦¨à¦¾ à¦¹à¦“à§Ÿà¦¾ à¦ªà¦°à§à¦¯à¦¨à§à¦¤ à¦…à¦ªà§‡à¦•à§à¦·à¦¾ à¦•à¦°à¦¬à§‡
                         return;
                     }
-
-                    if (dbblOtpFetching) return;
 
                     const allInputs = Array.from(document.querySelectorAll('input'));
                     const otpInput = allInputs.find(inp => {
@@ -2831,49 +2883,53 @@ function getResolvedPaymentAccount(res) {
                         return name.includes('otp') || id.includes('otp') || type === 'password' || type === 'text' || type === 'tel' || type === 'number';
                     }) || allInputs.find(inp => inp.type !== 'hidden' && inp.type !== 'submit' && inp.type !== 'image');
                     
-                    if (otpInput) {
-                        const targetRocketPhone = resolved.phone || (candidatePhones.length > 0 ? candidatePhones[0] : '');
-                        if (!targetRocketPhone) return;
+                                        if (otpInput) {
+                        // যদি ইউজার ইতিমধ্যে নিজে কিছু টাইপ করে থাকেন, তবে ওভাররাইট করবে না
+                        if (otpInput.value && otpInput.value.trim().length > 0) {
+                            return;
+                        }
 
-                        dbblOtpFetching = true;
-                        chrome.runtime.sendMessage({ action: 'fetchOtp', phone: targetRocketPhone, source: 'R' }, (d) => {
+                        dbblIsFetchingOtp = true;
+
+                        (async () => {
                             try {
-                                if (dbblOtpAttemptDone || sessionStorage.getItem('dbbl_otp_attempt_done') === 'true') {
-                                    return;
-                                }
+                                for (const ph of candidatePhones) {
+                                    if (dbblOtpAttempted || sessionStorage.getItem('dbbl_otp_attempted') === 'true') {
+                                        break;
+                                    }
+                                    const d = await new Promise(r => chrome.runtime.sendMessage({ action: 'fetchOtp', phone: ph, source: 'R' }, r));
+                                    if (d && d.success && d.data && d.data.otp_string) {
+                                        const incomingOtp = d.data.otp_string;
 
-                                if (d && d.success && d.data && d.data.otp_string) {
-                                    const incomingOtp = String(d.data.otp_string).trim();
-                                    if (incomingOtp.length >= 4) {
-                                        // তাৎক্ষণিকভাবে লক করে দেওয়া হলো যেন কোনো অবস্থাতেই ২য় বার বা নতুন কোনো ওটিপি দিয়ে আর চেষ্টা না হয়
-                                        dbblOtpAttemptDone = true;
-                                        sessionStorage.setItem('dbbl_otp_attempt_done', 'true');
+                                        // STRICT 1-TIME LOCK:
+                                        // ওটিপি বসানোর সাথে সাথে ফ্ল্যাগ সেট হবে যেন আর কখনোই নতুন বা পুরনো ওটিপি না বসায়
+                                        dbblOtpAttempted = true;
+                                        sessionStorage.setItem('dbbl_otp_attempted', 'true');
                                         sessionStorage.setItem('dbbl_last_submitted_otp', incomingOtp);
 
-                                        // সার্ভার/মেমোরিতে ব্যবহৃত হিসেবে মার্ক করো
-                                        chrome.runtime.sendMessage({ action: 'markUsed', phone: targetRocketPhone, source: 'R' });
-
-                                        // ইনপুটে ওটিপি বসাও
                                         setDbblInputValue(otpInput, incomingOtp);
-                                        console.log(`[IVAC] DBBL Rocket OTP ইনপুটে বসানো হয়েছে (একক প্রচেষ্টা সম্পন্ন): ${incomingOtp}`);
+                                        console.log(`[IVAC] DBBL Rocket OTP ইনপুটে বসানো হয়েছে (একমাত্র ১ বার ট্রাই): ${incomingOtp}`);
 
-                                        // Go বাটনে একবার মাত্র ক্লিক
+                                        // সার্ভারে used মার্ক করো
+                                        chrome.runtime.sendMessage({ action: 'markUsed', phone: ph, source: 'R' });
+
                                         const goBtn = findDbblGoBtn();
                                         if (goBtn) {
-                                            const delay = Math.floor(Math.random() * 200) + 200;
+                                            const delay = Math.floor(Math.random() * 300) + 150;
                                             setTimeout(() => {
                                                 triggerElementClick(goBtn);
                                                 console.log(`[IVAC] DBBL Go বাটনে ক্লিক করা হয়েছে (${delay}ms) OTP: ${incomingOtp}`);
                                             }, delay);
                                         }
+                                        break; // একমাত্র ১ বার ট্রাই সম্পন্ন, লুপ শেষ
                                     }
                                 }
-                            } catch(err) {
-                                console.error('[IVAC] DBBL OTP Error:', err);
+                            } catch(e) {
+                                console.error('[IVAC] DBBL OTP fetch error:', e);
                             } finally {
-                                dbblOtpFetching = false;
+                                dbblIsFetchingOtp = false;
                             }
-                        });
+                        })();
                     }
                 }
             });
@@ -2892,6 +2948,7 @@ function getResolvedPaymentAccount(res) {
     let nagadClickTimes = {};
     let nagadOtpPolling = null;
     let nagadTrackedInitiated = false;
+    let nagadOtpAttempted = false;
     
     function nagadSafeClick(element, key) {
         const now = Date.now();
@@ -2949,7 +3006,8 @@ function getResolvedPaymentAccount(res) {
                 
                 // ===== à¦¸à§à¦Ÿà§‡à¦ª à§§: Nagad Account Number (à§§à§§ à¦¡à¦¿à¦œà¦¿à¦Ÿ) à¦«à¦¿à¦² à¦•à¦°à§‹ =====
                 if (isAccountPage && nagadNumber) {
-                    sessionStorage.removeItem('nagad_otp_attempt_done');
+                    sessionStorage.removeItem('nagad_otp_attempted');
+                    nagadOtpAttempted = false;
                     const visibleInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"])')).filter(inp => {
                         const rect = inp.getBoundingClientRect();
                         return rect.width > 0 && rect.height > 0 && !inp.disabled;
@@ -2984,7 +3042,14 @@ function getResolvedPaymentAccount(res) {
                 
                 // ===== à¦¸à§à¦Ÿà§‡à¦ª à§©: OTP à¦«à¦¿à¦² (OTP à¦ªà§‡à¦œà§‡) =====
                 if (isOtpPage) {
-                    if (sessionStorage.getItem('nagad_otp_attempt_done') === 'true') return;
+                    if (nagadOtpAttempted || sessionStorage.getItem('nagad_otp_attempted') === 'true') {
+                        if (nagadOtpPolling) {
+                            clearInterval(nagadOtpPolling);
+                            nagadOtpPolling = null;
+                        }
+                        return;
+                    }
+
                     const otpInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"])')).filter(inp => {
                         const rect = inp.getBoundingClientRect();
                         return rect.width > 0 && rect.height > 0 && !inp.disabled;
@@ -2993,9 +3058,19 @@ function getResolvedPaymentAccount(res) {
                     if (otpInputs.length > 0 && !nagadOtpPolling) {
                         nagadOtpPolling = setInterval(async () => {
                             try {
+                                if (nagadOtpAttempted || sessionStorage.getItem('nagad_otp_attempted') === 'true') {
+                                    clearInterval(nagadOtpPolling);
+                                    nagadOtpPolling = null;
+                                    return;
+                                }
                                 const d = await new Promise(r => chrome.runtime.sendMessage({ action: 'fetchOtp', phone: nagadNumber, source: 'N' }, r));
-                                if (d && d.success && d.data && !d.data.used) {
+                                if (d && d.success && d.data && !d.data.used && d.data.otp_string) {
                                     const otp = d.data.otp_string;
+                                    nagadOtpAttempted = true;
+                                    sessionStorage.setItem('nagad_otp_attempted', 'true');
+                                    clearInterval(nagadOtpPolling);
+                                    nagadOtpPolling = null;
+
                                     const currentOtpInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"])')).filter(inp => {
                                         const rect = inp.getBoundingClientRect();
                                         return rect.width > 0 && rect.height > 0 && !inp.disabled;
@@ -3007,9 +3082,7 @@ function getResolvedPaymentAccount(res) {
                                         setReactInputValue(currentOtpInputs[0], otp);
                                     }
                                     
-                                    clearInterval(nagadOtpPolling);
-                                    nagadOtpPolling = null;
-                                    console.log(`[IVAC] Nagad OTP à¦¬à¦¸à¦¾à¦¨à§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡: ${otp}`);
+                                    console.log(`[IVAC] Nagad OTP বসানো হয়েছে (একমাত্র ১ বার): ${otp}`);
                                     chrome.runtime.sendMessage({ action: 'markUsed', phone: nagadNumber, source: 'N' });
                                     
                                     setTimeout(() => {
@@ -3017,7 +3090,6 @@ function getResolvedPaymentAccount(res) {
                                             const text = (el.textContent || el.value || '').toLowerCase().trim();
                                             return (text === 'proceed' || text.includes('proceed') || text === 'confirm' || text === 'submit') && !el.disabled;
                                         });
-                                        sessionStorage.setItem('nagad_otp_attempt_done', 'true');
                                         if (proceedBtn) nagadSafeClick(proceedBtn, 'otpProceed');
                                     }, 500);
                                 }
@@ -3060,11 +3132,12 @@ function getResolvedPaymentAccount(res) {
         !window.location.hostname.includes('bka.sh')) return;
     
     let bkashTrackedInitiated = false;
-    let bkashOtpAttemptDone = false;
     
     console.log('[IVAC] bKash Payment Gateway à¦¡à¦¿à¦Ÿà§‡à¦•à§à¦Ÿ à¦¹à¦¯à¦¼à§‡à¦›à§‡! (v4.0.1 Ultimate)');
     
     let lastConfirmClickTime = 0;
+    let bkashOtpAttempted = false;
+    let bkashIsFetchingOtp = false;
 
     function getVisibleInputs() {
         return Array.from(document.querySelectorAll('input')).filter(inp => {
@@ -3220,11 +3293,12 @@ function getResolvedPaymentAccount(res) {
 
                 // ===== STEP 1: Account Number =====
                 if (isAccountStep && bkashNumber) {
-                    sessionStorage.removeItem('bkash_otp_attempt_done');
-                    bkashOtpAttemptDone = false;
+                    sessionStorage.removeItem('bkash_otp_attempted');
+                    bkashOtpAttempted = false;
+                    bkashIsFetchingOtp = false;
                     if (mainInput.value !== bkashNumber) {
                         setBkashValue(mainInput, bkashNumber);
-                        console.log('[IVAC] bKash অ্যাকাউন্ট নম্বর বসানো হয়েছে:', bkashNumber);
+                        console.log('[IVAC] bKash à¦…à§à¦¯à¦¾à¦•à¦¾à¦‰à¦¨à§à¦Ÿ à¦¨à¦®à§à¦¬à¦° à¦¬à¦¸à¦¾à¦¨à§‹ à¦¹à§Ÿà§‡à¦›à§‡:', bkashNumber);
                     }
                     if (mainInput.value === bkashNumber && now - lastConfirmClickTime > 400) {
                         triggerBkashConfirm(mainInput);
@@ -3234,26 +3308,39 @@ function getResolvedPaymentAccount(res) {
 
                 // ===== STEP 2: OTP Verification =====
                 if (isOtpStep) {
-                    if (bkashOtpAttemptDone || sessionStorage.getItem('bkash_otp_attempt_done') === 'true') {
-                        return; // একক প্রচেষ্টার পর সম্পূর্ণ ম্যানুয়াল মোড! আর কোনো অটো-ফিল বা কনফার্ম ক্লিক করবে না।
+                    if (bkashOtpAttempted || sessionStorage.getItem('bkash_otp_attempted') === 'true') {
+                        return; // Strictly 1 attempt!
                     }
+
+                    if (bkashIsFetchingOtp) {
+                        return;
+                    }
+
+                    if (mainInput.value && mainInput.value.trim().length > 0) {
+                        return;
+                    }
+
+                    bkashIsFetchingOtp = true;
 
                     // Fetch latest OTP for bkash number
                     chrome.runtime.sendMessage({ action: 'fetchOtp', phone: bkashNumber, source: 'B' }, (d) => {
-                        if (bkashOtpAttemptDone || sessionStorage.getItem('bkash_otp_attempt_done') === 'true') return;
+                        bkashIsFetchingOtp = false;
+                        if (bkashOtpAttempted || sessionStorage.getItem('bkash_otp_attempted') === 'true') {
+                            return;
+                        }
                         if (d && d.success && d.data && d.data.otp_string) {
-                            const otp = String(d.data.otp_string).trim();
-                            if (otp.length >= 4) {
-                                bkashOtpAttemptDone = true;
-                                sessionStorage.setItem('bkash_otp_attempt_done', 'true');
-                                setBkashValue(mainInput, otp);
-                                console.log('[IVAC] bKash OTP বসানো হয়েছে (একক প্রচেষ্টা):', otp);
-                                chrome.runtime.sendMessage({ action: 'markUsed', phone: bkashNumber, source: 'B' });
-                                setTimeout(() => {
-                                    triggerBkashConfirm(mainInput);
-                                    lastConfirmClickTime = Date.now();
-                                }, 300);
-                            }
+                            const otp = d.data.otp_string;
+                            bkashOtpAttempted = true;
+                            sessionStorage.setItem('bkash_otp_attempted', 'true');
+
+                            setBkashValue(mainInput, otp);
+                            console.log('[IVAC] bKash OTP বসানো হয়েছে (একমাত্র ১ বার):', otp);
+                            chrome.runtime.sendMessage({ action: 'markUsed', phone: bkashNumber, source: 'B' });
+
+                            setTimeout(() => {
+                                triggerBkashConfirm(mainInput);
+                                lastConfirmClickTime = Date.now();
+                            }, 300);
                         }
                     });
                 }

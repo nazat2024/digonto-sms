@@ -1,35 +1,232 @@
+import mqtt from 'mqtt';
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Key, Plus, Trash2, ShieldBan, RefreshCw, CheckCircle2, Shield, Search, X, ChevronRight, ArrowLeft, User, Phone, FileText, Clock, CalendarPlus, Save, Edit3, Copy } from 'lucide-react';
+import { Key, Plus, Trash2, ShieldBan, RefreshCw, CheckCircle2, Shield, Search, X, ChevronRight, ArrowLeft, User, Phone, FileText, Clock, Calendar, CalendarPlus, Save, Edit3, Copy, Activity, Chrome, Power, CheckCircle, AlertCircle, AlertTriangle, ArrowUpRight, Filter, Smartphone, CreditCard, FileUp, LogIn, Layers, Radio, Sparkles } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc } from 'firebase/firestore';
 
 interface IvacLicense {
   id: string;
   key: string;
-  duration_months?: number;
-  duration_days?: number;
+  duration_months?: number | string;
+  duration_days?: number | string;
   status: 'active' | 'blocked';
   hwid: string | null;
   payment_count: number;
   total_amount?: number;
   created_at: number;
-  bound_at: number | null;
+  bound_at: number | string | null;
   client_name?: string;
   client_phone?: string;
   client_description?: string;
 }
 
+interface LicenseExpiryDetails {
+  isBound: boolean;
+  isExpired: boolean;
+  totalDays: number;
+  expiryMs: number;
+  daysRemaining: number;
+  hoursRemaining: number;
+  minutesRemaining: number;
+  expiryFormatted: string;
+  expiryBangla: string;
+  remainingText: string;
+  remainingBadgeClass: string;
+}
+
+export function getLicenseExpiryInfo(lic: IvacLicense): LicenseExpiryDetails {
+  let boundMs = 0;
+  if (lic.bound_at) {
+    boundMs = typeof lic.bound_at === 'string' ? parseInt(lic.bound_at, 10) : Number(lic.bound_at);
+  }
+
+  let totalDays = 0;
+  if (lic.duration_days) {
+    totalDays = typeof lic.duration_days === 'string' ? parseInt(lic.duration_days, 10) : Number(lic.duration_days);
+  } else if (lic.duration_months) {
+    const months = typeof lic.duration_months === 'string' ? parseInt(lic.duration_months, 10) : Number(lic.duration_months);
+    totalDays = (months || 1) * 30;
+  }
+  if (!totalDays || isNaN(totalDays)) totalDays = 30;
+
+  if (!boundMs || isNaN(boundMs)) {
+    return {
+      isBound: false,
+      isExpired: false,
+      totalDays,
+      expiryMs: 0,
+      daysRemaining: totalDays,
+      hoursRemaining: 0,
+      minutesRemaining: 0,
+      expiryFormatted: 'প্রথম ব্যবহারের পর শুরু হবে',
+      expiryBangla: 'প্রথম ব্যবহারের পর শুরু হবে',
+      remainingText: `${totalDays} দিন বরাদ্দ (Unused)`,
+      remainingBadgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+    };
+  }
+
+  const expiryMs = boundMs + (totalDays * 86400000);
+  const nowMs = Date.now();
+  const diffMs = expiryMs - nowMs;
+  const isExpired = diffMs <= 0;
+
+  const daysRemaining = Math.max(0, Math.floor(diffMs / 86400000));
+  const hoursRemaining = Math.max(0, Math.floor((diffMs % 86400000) / 3600000));
+  const minutesRemaining = Math.max(0, Math.floor((diffMs % 3600000) / 60000));
+
+  const expDate = new Date(expiryMs);
+  const dateOptions: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
+  const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: true };
+  const datePart = expDate.toLocaleDateString('en-GB', dateOptions);
+  const timePart = expDate.toLocaleTimeString('en-US', timeOptions);
+  const expiryFormatted = `${datePart}, ${timePart}`;
+
+  const bnDigits = ['০','১','২','৩','৪','৫','৬','৭','৮','৯'];
+  const toBn = (n: number | string) => String(n).replace(/\d/g, (d) => bnDigits[Number(d)]);
+  const bnMonths = ['জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
+  const expiryBangla = `${toBn(expDate.getDate())} ${bnMonths[expDate.getMonth()]} ${toBn(expDate.getFullYear())}, ${timePart}`;
+
+  let remainingText = '';
+  let remainingBadgeClass = '';
+
+  if (isExpired) {
+    remainingText = 'মেয়াদ শেষ (Expired)';
+    remainingBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+  } else if (daysRemaining > 0) {
+    remainingText = `${toBn(daysRemaining)} দিন ${toBn(hoursRemaining)} ঘণ্টা বাকি`;
+    if (daysRemaining <= 3) {
+      remainingBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+    } else if (daysRemaining <= 7) {
+      remainingBadgeClass = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+    } else {
+      remainingBadgeClass = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+    }
+  } else if (hoursRemaining > 0) {
+    remainingText = `${toBn(hoursRemaining)} ঘণ্টা ${toBn(minutesRemaining)} মিনিট বাকি`;
+    remainingBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+  } else {
+    remainingText = `${toBn(minutesRemaining)} মিনিট বাকি`;
+    remainingBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+  }
+
+  return {
+    isBound: true,
+    isExpired,
+    totalDays,
+    expiryMs,
+    daysRemaining,
+    hoursRemaining,
+    minutesRemaining,
+    expiryFormatted,
+    expiryBangla,
+    remainingText,
+    remainingBadgeClass,
+  };
+}
+
 interface PaymentRecord {
   id: string;
   amount: number;
+  amount_1?: number;
+  amount_2?: number;
+  amount_3?: number;
   status: string;
   stage: string;
-  rocket_account: string;
+  rocket_account?: string;
   description: string;
+  profile_id?: string;
+  profile_label?: string;
   timestamp: number;
   datetime: string;
 }
+
+interface ActivityRecord {
+  id: string;
+  event_type: string;
+  profile_id: string;
+  profile_label: string;
+  title: string;
+  details: string;
+  amount?: number;
+  status: 'success' | 'info' | 'warning' | 'error' | string;
+  timestamp: number;
+  datetime?: string;
+  time_formatted?: string;
+  metadata_json?: string;
+}
+
+interface ActiveProfile {
+  id: string;
+  profile_id: string;
+  profile_label: string;
+  last_event?: string;
+  last_title?: string;
+  last_seen: number;
+  is_active: boolean;
+}
+
+// Profile color generator based on profile_id
+const PROFILE_COLORS = [
+  { bg: 'bg-blue-50 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', dot: 'bg-blue-500' },
+  { bg: 'bg-purple-50 dark:bg-purple-900/30', text: 'text-purple-700 dark:text-purple-300', border: 'border-purple-200 dark:border-purple-800', dot: 'bg-purple-500' },
+  { bg: 'bg-emerald-50 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', dot: 'bg-emerald-500' },
+  { bg: 'bg-amber-50 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', dot: 'bg-amber-500' },
+  { bg: 'bg-rose-50 dark:bg-rose-900/30', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800', dot: 'bg-rose-500' },
+  { bg: 'bg-cyan-50 dark:bg-cyan-900/30', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800', dot: 'bg-cyan-500' },
+  { bg: 'bg-indigo-50 dark:bg-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800', dot: 'bg-indigo-500' },
+  { bg: 'bg-teal-50 dark:bg-teal-900/30', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-200 dark:border-teal-800', dot: 'bg-teal-500' },
+];
+
+function getProfileColor(profileId: string) {
+  let hash = 0;
+  for (let i = 0; i < profileId.length; i++) {
+    hash = profileId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % PROFILE_COLORS.length;
+  return PROFILE_COLORS[index];
+}
+
+function formatRelativeTime(timestamp: number) {
+  if (!timestamp) return '-';
+  const diffSec = Math.floor((Date.now() - timestamp) / 1000);
+  if (diffSec < 10) return 'এইমাত্র (Just now)';
+  if (diffSec < 60) return `${diffSec}s আগে`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m আগে`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h আগে`;
+  return `${Math.floor(diffHour / 24)}d আগে`;
+}
+
+// Format date and time in 12-hour AM/PM format
+function formatDateTime12Hour(timestampOrStr?: number | string): { dateStr: string; timeStr: string } {
+  if (!timestampOrStr) return { dateStr: '-', timeStr: '-' };
+  
+  let date: Date;
+  if (typeof timestampOrStr === 'number') {
+    date = new Date(timestampOrStr);
+  } else if (typeof timestampOrStr === 'string') {
+    date = new Date(timestampOrStr.replace(' ', 'T'));
+    if (isNaN(date.getTime())) {
+      date = new Date(timestampOrStr);
+    }
+  } else {
+    date = new Date();
+  }
+  
+  if (isNaN(date.getTime())) {
+    return { dateStr: String(timestampOrStr), timeStr: '' };
+  }
+  
+  const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  
+  return { dateStr, timeStr };
+}
+
+// Keep-alive threshold: 3 minutes buffer (prevents background Chrome power throttling from flickering profiles)
+const PROFILE_OFFLINE_THRESHOLD_MS = 180000;
 
 // ===== PROFILE VIEW (একজনের একটাই পেজ — সবকিছু এখান থেকে) =====
 function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
@@ -40,6 +237,13 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
 }) {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
+
+  // Real-time Activities & Connected Profiles
+  const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(true);
+  const [activeProfiles, setActiveProfiles] = useState<ActiveProfile[]>([]);
+  const [selectedProfileFilter, setSelectedProfileFilter] = useState<string>('all');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
 
   // Client info editing
   const [isEditing, setIsEditing] = useState(false);
@@ -56,6 +260,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
   // Copy key feedback
   const [copied, setCopied] = useState(false);
 
+  // 1. Payments Listener
   useEffect(() => {
     const q = query(collection(db, `ivac_licenses/${license.key}/payments`));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -66,6 +271,100 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
       setLoadingPayments(false);
     });
     return () => unsubscribe();
+  }, [license.key]);
+
+  // 2. Real-time Activities Listener
+  useEffect(() => {
+    const q = query(collection(db, `ivac_licenses/${license.key}/activities`));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: ActivityRecord[] = [];
+      snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() } as ActivityRecord));
+      data.sort((a, b) => b.timestamp - a.timestamp);
+      setActivities(data);
+      setLoadingActivities(false);
+    });
+    return () => unsubscribe();
+  }, [license.key]);
+
+  // 3. Real-time Live Connected Chrome Profiles (MQTT Live Tunnel - 0 Firebase Writes & Reads!)
+  useEffect(() => {
+    let client: mqtt.MqttClient | null = null;
+    try {
+      client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+        clientId: `dash_presence_${Math.random().toString(16).slice(2, 8)}`,
+        connectTimeout: 5000,
+      });
+      client.on('connect', () => {
+        client?.subscribe(`ivac_live_${license.key}`);
+      });
+      client.on('message', (topic, message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          if (data && data.profile_id) {
+            const now = Date.now();
+            setActiveProfiles(prev => {
+              const existingIdx = prev.findIndex(p => p.profile_id === data.profile_id);
+              const existing = existingIdx >= 0 ? prev[existingIdx] : null;
+
+              if (data.is_active === false) {
+                // Only remove if explicitly disabled by user ('বন্ধ'/'Off') or if heartbeat hasn't been received in > 120s
+                // This prevents background Chrome power throttling from falsely dropping active profiles!
+                const isExplicitOff = data.last_title?.includes('বন্ধ') || data.last_title?.includes('Off') || data.last_title?.includes('Disabled');
+                if (existing && !isExplicitOff && (now - existing.last_seen < 120000)) {
+                  return prev;
+                }
+                return prev.filter(p => p.profile_id !== data.profile_id);
+              }
+
+              // Prefer phone label over generic fallback
+              const bestLabel = (data.profile_label && data.profile_label.includes('('))
+                ? data.profile_label
+                : (existing?.profile_label && existing.profile_label.includes('('))
+                  ? existing.profile_label
+                  : (data.profile_label || `Profile ${data.profile_id}`);
+
+              const updatedProfile: ActiveProfile = {
+                id: data.profile_id,
+                profile_id: data.profile_id,
+                profile_label: bestLabel,
+                last_title: data.last_title || 'Active',
+                last_seen: data.last_seen || now,
+                is_active: true,
+              };
+              let nextList: ActiveProfile[];
+              if (existingIdx >= 0) {
+                nextList = [...prev];
+                nextList[existingIdx] = updatedProfile;
+              } else {
+                nextList = [...prev, updatedProfile];
+              }
+              return nextList.filter(p => p.is_active && (now - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).sort((a, b) => {
+                const labelA = a.profile_label || a.profile_id || '';
+                const labelB = b.profile_label || b.profile_id || '';
+                return labelA.localeCompare(labelB);
+              });
+            });
+          }
+        } catch (e) {
+          console.error("Live profile parse error:", e);
+        }
+      });
+    } catch (err) {
+      console.warn("MQTT Live Tunnel connection error:", err);
+    }
+
+    // Auto-cleanup: If no heartbeat received for > 2 min, remove profile from UI (Offline profiles never saved)
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      setActiveProfiles(prev => prev.filter(p => p.is_active && (now - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)));
+    }, 3000);
+
+    return () => {
+      clearInterval(cleanupInterval);
+      if (client) {
+        client.end();
+      }
+    };
   }, [license.key]);
 
   // Sync form fields when license prop changes
@@ -105,10 +404,12 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     setExtending(true);
     try {
       const currentDays = license.duration_days || (license.duration_months ? license.duration_months * 30 : 0);
+      const newTotalDays = currentDays + days;
       await updateDoc(doc(db, 'ivac_licenses', license.key), {
-        duration_days: currentDays + days,
+        duration_days: newTotalDays,
         duration_months: null,
       });
+      publishLicenseKillSwitch(license.key, 'unblock', { ...license, duration_days: newTotalDays });
       setShowExtend(false);
       setExtendDays('30');
     } catch (error) {
@@ -124,17 +425,124 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const durationText = license.duration_days
-    ? `${license.duration_days} Days`
-    : license.duration_months
-      ? `${license.duration_months} Months`
-      : 'Unknown';
+  const expiry = getLicenseExpiryInfo(license);
+  const durationText = `${expiry.totalDays} Days`;
+
+  // Deduplicate consecutive identical events within 3 seconds of each other
+  const deduplicatedActivities = activities.filter((act, idx, arr) => {
+    if (idx === 0) return true;
+    const prev = arr[idx - 1];
+    if (
+      act.profile_id === prev.profile_id &&
+      act.event_type === prev.event_type &&
+      Math.abs((act.timestamp || 0) - (prev.timestamp || 0)) < 3000
+    ) {
+      return false; // Skip duplicate burst event
+    }
+    return true;
+  });
+
+  // Filter activities
+  const filteredActivities = deduplicatedActivities.filter(act => {
+    // 1. Profile filter
+    if (selectedProfileFilter !== 'all' && act.profile_id !== selectedProfileFilter) {
+      return false;
+    }
+    // 2. Category filter
+    if (selectedCategoryFilter === 'all') return true;
+    if (selectedCategoryFilter === 'login') {
+      return act.event_type.includes('login') || act.event_type.includes('otp');
+    }
+    if (selectedCategoryFilter === 'webfile') {
+      return act.event_type.includes('webfile') || act.event_type.includes('confirm');
+    }
+    if (selectedCategoryFilter === 'payment') {
+      return act.event_type.includes('payment') || act.event_type.includes('pay') || act.event_type.includes('account') || act.event_type.includes('pin') || act.event_type.includes('gateway');
+    }
+    if (selectedCategoryFilter === 'status') {
+      return act.event_type.includes('ext_') || act.event_type.includes('status');
+    }
+    return true;
+  });
+
+  // Extract distinct profiles from activities + active_profiles
+  const profileEntries: [string, string][] = [
+    ...activeProfiles.map(p => [p.profile_id, p.profile_label || `Profile ${p.profile_id}`] as [string, string]),
+    ...activities.map(a => [a.profile_id, a.profile_label || `Profile ${a.profile_id}`] as [string, string])
+  ];
+  const allKnownProfiles: [string, string][] = Array.from(new Map(profileEntries).entries());
+
+  // Helper for Event Icon & Badge
+  const getEventVisual = (act: ActivityRecord) => {
+    const type = act.event_type || '';
+    if (type === 'payment_success') {
+      return {
+        icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
+        badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+        label: 'Payment Success'
+      };
+    }
+    if (type === 'confirm_clicked') {
+      return {
+        icon: <CheckCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />,
+        badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-orange-200 dark:border-orange-800',
+        label: 'Confirm Clicked'
+      };
+    }
+    if (type.includes('webfile_retry')) {
+      return {
+        icon: <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
+        badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+        label: 'Webfile Retry'
+      };
+    }
+    if (type.includes('webfile')) {
+      return {
+        icon: <FileUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />,
+        badge: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+        label: 'Webfile Upload'
+      };
+    }
+    if (type.includes('login') || type.includes('otp')) {
+      return {
+        icon: <LogIn className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />,
+        badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+        label: 'Login & OTP'
+      };
+    }
+    if (type.includes('gateway') || type.includes('payment') || type.includes('account') || type.includes('pin')) {
+      return {
+        icon: <CreditCard className="h-4 w-4 text-purple-600 dark:text-purple-400" />,
+        badge: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+        label: 'Payment Flow'
+      };
+    }
+    if (type === 'ext_enabled') {
+      return {
+        icon: <Power className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
+        badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+        label: 'Extension ON'
+      };
+    }
+    if (type === 'ext_disabled' || type === 'ext_inactive') {
+      return {
+        icon: <Power className="h-4 w-4 text-rose-600 dark:text-rose-400" />,
+        badge: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+        label: 'Extension OFF'
+      };
+    }
+    return {
+      icon: <Activity className="h-4 w-4 text-slate-600 dark:text-slate-400" />,
+      badge: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+      label: 'Activity'
+    };
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors">
+        <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors font-medium">
           <ArrowLeft className="h-5 w-5" /> Back to Licenses
         </button>
       </div>
@@ -241,7 +649,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
         </CardContent>
       </Card>
 
-      {/* ===== LICENSE STATUS + ACTIONS ===== */}
+      {/* ===== LICENSE STATUS + STATS ===== */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-900">
           <CardContent className="p-5">
@@ -261,10 +669,27 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
             )}
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/20 dark:to-slate-900">
+        <Card className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/20 dark:to-slate-900 border border-blue-100 dark:border-blue-900/30">
           <CardContent className="p-5">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Duration</p>
-            <p className="text-lg font-bold text-slate-800 dark:text-white">{durationText}</p>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Duration & Validity</p>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${expiry.remainingBadgeClass}`}>
+                {expiry.remainingText}
+              </span>
+            </div>
+            <p className="text-xl font-bold text-slate-800 dark:text-white">
+              {expiry.totalDays} Days
+            </p>
+            <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <Calendar className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+              <span>
+                {expiry.isBound ? (
+                  <>মেয়াদ শেষ: <strong className="font-semibold text-slate-800 dark:text-slate-100">{expiry.expiryBangla}</strong></>
+                ) : (
+                  <span className="text-amber-600 dark:text-amber-400">প্রথম ব্যবহারে মেয়াদ শুরু হবে</span>
+                )}
+              </span>
+            </div>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-900/20 dark:to-slate-900">
@@ -276,7 +701,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
         <Card className="bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-slate-900">
           <CardContent className="p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Revenue</p>
-            <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{'\u09F3'}{totalAmount.toLocaleString()}</p>
+            <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{'৳'}{totalAmount.toLocaleString()}</p>
           </CardContent>
         </Card>
       </div>
@@ -308,13 +733,13 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                   disabled={extending}
                   className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  {extending ? '...' : '\u2713 Add'}
+                  {extending ? '...' : '✓ Add'}
                 </button>
                 <button
                   onClick={() => { setShowExtend(false); setExtendDays('30'); }}
                   className="px-2 py-1.5 text-slate-400 hover:text-slate-600 text-sm"
                 >
-                  {'\u2715'}
+                  {'✕'}
                 </button>
               </div>
             )}
@@ -338,7 +763,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                 onClick={async () => {
                   if (!window.confirm("HWID রিসেট করলে ক্লায়েন্টকে নতুন করে activate করতে হবে। আপনি কি নিশ্চিত?")) return;
                   try {
-                    await updateDoc(doc(db, 'ivac_licenses', license.key), { hwid: null, bound_at: null });
+                    await updateDoc(doc(db, 'ivac_licenses', license.key), { hwid: null });
                   } catch (e) { console.error(e); }
                 }}
                 className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors font-medium text-sm border border-amber-200 dark:border-amber-800"
@@ -356,25 +781,310 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
             </button>
           </div>
 
-          {/* HWID Info */}
+          {/* HWID & Activation / Expiry Info */}
           {license.hwid && (
-            <div className="mt-3 pt-3 border-t dark:border-slate-800">
-              <p className="text-xs text-slate-400">
-                <span className="font-medium">HWID:</span>{' '}
-                <span className="font-mono">{license.hwid}</span>
+            <div className="mt-3 pt-3 border-t dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">HWID:</span>
+                <span className="font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">{license.hwid}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
                 {license.bound_at && (
-                  <span className="ml-3">Activated: {new Date(license.bound_at).toLocaleDateString()}</span>
+                  <span>
+                    🟢 অ্যাক্টিভেশন: <strong className="text-slate-700 dark:text-slate-300">{new Date(typeof license.bound_at === 'string' ? parseInt(license.bound_at, 10) : license.bound_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
+                  </span>
                 )}
-              </p>
+                {expiry.isBound && (
+                  <span>
+                    ⏰ মেয়াদ সমাপ্তি: <strong className={expiry.isExpired ? 'text-rose-500' : 'text-slate-700 dark:text-slate-200'}>{expiry.expiryFormatted}</strong> ({expiry.remainingText})
+                  </span>
+                )}
+              </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* ===== CONNECTED CHROME PROFILES (LIVE STATUS) ===== */}
+      <Card className="border-indigo-100 dark:border-indigo-900/30 overflow-hidden shadow-sm">
+        <CardHeader className="bg-slate-50/70 dark:bg-slate-800/40 border-b dark:border-slate-800 py-3.5 px-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
+                <Chrome className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-bold text-slate-800 dark:text-slate-100">
+                  Connected Chrome Profiles
+                </CardTitle>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  গ্রাহকের সক্রিয় ও সাম্প্রতিক ব্রাউজার প্রোফাইলসমূহ
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                {activeProfiles.filter(p => p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).length} Online
+              </span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
+          {activeProfiles.filter(p => p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-sm">
+              <Chrome className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              বর্তমানে কোনো Chrome Profile চালু নেই। গ্রাহক ব্রাউজারে এক্সটেনশন চালু করলে এখানে লাইভ ভেসে উঠবে (বন্ধ হলে মুছে যাবে)।
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {activeProfiles.filter(p => p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).map(prof => {
+                const color = getProfileColor(prof.profile_id);
+                const isRecent = (Date.now() - prof.last_seen) < 90000;
+                return (
+                  <div
+                    key={prof.id || prof.profile_id}
+                    className={`p-3.5 rounded-xl border transition-all ${color.bg} ${color.border} shadow-sm ring-1 ${isRecent ? 'ring-emerald-500/20' : 'ring-amber-500/20'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          {isRecent ? (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                            </>
+                          ) : (
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                          )}
+                        </span>
+                        <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">
+                          {prof.profile_label || `Profile ${prof.profile_id}`}
+                        </h4>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                        isRecent
+                          ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
+                      }`}>
+                        {isRecent ? 'Active' : 'Idle'}
+                      </span>
+                    </div>
+
+                    <div className="text-xs space-y-1 mt-2">
+                      <div className="text-slate-600 dark:text-slate-300 font-medium truncate flex items-center gap-1.5">
+                        <Activity className="h-3 w-3 text-slate-400 shrink-0" />
+                        <span className="truncate">{prof.last_title || 'Ready'}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t dark:border-slate-800">
+                        <span>Last Seen:</span>
+                        <span className="font-mono">{formatRelativeTime(prof.last_seen)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ===== REAL-TIME MULTI-STEP ACTIVITY LOG ===== */}
+      <Card className="border-indigo-100 dark:border-indigo-900/30 overflow-hidden shadow-sm">
+        <CardHeader className="bg-slate-50/70 dark:bg-slate-800/40 border-b dark:border-slate-800 py-3.5 px-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
+                <Activity className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  Live Activity Timeline
+                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400">
+                    {filteredActivities.length}
+                  </span>
+                </CardTitle>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  লগইন ওটিপি, ফাইল আপলোড, কনফার্ম ও পেমেন্টের প্রতিটি লাইভ ধাপ
+                </p>
+              </div>
+            </div>
+
+            {/* Profile Selector & Category Filter */}
+            <div className="flex items-center flex-wrap gap-2">
+              {/* Profile Dropdown */}
+              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                <Filter className="h-3.5 w-3.5 text-slate-400" />
+                <select
+                  value={selectedProfileFilter}
+                  onChange={(e) => setSelectedProfileFilter(e.target.value)}
+                  className="bg-transparent text-slate-700 dark:text-slate-200 font-medium outline-none cursor-pointer"
+                >
+                  <option value="all">সব প্রোফাইল (All Profiles)</option>
+                  {allKnownProfiles.map(([pId, pLabel]) => (
+                    <option key={pId} value={pId}>{pLabel}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Pills */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                <button
+                  onClick={() => setSelectedCategoryFilter('all')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                    selectedCategoryFilter === 'all'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryFilter('login')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                    selectedCategoryFilter === 'login'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  🔑 Login & OTP
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryFilter('webfile')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                    selectedCategoryFilter === 'webfile'
+                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  📄 Webfile
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryFilter('payment')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                    selectedCategoryFilter === 'payment'
+                      ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  💳 Payment
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryFilter('status')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                    selectedCategoryFilter === 'status'
+                      ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  ⚙️ On/Off
+                </button>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto max-h-[480px]">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Chrome Profile</th>
+                  <th className="px-4 py-3">Step / Event</th>
+                  <th className="px-4 py-3">Details</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y dark:divide-slate-800 text-sm">
+                {loadingActivities ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-12 text-slate-500">
+                      <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-indigo-500" />
+                      লাইভ অ্যাক্টিভিটি লোড হচ্ছে...
+                    </td>
+                  </tr>
+                ) : filteredActivities.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-12 text-slate-400">
+                      <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      কোনো অ্যাক্টিভিটি পাওয়া যায়নি।
+                    </td>
+                  </tr>
+                ) : (
+                  filteredActivities.map((act) => {
+                    const profColor = getProfileColor(act.profile_id);
+                    const visual = getEventVisual(act);
+                    return (
+                      <tr
+                        key={act.id}
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                      >
+                        {/* Time */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="font-mono text-xs text-slate-700 dark:text-slate-300">
+                            {act.time_formatted || (act.datetime ? act.datetime.split(' ')[1] : new Date(act.timestamp).toLocaleTimeString())}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {formatRelativeTime(act.timestamp)}
+                          </div>
+                        </td>
+
+                        {/* Chrome Profile Badge */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${profColor.bg} ${profColor.text} ${profColor.border}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${profColor.dot}`}></span>
+                            {act.profile_label || `Profile #${act.profile_id.slice(-4)}`}
+                          </span>
+                        </td>
+
+                        {/* Event / Step */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span className={`p-1.5 rounded-lg border flex items-center justify-center ${visual.badge}`}>
+                              {visual.icon}
+                            </span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {act.title}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Details */}
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                          <div className="line-clamp-2 text-xs font-medium">
+                            {act.details || '-'}
+                          </div>
+                        </td>
+
+                        {/* Amount */}
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {act.amount && act.amount > 0 ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-mono">
+                              {'৳'}{act.amount.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
       {/* ===== PAYMENT HISTORY ===== */}
       <Card>
         <CardHeader className="border-b dark:border-slate-800">
-          <CardTitle className="text-lg">Payment History</CardTitle>
+          <CardTitle className="text-lg flex items-center justify-between">
+            <span>Payment History</span>
+            <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+              সর্বমোট {payments.length} টি পেমেন্ট রেকর্ড
+            </span>
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -382,8 +1092,8 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/50 border-b dark:border-slate-800 text-sm text-slate-500 dark:text-slate-400">
                   <th className="px-4 py-3 font-medium">Date & Time</th>
-                  <th className="px-4 py-3 font-medium">Amount</th>
-                  <th className="px-4 py-3 font-medium">Rocket Account</th>
+                  <th className="px-4 py-3 font-medium">Chrome Profile</th>
+                  <th className="px-4 py-3 font-medium">Amounts</th>
                   <th className="px-4 py-3 font-medium">Stage</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
@@ -403,39 +1113,134 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                     </td>
                   </tr>
                 ) : (
-                  payments.map(p => (
-                    <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
-                        {p.datetime || new Date(p.timestamp).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
-                        {'\u09F3'}{p.amount?.toLocaleString() || 0}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-sm text-slate-500">
-                        {p.rocket_account || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-500">
-                        {p.stage === 'pay_clicked' ? 'Pay Button Clicked' :
-                         p.stage === 'account_filled' ? 'Account Submitted' :
-                         p.stage === 'otp_submitted' ? 'OTP Submitted' : p.stage}
-                      </td>
-                      <td className="px-4 py-3">
-                        {p.status === 'success' ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
-                            Success
+                  payments.map(p => {
+                    const matchedKnown = (p.profile_id && p.profile_id !== 'default')
+                      ? (activeProfiles.find(ap => ap.profile_id === p.profile_id)?.profile_label ||
+                         activities.find(ac => ac.profile_id === p.profile_id && ac.profile_label)?.profile_label)
+                      : null;
+                    
+                    let label = p.profile_label;
+                    if (!label || label === 'Profile' || label.startsWith('Profile #')) {
+                      if (matchedKnown && matchedKnown !== 'Profile') {
+                        label = matchedKnown;
+                      } else if (p.profile_id && p.profile_id !== 'default') {
+                        label = `Profile #${p.profile_id.slice(-4)}`;
+                      } else {
+                        label = 'Profile';
+                      }
+                    }
+
+                    // Extract pure phone number or ID (e.g. "01959166796" instead of "Profile (01959166796)")
+                    const rawNumber = label.replace(/^Profile\s*\(?|\)$/gi, '').trim();
+                    const displayPhone = rawNumber.length >= 10 ? rawNumber : (rawNumber.startsWith('#') ? rawNumber : (label || 'Default'));
+
+                    const profId = p.profile_id || (matchedKnown ? activeProfiles.find(ap => ap.profile_label === matchedKnown)?.profile_id || 'prof_default' : 'prof_default');
+                    const profColor = getProfileColor(profId);
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {(() => {
+                            const formatted = formatDateTime12Hour(p.timestamp || p.datetime);
+                            return (
+                              <div>
+                                <div className="font-semibold text-xs text-slate-800 dark:text-slate-200">
+                                  {formatted.timeStr}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {formatted.dateStr}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold font-mono ${profColor.bg} ${profColor.text} border ${profColor.border}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${profColor.dot}`}></span>
+                            {displayPhone}
                           </span>
-                        ) : p.status === 'initiated' ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                            Initiated
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
-                            Failed
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-xs">
+                          <div className="flex flex-col gap-1 py-0.5">
+                            <div className="flex items-center justify-between gap-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">
+                              <span className="text-[10px] font-bold text-slate-400">Amount 1:</span>
+                              <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                                {p.amount_1 && p.amount_1 > 0 ? `৳${p.amount_1.toLocaleString()}` : '-'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">
+                              <span className="text-[10px] font-bold text-slate-400">Amount 2:</span>
+                              <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                                {p.amount_2 && p.amount_2 > 0 ? `৳${p.amount_2.toLocaleString()}` : '-'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-800/50">
+                              <span className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400">Amount 3:</span>
+                              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">
+                                {(p.amount_3 && p.amount_3 > 0 ? p.amount_3 : p.amount) ? `৳${((p.amount_3 && p.amount_3 > 0) ? p.amount_3 : p.amount || 0).toLocaleString()}` : '-'}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm whitespace-nowrap font-medium">
+                          {(() => {
+                            const s = (p.stage || '').toLowerCase();
+                            if (s === 'bangla_qr' || s.includes('bangla') || s.includes('qr')) {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">Bangla QR</span>;
+                            }
+                            if (s === 'bkash' || s === 'bkash_loaded') {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300 border border-pink-200 dark:border-pink-800">bKash</span>;
+                            }
+                            if (s === 'nagad' || s === 'nagad_loaded') {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border border-orange-200 dark:border-orange-800">Nagad</span>;
+                            }
+                            if (s === 'rocket' || s === 'rocket_loaded' || s === 'account_submitted' || s === 'account_filled') {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">Rocket</span>;
+                            }
+                            if (s === 'cellfin') {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300 border border-teal-200 dark:border-teal-800">CellFin</span>;
+                            }
+                            if (s === 'tap') {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">TAP</span>;
+                            }
+                            if (s === 'net_banking') {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">Net Banking</span>;
+                            }
+                            if (s === 'card') {
+                              return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">Card</span>;
+                            }
+                            if (s === 'pay_clicked') {
+                              return <span className="text-slate-500 dark:text-slate-400 font-normal">Pay Button Clicked</span>;
+                            }
+                            if (s === 'otp_submitted') {
+                              return <span className="text-cyan-600 dark:text-cyan-400 font-semibold">OTP Submitted</span>;
+                            }
+                            if (s === 'payment_success') {
+                              return <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Payment Successful</span>;
+                            }
+                            const clean = (p.stage || '').replace(/_loaded$/i, '').replace(/_/g, ' ');
+                            return <span className="capitalize text-slate-600 dark:text-slate-400 font-normal">{clean || '-'}</span>;
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {p.status === 'success' ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                              Success
+                            </span>
+                          ) : p.status === 'initiated' ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                              Initiated
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                              Failed
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -445,6 +1250,36 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     </div>
   );
 }
+
+// Real-time MQTT Kill Switch (Instant 50ms broadcast, 0 Firebase reads)
+const publishLicenseKillSwitch = (key: string, nextStatus: string, lic?: any) => {
+  try {
+    const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      clientId: `admin_block_${Math.random().toString(16).slice(2, 8)}`,
+      connectTimeout: 5000,
+    });
+    client.on('connect', () => {
+      const payload = JSON.stringify({
+        action: nextStatus === 'blocked' ? 'block' : 'unblock',
+        key: key,
+        status: nextStatus,
+        plan: lic?.plan || 'Standard',
+        duration_days: lic?.duration_days || 30,
+        bound_at: lic?.bound_at || Date.now(),
+        timestamp: Date.now()
+      });
+      client.publish(`digonto_kill_${key}`, payload, { qos: 1 });
+      client.publish('digonto_license_event', payload, { qos: 1 }, () => {
+        client.end();
+      });
+    });
+    client.on('error', (err) => {
+      console.warn('MQTT kill switch error:', err);
+    });
+  } catch (err) {
+    console.error('MQTT broadcast error:', err);
+  }
+};
 
 // ===== MAIN COMPONENT =====
 export default function IvacLicenseManager() {
@@ -522,9 +1357,14 @@ export default function IvacLicenseManager() {
   const blockKey = async (key: string, currentStatus: string) => {
     if (!window.confirm(`Are you sure you want to ${currentStatus === 'active' ? 'block' : 'unblock'} this key?`)) return;
     try {
+      const nextStatus = currentStatus === 'active' ? 'blocked' : 'active';
       await updateDoc(doc(db, 'ivac_licenses', key), {
-        status: currentStatus === 'active' ? 'blocked' : 'active'
+        status: nextStatus
       });
+      setSelectedLicense(prev => prev && prev.key === key ? { ...prev, status: nextStatus } : prev);
+      setLicenses(prev => prev.map(l => l.key === key ? { ...l, status: nextStatus } : l));
+      const targetLic = licenses.find(l => l.key === key) || selectedLicense;
+      publishLicenseKillSwitch(key, nextStatus, targetLic);
     } catch (error) {
       console.error("Error updating key:", error);
     }
@@ -533,6 +1373,7 @@ export default function IvacLicenseManager() {
   const deleteKey = async (key: string) => {
     if (!window.confirm("Are you sure you want to permanently delete this key?")) return;
     try {
+      publishLicenseKillSwitch(key, 'blocked');
       await deleteDoc(doc(db, 'ivac_licenses', key));
       if (selectedLicense?.key === key) {
         setSelectedLicense(null);
@@ -717,7 +1558,7 @@ export default function IvacLicenseManager() {
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-800/50 border-b dark:border-slate-800 text-sm text-slate-500 dark:text-slate-400">
                       <th className="px-4 py-3 font-medium">Client / Key</th>
-                      <th className="px-4 py-3 font-medium">Duration</th>
+                      <th className="px-4 py-3 font-medium">Duration & Expiry</th>
                       <th className="px-4 py-3 font-medium">Status</th>
                       <th className="px-4 py-3 font-medium">Payments</th>
                       <th className="px-4 py-3 font-medium text-right">Actions</th>
@@ -761,9 +1602,31 @@ export default function IvacLicenseManager() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
-                              {lic.duration_days ? `${lic.duration_days} Days` : `${lic.duration_months} Months`}
-                            </span>
+                            {(() => {
+                              const expiry = getLicenseExpiryInfo(lic);
+                              return (
+                                <div className="flex flex-col gap-1 items-start">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                                      {expiry.totalDays} Days
+                                    </span>
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${expiry.remainingBadgeClass}`}>
+                                      {expiry.remainingText}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                    <Clock className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                    <span>
+                                      {expiry.isBound ? (
+                                        <>মেয়াদ শেষ: <strong className="font-medium text-slate-700 dark:text-slate-300">{expiry.expiryFormatted}</strong></>
+                                      ) : (
+                                        <span className="text-amber-600 dark:text-amber-400">অ্যাক্টিভেট করা হয়নি</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3">
                             {lic.status === 'blocked' ? (

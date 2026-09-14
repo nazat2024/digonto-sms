@@ -18,6 +18,43 @@ APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 LICENSE_FILE = os.path.join(APP_DATA_DIR, "license.dat")
 
+LOCAL_PAYMENTS_FILE = os.path.join(APP_DATA_DIR, "payments_local.json")
+_local_payments_lock = threading.Lock()
+
+def _load_local_payments() -> list:
+    if not os.path.exists(LOCAL_PAYMENTS_FILE):
+        return []
+    try:
+        with open(LOCAL_PAYMENTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _save_local_payments(payments: list):
+    try:
+        tmp_file = LOCAL_PAYMENTS_FILE + ".tmp"
+        with open(tmp_file, 'w', encoding='utf-8') as f:
+            json.dump(payments, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, LOCAL_PAYMENTS_FILE)
+    except Exception as e:
+        print(f"[LocalPayments] Error saving: {e}")
+
+def get_local_payments_summary():
+    """Returns local payments list and summary metrics"""
+    with _local_payments_lock:
+        records = _load_local_payments()
+        total_count = len(records)
+        synced_count = sum(1 for r in records if r.get("synced"))
+        unsynced_count = total_count - synced_count
+        total_revenue = sum(float(r.get("amount") or 0) for r in records if r.get("status") == "success" or r.get("stage") == "payment_success")
+        return {
+            "total_count": total_count,
+            "synced_count": synced_count,
+            "unsynced_count": unsynced_count,
+            "total_revenue": total_revenue,
+            "records": records
+        }
+
 # Firebase Configuration
 PROJECT_ID = "ai-studio-applet-webapp-52a95"
 DATABASE_ID = "ai-studio-90a5ddab-0968-4040-b54a-4863a2afafab"
@@ -61,6 +98,39 @@ class LicenseInfo:
             "is_valid": self.is_valid,
         }
 
+def _format_expiry_details(info: LicenseInfo, expiry_ms: int, now_ms: int):
+    """Format precise days, hours, remaining text, short badge, and expiry datetime"""
+    diff_ms = expiry_ms - now_ms
+    if diff_ms <= 0:
+        info.days_remaining = 0
+        info.remaining_text = "0 দিন"
+        info.remaining_short = "0d"
+    else:
+        days = max(0, diff_ms // (1000 * 60 * 60 * 24))
+        hours = max(0, (diff_ms % (1000 * 60 * 60 * 24)) // (1000 * 60 * 60))
+        minutes = max(0, (diff_ms % (1000 * 60 * 60)) // (1000 * 60))
+        info.days_remaining = days
+        
+        if days > 0:
+            if hours > 0:
+                info.remaining_text = f"{days} দিন {hours} ঘণ্টা"
+                info.remaining_short = f"{days}d {hours}h"
+            else:
+                info.remaining_text = f"{days} দিন"
+                info.remaining_short = f"{days}d"
+        elif hours > 0:
+            info.remaining_text = f"{hours} ঘণ্টা {minutes} মিনিট"
+            info.remaining_short = f"{hours}h {minutes}m"
+        else:
+            info.remaining_text = f"{minutes} মিনিট"
+            info.remaining_short = f"{minutes}m"
+
+    try:
+        dt = datetime.fromtimestamp(expiry_ms / 1000)
+        info.expiry_date = dt.strftime("%Y-%m-%d %I:%M %p")
+    except Exception:
+        info.expiry_date = ""
+
 def _parse_firestore_doc(data: dict) -> dict:
     """Firestore এর JSON রেসপন্সকে নরমাল ডিকশনারিতে কনভার্ট করে।"""
     fields = data.get("fields", {})
@@ -80,25 +150,35 @@ def _bg_cloud_sync(license_key, current_hwid):
         res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
         if res.status_code == 200:
             cloud_data = _parse_firestore_doc(res.json())
+            status = cloud_data.get("status", "active")
+            if status == "blocked":
+                mark_license_blocked_locally(license_key)
+                return
             bound_at = cloud_data.get("bound_at")
             days = cloud_data.get("duration_days")
             if days is None:
                 months = cloud_data.get("duration_months", 1)
-                days = months * 30
+                days = (int(months) if months else 1) * 30
             if bound_at:
+                bound_at = int(bound_at)
+                days = int(days)
                 expiry_ms = bound_at + (days * 24 * 60 * 60 * 1000)
                 plan = cloud_data.get("plan", "Standard")
-                status = cloud_data.get("status", "active")
                 new_data = {
                     "license_key": license_key,
                     "hwid": current_hwid,
                     "expiry_ms": expiry_ms,
                     "plan": plan,
-                    "status": status
+                    "status": "active",
+                    "bound_at": bound_at,
+                    "duration_days": days
                 }
                 encrypted = encrypt_data(json.dumps(new_data), extra_key=current_hwid)
                 with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
                     f.write(encrypted)
+        elif res.status_code == 404:
+            # License was permanently deleted by admin in dashboard! Instantly revoke locally!
+            mark_license_blocked_locally(license_key)
     except Exception:
         pass
 
@@ -111,6 +191,7 @@ def _sync_with_cloud(license_key, current_hwid, license_data):
         if res.status_code == 200:
             cloud_data = _parse_firestore_doc(res.json())
             if cloud_data.get("status") == "blocked":
+                mark_license_blocked_locally(license_key)
                 info.status = LicenseStatus.BLOCKED
                 info.error_message = "এই লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!"
                 return info
@@ -122,6 +203,8 @@ def _sync_with_cloud(license_key, current_hwid, license_data):
                 days = months * 30
             
             if bound_at:
+                bound_at = int(bound_at)
+                days = int(days)
                 expiry_ms = bound_at + (days * 24 * 60 * 60 * 1000)
                 now_ms = int(time.time() * 1000)
                 if now_ms > expiry_ms:
@@ -130,35 +213,18 @@ def _sync_with_cloud(license_key, current_hwid, license_data):
                     info.error_message = "আপনার লাইসেন্সের মেয়াদ শেষ হয়ে গেছে!"
                     return info
                 
-                diff_ms = expiry_ms - now_ms
-                rem_days = max(0, diff_ms // (1000 * 60 * 60 * 24))
-                info.days_remaining = rem_days
                 info.status = LicenseStatus.ACTIVE
                 info.license_key = license_key
                 info.hwid = current_hwid
                 info.plan = cloud_data.get("plan", "Standard")
-                info.expiry_date = datetime.fromtimestamp(expiry_ms / 1000).strftime("%Y-%m-%d")
-                
-                if diff_ms <= 0:
-                    info.remaining_text = "0 দিন"
-                    info.remaining_short = "0d"
-                elif rem_days == 0:
-                    hours = diff_ms // (1000 * 60 * 60)
-                    minutes = (diff_ms % (1000 * 60 * 60)) // (1000 * 60)
-                    if hours > 0:
-                        info.remaining_text = f"{hours} ঘন্টা {minutes} মিনিট"
-                        info.remaining_short = f"{hours}h {minutes}m"
-                    else:
-                        info.remaining_text = f"{minutes} মিনিট"
-                        info.remaining_short = f"{minutes}m"
-                else:
-                    info.remaining_text = f"{rem_days} দিন"
-                    info.remaining_short = f"{rem_days}d"
+                _format_expiry_details(info, expiry_ms, now_ms)
                 
                 # Cache expiry_ms so next launch is instant!
                 license_data["expiry_ms"] = expiry_ms
                 license_data["plan"] = info.plan
-                license_data["status"] = "active" 
+                license_data["status"] = "active"
+                license_data["bound_at"] = bound_at
+                license_data["duration_days"] = days
                 try:
                     encrypted = encrypt_data(json.dumps(license_data), extra_key=current_hwid)
                     with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
@@ -167,8 +233,9 @@ def _sync_with_cloud(license_key, current_hwid, license_data):
                     pass
                 return info
         elif res.status_code == 404:
+            mark_license_blocked_locally(license_key)
             info.status = LicenseStatus.TAMPERED
-            info.error_message = "লাইসেন্সটি ডাটাবেজে পাওয়া যায়নি!"
+            info.error_message = "লাইসেন্সটি বাতিল বা ডাটাবেজ থেকে মুছে দেওয়া হয়েছে!"
             return info
     except Exception:
         pass
@@ -280,30 +347,11 @@ def check_license(force_cloud: bool = False) -> LicenseInfo:
                 info.error_message = "আপনার লাইসেন্সের মেয়াদ শেষ হয়ে গেছে!"
                 return info
                 
-            diff_ms = expiry_ms - now_ms
-            days = max(0, diff_ms // (1000 * 60 * 60 * 24))
-            info.days_remaining = days
             info.plan = plan
-            info.expiry_date = datetime.fromtimestamp(expiry_ms / 1000).strftime("%Y-%m-%d")
             info.status = LicenseStatus.ACTIVE
             info.license_key = license_key
             info.hwid = current_hwid
-            
-            if diff_ms <= 0:
-                info.remaining_text = "0 দিন"
-                info.remaining_short = "0d"
-            elif days == 0:
-                hours = diff_ms // (1000 * 60 * 60)
-                minutes = (diff_ms % (1000 * 60 * 60)) // (1000 * 60)
-                if hours > 0:
-                    info.remaining_text = f"{hours} ঘন্টা {minutes} মিনিট"
-                    info.remaining_short = f"{hours}h {minutes}m"
-                else:
-                    info.remaining_text = f"{minutes} মিনিট"
-                    info.remaining_short = f"{minutes}m"
-            else:
-                info.remaining_text = f"{days} দিন"
-                info.remaining_short = f"{days}d"
+            _format_expiry_details(info, expiry_ms, now_ms)
                 
             # Silent async background sync (App launches instantly without waiting for cloud)
             threading.Thread(target=_bg_cloud_sync, args=(license_key, current_hwid), daemon=True).start()
@@ -420,28 +468,8 @@ def activate_license(license_key: str) -> LicenseInfo:
         info.status = LicenseStatus.ACTIVE
         info.license_key = license_key
         info.hwid = current_hwid
-        
-        diff_ms = expiry_ms - now_ms
-        days = max(0, diff_ms // (1000 * 60 * 60 * 24))
-        info.days_remaining = days
-        
-        if diff_ms <= 0:
-            info.remaining_text = "0 দিন"
-            info.remaining_short = "0d"
-        elif days == 0:
-            hours = diff_ms // (1000 * 60 * 60)
-            minutes = (diff_ms % (1000 * 60 * 60)) // (1000 * 60)
-            if hours > 0:
-                info.remaining_text = f"{hours} ঘণ্টা {minutes} মিনিট"
-                info.remaining_short = f"{hours}h {minutes}m"
-            else:
-                info.remaining_text = f"{minutes} মিনিট"
-                info.remaining_short = f"{minutes}m"
-        else:
-            info.remaining_text = f"{days} দিন"
-            info.remaining_short = f"{days}d"
-            
-        info.expiry_date = datetime.fromtimestamp(expiry_ms / 1000).strftime("%Y-%m-%d")
+        info.plan = cloud_data.get("plan", "Standard")
+        _format_expiry_details(info, expiry_ms, now_ms)
         
         return info
         
@@ -469,7 +497,7 @@ def get_masked_key(license_key: str) -> str:
     return license_key
 
 def record_payment(amount: float, status: str, stage: str, rocket_account: str, description: str, profile_id: str = 'default', profile_label: str = '', amount_1: float = 0, amount_2: float = 0, amount_3: float = 0):
-    """পেমেন্ট শুরু হলে বা সম্পন্ন হলে ক্লাউডে রেকর্ড তৈরি করে।"""
+    """পেমেন্ট শুরু হলে বা সম্পন্ন হলে লোকাল স্টোরেজে এবং ক্লাউডে রেকর্ড তৈরি করে।"""
     if not os.path.exists(LICENSE_FILE):
         return None
         
@@ -486,15 +514,44 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
         now = datetime.now()
         timestamp_ms = int(now.timestamp() * 1000)
         datetime_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        final_amount = float(amount_3 or amount or 0)
+        local_id = f"loc_{timestamp_ms}_{int(time.time() * 1000) % 100000}"
         
-        # 1. নতুন পেমেন্ট রেকর্ড তৈরি (Sub-collection: payments)
+        payment_record = {
+            "id": local_id,
+            "local_id": local_id,
+            "cloud_id": None,
+            "amount": final_amount,
+            "amount_1": float(amount_1 or 0),
+            "amount_2": float(amount_2 or 0),
+            "amount_3": final_amount,
+            "status": status,
+            "stage": stage,
+            "rocket_account": rocket_account,
+            "description": description,
+            "profile_id": profile_id or "prof_default",
+            "profile_label": profile_label or (f"Profile #{profile_id[-4:]}" if profile_id and profile_id != 'default' else "Profile"),
+            "timestamp": timestamp_ms,
+            "datetime": datetime_str,
+            "license_key": license_key,
+            "synced": False,
+            "sync_error": None
+        }
+        
+        # ১. লোকাল স্টোরেজে অবিলম্বে সেভ করো (Failsafe: ফায়ারবেস কোটা শেষ বা অফলাইন থাকলেও ডাটা সুরক্ষিত)
+        with _local_payments_lock:
+            local_list = _load_local_payments()
+            local_list.insert(0, payment_record)
+            _save_local_payments(local_list)
+            
+        # ২. ক্লাউড ফায়ারবেসে পাঠানোর চেষ্টা করো
         payments_url = f"{BASE_URL}/{license_key}/payments"
         payload = {
             "fields": {
-                "amount": {"doubleValue": float(amount_3 or amount or 0)},
+                "amount": {"doubleValue": final_amount},
                 "amount_1": {"doubleValue": float(amount_1 or 0)},
                 "amount_2": {"doubleValue": float(amount_2 or 0)},
-                "amount_3": {"doubleValue": float(amount_3 or amount or 0)},
+                "amount_3": {"doubleValue": final_amount},
                 "status": {"stringValue": status},
                 "stage": {"stringValue": stage},
                 "rocket_account": {"stringValue": rocket_account},
@@ -506,45 +563,63 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
             }
         }
         
-        res = requests.post(f"{payments_url}?key={API_KEY}", json=payload, timeout=5)
-        if res.status_code != 200:
-            print(f"Failed to create payment record: {res.text}")
-            return None
-            
-        doc_data = res.json()
-        doc_name = doc_data.get("name") # e.g. projects/../databases/../documents/ivac_licenses/KEY/payments/AUTO_ID
-        payment_id = doc_name.split("/")[-1] if doc_name else None
-        
-        # 2. Main document এর payment_count এবং total_amount আপডেট
+        payment_id = None
         try:
-            main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
-            if main_res.status_code == 200:
-                cloud_data = _parse_firestore_doc(main_res.json())
-                current_count = cloud_data.get("payment_count", 0)
-                current_total = cloud_data.get("total_amount", 0.0)
+            res = requests.post(f"{payments_url}?key={API_KEY}", json=payload, timeout=6)
+            if res.status_code == 200:
+                doc_data = res.json()
+                doc_name = doc_data.get("name")
+                payment_id = doc_name.split("/")[-1] if doc_name else None
+                payment_record["cloud_id"] = payment_id
+                payment_record["synced"] = True
+                payment_record["sync_error"] = None
                 
-                update_payload = {
-                    "fields": {
-                        "payment_count": {"integerValue": current_count + 1},
-                        "total_amount": {"doubleValue": float(current_total + amount)}
-                    }
-                }
-                params = {
-                    "key": API_KEY,
-                    "updateMask.fieldPaths": ["payment_count", "total_amount"]
-                }
-                requests.patch(f"{BASE_URL}/{license_key}", json=update_payload, params=params, timeout=5)
-        except Exception as inner_e:
-            print(f"Failed to update total count/amount: {inner_e}")
+                try:
+                    main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
+                    if main_res.status_code == 200:
+                        cloud_data = _parse_firestore_doc(main_res.json())
+                        current_count = cloud_data.get("payment_count", 0)
+                        current_total = cloud_data.get("total_amount", 0.0)
+                        
+                        update_payload = {
+                            "fields": {
+                                "payment_count": {"integerValue": current_count + 1},
+                                "total_amount": {"doubleValue": float(current_total + final_amount)}
+                            }
+                        }
+                        params = {
+                            "key": API_KEY,
+                            "updateMask.fieldPaths": ["payment_count", "total_amount"]
+                        }
+                        requests.patch(f"{BASE_URL}/{license_key}", json=update_payload, params=params, timeout=5)
+                except Exception as inner_e:
+                    print(f"Failed to update total count/amount: {inner_e}")
+            else:
+                payment_record["sync_error"] = f"HTTP {res.status_code}: {res.text[:80]}"
+                print(f"[PaymentCloud] Firebase write failed (Quota/Network): {res.text[:80]}")
+        except Exception as net_err:
+            payment_record["sync_error"] = str(net_err)
+            print(f"[PaymentCloud] Network error: {net_err}")
             
-        return payment_id
+        with _local_payments_lock:
+            local_list = _load_local_payments()
+            for r in local_list:
+                if r.get("local_id") == local_id:
+                    r["cloud_id"] = payment_record.get("cloud_id")
+                    r["synced"] = payment_record.get("synced", False)
+                    r["sync_error"] = payment_record.get("sync_error")
+                    break
+            _save_local_payments(local_list)
+            
+        # ক্লাউড আইডি না পেলেও লোকাল আইডি রিটার্ন করো যাতে এক্সটেনশন পরবর্তীতে স্টেজ আপডেট পাঠাতে পারে!
+        return payment_id or local_id
         
     except Exception as e:
         print(f"Payment tracking error: {e}")
         return None
 
 def update_payment_stage(payment_id: str, stage: str, status: str = None, amount: float = None):
-    """ইতিমধ্যে তৈরি করা একটি পেমেন্ট রেকর্ডের স্টেজ এবং স্ট্যাটাস আপডেট করে।"""
+    """ইতিমধ্যে তৈরি করা একটি পেমেন্ট রেকর্ডের স্টেজ এবং স্ট্যাটাস লোকাল ও ক্লাউডে আপডেট করে।"""
     if not os.path.exists(LICENSE_FILE) or not payment_id:
         return False
         
@@ -558,62 +633,88 @@ def update_payment_stage(payment_id: str, stage: str, status: str = None, amount
         if not license_key:
             return False
             
-        payment_doc_url = f"{BASE_URL}/{license_key}/payments/{payment_id}"
-        
-        update_fields = {
-            "stage": {"stringValue": stage}
-        }
-        update_mask = ["stage"]
-        
-        if status:
-            update_fields["status"] = {"stringValue": status}
-            update_mask.append("status")
-        
-        if amount and amount > 0:
-            update_fields["amount"] = {"doubleValue": float(amount)}
-            update_mask.append("amount")
+        cloud_target_id = payment_id
+        with _local_payments_lock:
+            local_list = _load_local_payments()
+            for r in local_list:
+                if r.get("local_id") == payment_id or r.get("cloud_id") == payment_id or r.get("id") == payment_id:
+                    r["stage"] = stage
+                    if status:
+                        r["status"] = status
+                    if amount and amount > 0:
+                        r["amount"] = float(amount)
+                        r["amount_3"] = float(amount)
+                    cloud_target_id = r.get("cloud_id") or payment_id
+                    break
+            _save_local_payments(local_list)
             
-        payload = {
-            "fields": update_fields
-        }
-        params = {
-            "key": API_KEY,
-            "updateMask.fieldPaths": update_mask
-        }
-        
-        res = requests.patch(payment_doc_url, json=payload, params=params, timeout=5)
-        
-        # যদি amount আপডেট হয় এবং এটি নতুন amount (আগে 0 ছিল), তাহলে main doc এর total_amount আপডেট করো
-        if amount and amount > 0:
+        if cloud_target_id and not str(cloud_target_id).startswith("loc_"):
             try:
-                main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
-                if main_res.status_code == 200:
-                    cloud_data = _parse_firestore_doc(main_res.json())
-                    current_total = cloud_data.get("total_amount", 0.0)
+                payment_doc_url = f"{BASE_URL}/{license_key}/payments/{cloud_target_id}"
+                update_fields = {"stage": {"stringValue": stage}}
+                update_mask = ["stage"]
+                if status:
+                    update_fields["status"] = {"stringValue": status}
+                    update_mask.append("status")
+                if amount and amount > 0:
+                    update_fields["amount"] = {"doubleValue": float(amount)}
+                    update_mask.append("amount")
                     
-                    update_total_payload = {
-                        "fields": {
-                            "total_amount": {"doubleValue": float(current_total + amount)}
-                        }
-                    }
-                    total_params = {
-                        "key": API_KEY,
-                        "updateMask.fieldPaths": ["total_amount"]
-                    }
-                    requests.patch(f"{BASE_URL}/{license_key}", json=update_total_payload, params=total_params, timeout=5)
-            except Exception as inner_e:
-                print(f"Failed to update total_amount: {inner_e}")
-        
-        return res.status_code == 200
-        
+                payload = {"fields": update_fields}
+                params = {"key": API_KEY, "updateMask.fieldPaths": update_mask}
+                res = requests.patch(payment_doc_url, json=payload, params=params, timeout=5)
+                
+                if amount and amount > 0 and res.status_code == 200:
+                    try:
+                        main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
+                        if main_res.status_code == 200:
+                            cloud_data = _parse_firestore_doc(main_res.json())
+                            current_total = cloud_data.get("total_amount", 0.0)
+                            update_total_payload = {
+                                "fields": {"total_amount": {"doubleValue": float(current_total + amount)}}
+                            }
+                            total_params = {"key": API_KEY, "updateMask.fieldPaths": ["total_amount"]}
+                            requests.patch(f"{BASE_URL}/{license_key}", json=update_total_payload, params=total_params, timeout=5)
+                    except Exception:
+                        pass
+                return res.status_code == 200
+            except Exception as net_e:
+                print(f"[PaymentCloud] Update failed: {net_e}")
+                
+        return True
     except Exception as e:
         print(f"Payment update error: {e}")
         return False
 
 
+_presence_client = None
+_presence_lock = threading.Lock()
+
+def _get_presence_client():
+    global _presence_client
+    with _presence_lock:
+        if _presence_client is None:
+            try:
+                import paho.mqtt.client as mqtt
+                import uuid
+                client_id = f"pres_{uuid.uuid4().hex[:8]}"
+                _presence_client = mqtt.Client(client_id=client_id)
+                _presence_client.connect("broker.emqx.io", 1883, 30)
+                _presence_client.loop_start()
+            except Exception as e:
+                print(f"[MQTT Presence] Init error: {e}")
+                _presence_client = None
+    return _presence_client
+
 
 def record_activity(event_type: str, profile_id: str = "default", profile_label: str = "Profile", title: str = "", details: str = "", amount: float = 0, status: str = "info", metadata: dict = None):
-    """Records an activity log event into Firebase Firestore under ivac_licenses/{license_key}/activities"""
+    """Records meaningful activity events into Firebase Firestore, filtering out noisy on/off spam to preserve write limits"""
+    # Filter out noisy on/off status pings from hammering Firestore!
+    # Real-time status is tracked via MQTT Live Tunnel without database writes.
+    if event_type in ["ext_disabled", "ext_inactive", "ext_off", "ext_enabled"]:
+        update_profile_heartbeat(profile_id, profile_label, is_active=(event_type == "ext_enabled"), last_step=title or details)
+        return True
+
     if not os.path.exists(LICENSE_FILE):
         return None
     try:
@@ -630,7 +731,7 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
         datetime_str = now.strftime("%Y-%m-%d %H:%M:%S")
         time_str = now.strftime("%I:%M:%S %p")
         
-        # 1. Post to activities sub-collection
+        # Post meaningful activity to Firestore activities sub-collection
         activities_url = f"{BASE_URL}/{license_key}/activities"
         fields = {
             "event_type": {"stringValue": str(event_type)},
@@ -650,54 +751,150 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
         payload = {"fields": fields}
         res = requests.post(f"{activities_url}?key={API_KEY}", json=payload, timeout=5)
         
-        # 2. Update profile state in active_profiles sub-collection
-        try:
-            prof_url = f"{BASE_URL}/{license_key}/active_profiles/{profile_id or 'default'}"
-            is_active_flag = event_type not in ["ext_inactive", "ext_disabled", "ext_off"]
-            prof_fields = {
-                "profile_id": {"stringValue": str(profile_id or "default")},
-                "profile_label": {"stringValue": str(profile_label or "Profile")},
-                "last_event": {"stringValue": str(event_type)},
-                "last_title": {"stringValue": str(title)},
-                "last_seen": {"integerValue": timestamp_ms},
-                "is_active": {"booleanValue": is_active_flag}
-            }
-            requests.patch(f"{prof_url}?key={API_KEY}", json={"fields": prof_fields}, timeout=3)
-        except Exception:
-            pass
-            
+        # Update live presence via MQTT (0 Firestore writes)
+        update_profile_heartbeat(profile_id, profile_label, is_active=True, last_step=title)
         return res.status_code == 200
     except Exception as e:
         print(f"Activity recording error: {e}")
         return False
 
-def update_profile_heartbeat(profile_id: str = "default", profile_label: str = "Profile", is_active: bool = True, last_step: str = ""):
-    """Updates profile heartbeat in Firebase Firestore active_profiles"""
+
+_cached_active_license_key = None
+_cached_active_license_time = 0
+
+def get_active_license_key_fast() -> str:
+    """Returns license key with 60s in-memory caching for ultra-fast, zero-overhead heartbeats"""
+    global _cached_active_license_key, _cached_active_license_time
+    now = time.time()
+    if _cached_active_license_key and (now - _cached_active_license_time < 60):
+        return _cached_active_license_key
     if not os.path.exists(LICENSE_FILE):
-        return False
+        return ""
     try:
         with open(LICENSE_FILE, 'r', encoding='utf-8') as f:
             encrypted_data = f.read().strip()
         current_hwid = generate_hwid()
         decrypted = decrypt_data(encrypted_data, extra_key=current_hwid)
-        license_key = json.loads(decrypted).get("license_key", "")
+        key = json.loads(decrypted).get("license_key", "")
+        if key:
+            _cached_active_license_key = key
+            _cached_active_license_time = now
+            return key
+    except Exception:
+        pass
+    return _cached_active_license_key or ""
+
+
+def update_profile_heartbeat(profile_id: str = "default", profile_label: str = "Profile", is_active: bool = True, last_step: str = ""):
+    """Publishes live profile presence via MQTT Live Tunnel (Zero Firebase Writes & <0.01ms latency!)"""
+    try:
+        license_key = get_active_license_key_fast()
         if not license_key:
             return False
-            
-        now = datetime.now()
-        timestamp_ms = int(now.timestamp() * 1000)
-        
-        prof_url = f"{BASE_URL}/{license_key}/active_profiles/{profile_id or 'default'}"
-        prof_fields = {
-            "profile_id": {"stringValue": str(profile_id or "default")},
-            "profile_label": {"stringValue": str(profile_label or "Profile")},
-            "last_seen": {"integerValue": timestamp_ms},
-            "is_active": {"booleanValue": is_active}
-        }
-        if last_step:
-            prof_fields["last_title"] = {"stringValue": str(last_step)}
-            
-        res = requests.patch(f"{prof_url}?key={API_KEY}", json={"fields": prof_fields}, timeout=3)
-        return res.status_code == 200
-    except Exception as e:
+
+        client = _get_presence_client()
+        if client:
+            payload = json.dumps({
+                "profile_id": str(profile_id or "default"),
+                "profile_label": str(profile_label or "Profile"),
+                "is_active": bool(is_active),
+                "last_title": str(last_step or "Active"),
+                "last_seen": int(time.time() * 1000)
+            })
+            client.publish(f"ivac_live_{license_key}", payload, qos=0)
+            return True
         return False
+    except Exception:
+        return False
+
+
+def _sync_pending_payments_loop():
+    """Background worker that pushes unsynced local payments to Firebase whenever online/quota resets"""
+    time.sleep(10)
+    while True:
+        try:
+            if not os.path.exists(LICENSE_FILE):
+                time.sleep(30)
+                continue
+                
+            with open(LICENSE_FILE, 'r', encoding='utf-8') as f:
+                encrypted_data = f.read().strip()
+            current_hwid = generate_hwid()
+            decrypted = decrypt_data(encrypted_data, extra_key=current_hwid)
+            license_key = json.loads(decrypted).get("license_key", "")
+            
+            if not license_key:
+                time.sleep(30)
+                continue
+                
+            with _local_payments_lock:
+                local_list = _load_local_payments()
+                unsynced = [r for r in local_list if not r.get("synced")]
+                
+            if unsynced:
+                payments_url = f"{BASE_URL}/{license_key}/payments"
+                for record in unsynced:
+                    final_amount = float(record.get("amount") or 0)
+                    payload = {
+                        "fields": {
+                            "amount": {"doubleValue": final_amount},
+                            "amount_1": {"doubleValue": float(record.get("amount_1") or 0)},
+                            "amount_2": {"doubleValue": float(record.get("amount_2") or 0)},
+                            "amount_3": {"doubleValue": final_amount},
+                            "status": {"stringValue": str(record.get("status", "initiated"))},
+                            "stage": {"stringValue": str(record.get("stage", "pay_clicked"))},
+                            "rocket_account": {"stringValue": str(record.get("rocket_account", ""))},
+                            "description": {"stringValue": str(record.get("description", ""))},
+                            "profile_id": {"stringValue": str(record.get("profile_id", "prof_default"))},
+                            "profile_label": {"stringValue": str(record.get("profile_label", "Profile"))},
+                            "timestamp": {"integerValue": int(record.get("timestamp", int(time.time()*1000)))},
+                            "datetime": {"stringValue": str(record.get("datetime", ""))}
+                        }
+                    }
+                    try:
+                        res = requests.post(f"{payments_url}?key={API_KEY}", json=payload, timeout=6)
+                        if res.status_code == 200:
+                            doc_data = res.json()
+                            doc_name = doc_data.get("name")
+                            payment_id = doc_name.split("/")[-1] if doc_name else None
+                            with _local_payments_lock:
+                                for r in local_list:
+                                    if r.get("local_id") == record.get("local_id"):
+                                        r["cloud_id"] = payment_id
+                                        r["synced"] = True
+                                        r["sync_error"] = None
+                                        break
+                                _save_local_payments(local_list)
+                            print(f"[PaymentSync] Successfully synced pending payment {record.get('local_id')} -> {payment_id}")
+                            
+                            try:
+                                main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
+                                if main_res.status_code == 200:
+                                    cloud_data = _parse_firestore_doc(main_res.json())
+                                    current_count = cloud_data.get("payment_count", 0)
+                                    current_total = cloud_data.get("total_amount", 0.0)
+                                    requests.patch(
+                                        f"{BASE_URL}/{license_key}",
+                                        json={
+                                            "fields": {
+                                                "payment_count": {"integerValue": current_count + 1},
+                                                "total_amount": {"doubleValue": float(current_total + final_amount)}
+                                            }
+                                        },
+                                        params={"key": API_KEY, "updateMask.fieldPaths": ["payment_count", "total_amount"]},
+                                        timeout=5
+                                    )
+                            except Exception:
+                                pass
+                        else:
+                            print(f"[PaymentSync] Cloud still rejecting: {res.text[:80]}")
+                            break
+                    except Exception as err:
+                        print(f"[PaymentSync] Network error: {err}")
+                        break
+        except Exception:
+            pass
+        time.sleep(45)
+
+_sync_thread = threading.Thread(target=_sync_pending_payments_loop, daemon=True)
+_sync_thread.start()

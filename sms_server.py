@@ -804,6 +804,15 @@ def payment_success():
     success = bool(record_payment(amount, "success", "otp_submitted", rocket_account, "Custom Site"))
     return jsonify({"success": success}), 200
 
+@app.route("/api/payments/local", methods=["GET"])
+def get_local_payments_api():
+    try:
+        from license_system.license_manager import get_local_payments_summary
+        summary = get_local_payments_summary()
+        return jsonify({"success": True, "data": summary}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 _cached_license_key = None
 
 def get_installed_license_key():
@@ -863,34 +872,27 @@ def _profile_offline_checker_loop():
         try:
             now = time.time()
             for prof_id, info in list(profile_tracker.items()):
-                # If active but no heartbeat for > 35 seconds
+                # Only mark offline if NO heartbeat for > 180 seconds (3 minutes)
+                # Prevents background Chrome power throttling from falsely dropping active profiles
                 if info.get("is_active", True) and not info.get("offline_logged", False):
-                    if now - info.get("last_seen", 0) > 35:
+                    if now - info.get("last_seen", 0) > 180:
                         info["offline_logged"] = True
                         info["is_active"] = False
                         try:
-                            from license_system.license_manager import record_activity, update_profile_heartbeat
+                            from license_system.license_manager import update_profile_heartbeat
                             lbl = info.get("label", f"Profile #{prof_id[-4:]}")
-                            record_activity(
-                                'ext_disabled',
-                                prof_id,
-                                lbl,
-                                'Extension বন্ধ (Off)',
-                                'গ্রাহক ব্রাউজারে এক্সটেনশন বন্ধ করেছেন বা সংযোগ বিচ্ছিন্ন',
-                                0,
-                                'warning'
-                            )
+                            # Stream live presence update via MQTT with 0 Firestore writes
                             update_profile_heartbeat(
                                 prof_id,
                                 lbl,
                                 is_active=False,
-                                last_step='Extension বন্ধ (Offline)'
+                                last_step='Offline'
                             )
                         except Exception as e:
                             print(f"Offline monitor error: {e}")
-        except Exception as e:
+        except Exception:
             pass
-        time.sleep(8)
+        time.sleep(15)
 
 _offline_thread = threading.Thread(target=_profile_offline_checker_loop, daemon=True)
 _offline_thread.start()
@@ -956,9 +958,13 @@ _is_checking_license = False
 def is_license_active():
     global last_license_status, last_license_check_time, _is_checking_license
     import time
+    # If explicitly marked False by instant kill-switch or blocked locally, return False immediately
+    if last_license_status is False:
+        return False
+
     now = time.time()
     # Check asynchronously in background thread so /api/status never blocks
-    if now - last_license_check_time > 120 and not _is_checking_license:
+    if now - last_license_check_time > 45 and not _is_checking_license:
         _is_checking_license = True
         def bg_lic_check():
             global last_license_status, last_license_check_time, _is_checking_license
@@ -1289,16 +1295,38 @@ try:
             if msg.topic == f"digonto_kill_{installed_key}" or msg.topic == "digonto_license_event":
                 data = json.loads(msg.payload.decode('utf-8'))
                 target_key = data.get("key")
-                action = data.get("action")
+                action = str(data.get("action", "")).lower()
                 if target_key == installed_key:
-                    if action == "block":
-                        print(f"[KILL SWITCH] Instant block received for {installed_key}!")
+                    if action in ["block", "delete"]:
+                        print(f"[KILL SWITCH] Instant {action} received for {installed_key}!")
                         last_license_status = False
                         from license_system.license_manager import mark_license_blocked_locally
                         mark_license_blocked_locally(installed_key)
                         otp_store.clear_all()
                     elif action == "unblock":
+                        print(f"[KILL SWITCH] Instant unblock/extend received for {installed_key}!")
                         last_license_status = True
+                        try:
+                            from license_system.hwid import generate_hwid
+                            from license_system.crypto import encrypt_data
+                            from license_system.license_manager import LICENSE_FILE
+                            current_hwid = generate_hwid()
+                            bound_at = data.get("bound_at") or int(time.time() * 1000)
+                            days = data.get("duration_days", 30)
+                            expiry_ms = bound_at + (days * 24 * 60 * 60 * 1000)
+                            plan = data.get("plan", "Standard")
+                            new_data = {
+                                "license_key": installed_key,
+                                "hwid": current_hwid,
+                                "status": "active",
+                                "expiry_ms": expiry_ms,
+                                "plan": plan
+                            }
+                            enc = encrypt_data(json.dumps(new_data), extra_key=current_hwid)
+                            with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
+                                f.write(enc)
+                        except Exception as lic_e:
+                            print(f"[KILL SWITCH] Failed to persist unblock: {lic_e}")
                 return
             if msg.topic == MQTT_SYS_TOPIC:
                 payload = msg.payload.decode('utf-8')

@@ -73,23 +73,21 @@ def minify_and_obfuscate():
                 file.write(minified)
                 
     try:
-        print("\n  🔒 [2/4] PyArmor দিয়ে সোর্স কোড Obfuscate করা হচ্ছে...")
+        print("\n  🔒 [2/4] সোর্স কোড প্রস্তুত করা হচ্ছে (Clean Bytecode Mode - Antivirus Safe)...")
         
-        # Obfuscate only specific core components to avoid Trial Limit on gui_app.py
-        cmd = f'"{sys.executable}" -m pyarmor.cli gen -O obf_dist license_system gui_license.py'
-        result = subprocess.run(cmd, shell=True, cwd=BASE_DIR, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            print(f"    ❌ Obfuscation ব্যর্থ!\n{result.stderr}")
-            return False
+        os.makedirs(OBF_DIR, exist_ok=True)
+        # Copy files into obf_dist cleanly
+        if os.path.exists("license_system"):
+            dest_lic = os.path.join(OBF_DIR, "license_system")
+            if os.path.exists(dest_lic):
+                shutil.rmtree(dest_lic)
+            shutil.copytree("license_system", dest_lic)
             
-        # Copy gui_app.py and chrome_profile_manager.py without obfuscation
-        shutil.copy("sms_server.py", os.path.join(OBF_DIR, "sms_server.py"))
-        shutil.copy("gui_app.py", os.path.join(OBF_DIR, "gui_app.py"))
-        if os.path.exists("chrome_profile_manager.py"):
-            shutil.copy("chrome_profile_manager.py", os.path.join(OBF_DIR, "chrome_profile_manager.py"))
+        for py_file in ["gui_license.py", "sms_server.py", "gui_app.py", "chrome_profile_manager.py", "otp_parser.py"]:
+            if os.path.exists(py_file):
+                shutil.copy(py_file, os.path.join(OBF_DIR, py_file))
         
-        print("    ✅ কোড সফলভাবে সিকিউর করা হয়েছে (obf_dist ফোল্ডারে)")
+        print("    ✅ কোড সফলভাবে সিকিউর ও প্রস্তুত করা হয়েছে (obf_dist ফোল্ডারে)")
         return True
     finally:
         # Restore original files
@@ -170,6 +168,10 @@ def build_exe():
         "--workpath", BUILD_DIR,
         "-p", BASE_DIR,
     ]
+    
+    version_file = os.path.join(BASE_DIR, "version_info.txt")
+    if os.path.exists(version_file):
+        cmd.extend(["--version-file", version_file])
     
     for src, dest in datas:
         cmd.extend(["--add-data", f"{src};{dest}"])

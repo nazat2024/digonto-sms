@@ -9,7 +9,10 @@
         "activeTab",
         "scripting",
         "sidePanel",
-        "bookmarks"
+        "bookmarks",
+        "alarms",
+        "tabs",
+        "power"
     ],
     "host_permissions": [
         "http://localhost:5000/*",

@@ -366,90 +366,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
-    // ===== EMAIL OTP HANDLING =====
-    if (request.action === 'newEmailOtp') {
-        const targetEmail = (request.email || '').trim().toLowerCase();
-        const otpData = {
-            otp: request.otp,
-            rawText: request.rawText || '',
-            sender: request.sender || 'info@appointment.ivacbd.com',
-            email: targetEmail,
-            source: 'IV_EMAIL',
-            timestamp: request.timestamp || Date.now(),
-            used: false
-        };
-        chrome.storage.local.set({ latest_email_otp: otpData });
-
-        // Broadcast to all open tabs (especially IVAC tabs)
-        chrome.tabs.query({}, (tabs) => {
-            (tabs || []).forEach(t => {
-                if (t.id) {
-                    chrome.tabs.sendMessage(t.id, {
-                        action: 'onEmailOtpReceived',
-                        data: otpData
-                    }).catch(() => {});
-                }
-            });
-        });
-
-        // Sync with local desktop Python server (sms_server)
-        fetch('http://127.0.0.1:5000/api/email_otp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(otpData)
-        }).catch(() => {});
-
-        sendResponse({ success: true });
-        return true;
-    }
-
-    if (request.action === 'fetchEmailOtp') {
-        const reqEmail = (request.email || '').trim().toLowerCase();
-        chrome.storage.local.get(['latest_email_otp', 'ivac_email'], (st) => {
-            const d = st.latest_email_otp;
-            const myEmail = reqEmail || (st.ivac_email || '').trim().toLowerCase();
-            if (d && !d.used && (Date.now() - d.timestamp < 300000)) { // 5 minutes validity
-                // Strict multi-profile isolation: If email is set for this profile, ensure it matches!
-                if (myEmail && d.email && d.email !== myEmail) {
-                    sendResponse({ success: false, data: null, reason: 'email_mismatch' });
-                    return;
-                }
-                sendResponse({ success: true, data: d });
-            } else {
-                // Check local desktop server
-                const url = myEmail ? `http://127.0.0.1:5000/api/email_otp?email=${encodeURIComponent(myEmail)}` : `http://127.0.0.1:5000/api/email_otp`;
-                fetch(url)
-                    .then(r => r.json())
-                    .then(res => {
-                        if (res && res.success && res.data && !res.data.used) {
-                            sendResponse({ success: true, data: res.data });
-                        } else {
-                            sendResponse({ success: false, data: null });
-                        }
-                    })
-                    .catch(() => sendResponse({ success: false, data: null }));
-            }
-        });
-        return true;
-    }
-
-    if (request.action === 'markEmailOtpUsed') {
-        chrome.storage.local.get(['latest_email_otp'], (st) => {
-            if (st.latest_email_otp) {
-                const updated = { ...st.latest_email_otp, used: true };
-                chrome.storage.local.set({ latest_email_otp: updated });
-            }
-            sendResponse({ success: true });
-        });
-        return true;
-    }
-
-    if (request.action === 'clearEmailOtp') {
-        chrome.storage.local.remove('latest_email_otp', () => {
-            sendResponse({ success: true });
-        });
-        return true;
-    }
 
     if (request.action === 'executeMainWorldClick' && sender.tab && sender.tab.id) {
         if (chrome.scripting && chrome.scripting.executeScript) {
@@ -485,8 +401,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function sendProfileHeartbeat() {
     chrome.storage.local.get(['profile_id', 'profile_label', 'ext_enabled', 'ivac_phone'], (st) => {
         if (chrome.runtime.lastError) return;
-        const profileId = st.profile_id || 'prof_default';
-        const profileLabel = st.profile_label || (st.ivac_phone ? `Profile ${st.ivac_phone}` : `Profile #${profileId.slice(-4)}`);
+        let profileId = st.profile_id;
+        if (!profileId || profileId === 'prof_default') {
+            profileId = 'prof_' + Math.random().toString(36).substring(2, 10);
+            chrome.storage.local.set({ profile_id: profileId });
+        }
+        const phone = st.ivac_phone || '';
+        let profileLabel = '';
+        if (phone && phone.length >= 10) {
+            profileLabel = `Profile (${phone})`;
+            chrome.storage.local.set({ profile_label: profileLabel });
+        } else if (st.profile_label && st.profile_label.includes('(')) {
+            profileLabel = st.profile_label;
+        } else {
+            profileLabel = `Profile #${profileId.slice(-4)}`;
+        }
         const isActive = st.ext_enabled !== false;
         
         fetch('http://127.0.0.1:5000/api/activity/heartbeat', {
@@ -501,8 +430,21 @@ function sendProfileHeartbeat() {
     });
 }
 
-setInterval(sendProfileHeartbeat, 12000);
-setTimeout(sendProfileHeartbeat, 2000);
+// Frequent heartbeats every 15 seconds (Zero cost & zero Firebase writes via local server + MQTT Live Tunnel)
+setInterval(sendProfileHeartbeat, 15000);
+setTimeout(sendProfileHeartbeat, 1500);
+
+// Anti-sleep alarm for Chrome background windows / power throttling
+try {
+    if (chrome.alarms) {
+        chrome.alarms.create('profile_heartbeat_alarm', { delayInMinutes: 0.1, periodInMinutes: 0.5 });
+        chrome.alarms.onAlarm.addListener((alarm) => {
+            if (alarm && alarm.name === 'profile_heartbeat_alarm') {
+                sendProfileHeartbeat();
+            }
+        });
+    }
+} catch (e) {}
 
 
 // Watch extension enabled/disabled state in background exclusively (prevents multi-tab duplicate logs)
@@ -600,3 +542,50 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 syncGlobalSettingsOnStartup();
+
+// ===== ZERO-SLEEP & TAB DISCARD PREVENTION SYSTEM (Always Awake) =====
+try {
+    if (chrome.power && typeof chrome.power.requestKeepAwake === 'function') {
+        chrome.power.requestKeepAwake('system');
+    }
+} catch (e) {}
+
+// Prevent Chrome Memory Saver from unloading or reloading IVAC tabs
+function markAllTabsUndiscardable() {
+    try {
+        if (chrome.tabs && typeof chrome.tabs.query === 'function') {
+            chrome.tabs.query({}, (tabs) => {
+                if (chrome.runtime.lastError || !tabs) return;
+                tabs.forEach((t) => {
+                    if (t && t.id) {
+                        chrome.tabs.update(t.id, { autoDiscardable: false }).catch(() => {});
+                    }
+                });
+            });
+        }
+    } catch (e) {}
+}
+
+markAllTabsUndiscardable();
+
+if (chrome.tabs && chrome.tabs.onCreated) {
+    chrome.tabs.onCreated.addListener((tab) => {
+        if (tab && tab.id) {
+            chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
+        }
+    });
+}
+
+if (chrome.tabs && chrome.tabs.onUpdated) {
+    chrome.tabs.onUpdated.addListener((tabId) => {
+        chrome.tabs.update(tabId, { autoDiscardable: false }).catch(() => {});
+    });
+}
+
+// Service worker persistent port keep-alive
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === 'keepAlive_hotAwake') {
+        port.onDisconnect.addListener(() => {});
+    }
+});
+

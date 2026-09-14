@@ -587,11 +587,17 @@ class IVACApp(ctk.CTk):
                             import os, time
                             from license_system.hwid import generate_hwid
                             from license_system.crypto import encrypt_data
-                            from license_system.license_manager import LICENSE_FILE, LicenseInfo, LicenseStatus
+                            from license_system.license_manager import LICENSE_FILE, check_license
                             
                             current_hwid = generate_hwid()
-                            bound_at = payload.get("bound_at") or int(time.time() * 1000)
-                            days = payload.get("duration_days", 30)
+                            try:
+                                bound_at = int(payload.get("bound_at") or int(time.time() * 1000))
+                            except Exception:
+                                bound_at = int(time.time() * 1000)
+                            try:
+                                days = int(payload.get("duration_days") or 30)
+                            except Exception:
+                                days = 30
                             expiry_ms = bound_at + (days * 24 * 60 * 60 * 1000)
                             plan = payload.get("plan", "Standard")
                             
@@ -601,7 +607,9 @@ class IVACApp(ctk.CTk):
                                 "hwid": current_hwid,
                                 "status": "active",
                                 "expiry_ms": expiry_ms,
-                                "plan": plan
+                                "plan": plan,
+                                "bound_at": bound_at,
+                                "duration_days": days
                             }
                             try:
                                 enc = encrypt_data(json.dumps(new_data), extra_key=current_hwid)
@@ -610,15 +618,12 @@ class IVACApp(ctk.CTk):
                             except Exception:
                                 pass
                                 
-                            info = LicenseInfo()
-                            info.license_key = my_key
-                            info.hwid = current_hwid
-                            info.status = LicenseStatus.ACTIVE
-                            info.plan = plan
-                            diff_ms = max(0, expiry_ms - int(time.time() * 1000))
-                            info.days_remaining = diff_ms // (1000 * 60 * 60 * 24)
-                            
-                            self.after(0, lambda: self._restore_from_lockout(info))
+                            info = check_license(force_cloud=False)
+                            if getattr(self, '_is_locked_out', False):
+                                self.after(0, lambda: self._restore_from_lockout(info))
+                            else:
+                                self.license_info = info
+                                self.after(0, self._update_license_display)
                 except Exception as e:
                     pass
                     
@@ -642,6 +647,20 @@ class IVACApp(ctk.CTk):
                 pass
         self._build_main_ui()
         self._start_server()
+
+    def _update_license_display(self):
+        """Update top badge and license tab live without rebuilding entire UI"""
+        try:
+            if hasattr(self, 'header_badge_label') and self.header_badge_label.winfo_exists():
+                badge_color = "#059669" if self.license_info.days_remaining > 7 else "#f59e0b"
+                self.header_badge_label.configure(
+                    text=f"🔑 {self.license_info.plan} | {self.license_info.remaining_short}",
+                    fg_color=badge_color
+                )
+            if hasattr(self, 'tab_license') and "🔑 License" in getattr(self, '_loaded_tabs', set()):
+                self._build_license_tab()
+        except Exception:
+            pass
 
     def _check_license_and_start(self):
         info = check_license()
@@ -701,7 +720,7 @@ class IVACApp(ctk.CTk):
         
         # License badge
         badge_color = "#059669" if self.license_info.days_remaining > 7 else "#f59e0b"
-        ctk.CTkLabel(
+        self.header_badge_label = ctk.CTkLabel(
             header_inner,
             text=f"🔑 {self.license_info.plan} | {self.license_info.remaining_short}",
             font=ctk.CTkFont(size=11, weight="bold"),
@@ -709,7 +728,8 @@ class IVACApp(ctk.CTk):
             fg_color=badge_color,
             corner_radius=12,
             padx=10, pady=2
-        ).pack(side="right", pady=10)
+        )
+        self.header_badge_label.pack(side="right", pady=10)
         
         # ===== TABVIEW =====
         self.tabview = ctk.CTkTabview(
@@ -2034,7 +2054,7 @@ class IVACApp(ctk.CTk):
             encoded_prof = urllib.parse.quote(profile_dir)
             target_url = f"https://appointment.ivacbd.com/signin#profile={encoded_prof}"
             chrome_exe = cpm.get_chrome_exe_path() or "chrome.exe"
-            cmd = f'start "" "{chrome_exe}" --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --load-extension="{ext_path}" "{target_url}"'
+            cmd = f'start "" "{chrome_exe}" --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --load-extension="{ext_path}" "{target_url}"'
             subprocess.Popen(cmd, shell=True)
     
     def _launch_all_profiles(self):

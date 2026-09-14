@@ -46,7 +46,6 @@
     }
 document.addEventListener('DOMContentLoaded', () => {
     const extToggle = document.getElementById('ext-toggle');
-    const emailInput = document.getElementById('manual-email-input');
     const phoneInput = document.getElementById('manual-phone-input');
     const passInput = document.getElementById('manual-pass-input');
     const toggleIvacPassBtn = document.getElementById('toggle-ivac-pass-btn');
@@ -281,17 +280,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== 1. Load initial state =====
     chrome.storage.local.get([
-        'ext_enabled', 'ivac_email', 'ivac_phone', 'ivac_password',
+        'ext_enabled', 'ivac_phone', 'ivac_password',
         'saved_webfiles', 'webfile_enabled', 'webfile_mode',
         'rocket_accounts', 'active_rocket_id', 'payment_enabled', 'payment_mode', 'payment_link', 'payment_methods', 'slot_booking_enabled', 'preferred_dates'
     ], (result) => {
         if (result.ext_enabled !== undefined) {
             extToggle.checked = result.ext_enabled;
         }
-        if (result.ivac_email && emailInput) {
-            emailInput.value = result.ivac_email;
-        }
-        updateEmailStatusDot();
         if (result.ivac_phone) {
             currentPhone = result.ivac_phone;
             phoneInput.value = currentPhone;
@@ -318,12 +313,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
             });
-        }
-
-        if (emailInput) {
-            emailInput.addEventListener('input', autoSaveCredentials);
-            emailInput.addEventListener('change', autoSaveCredentials);
-            emailInput.addEventListener('blur', autoSaveCredentials);
         }
 
         if (phoneInput) {
@@ -748,99 +737,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Removed Eye buttons for rocket since we don't have the add input anymore
-
-    // ===== Email Status Dot Updater =====
-    function updateEmailStatusDot() {
-        const ivacEmailDot = document.getElementById('ivac-email-status-dot');
-        if (!ivacEmailDot) return;
-        const emailVal = emailInput ? emailInput.value.trim().toLowerCase() : '';
-
-        if (!emailVal) {
-            ivacEmailDot.className = 'dot gray';
-            ivacEmailDot.title = 'ইমেইল দেওয়া হয়নি ⚪';
-            return;
-        }
-
-        const isValidEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(emailVal);
-        if (!isValidEmail) {
-            ivacEmailDot.className = 'dot gray';
-            ivacEmailDot.title = 'সঠিক ইমেইল ফরম্যাট দিন ⚪';
-            return;
-        }
-
-        if (!latestServerStatus) {
-            ivacEmailDot.className = 'dot red';
-            ivacEmailDot.title = 'সার্ভার বন্ধ 🔴';
-            return;
-        }
-
-        const onlineEmails = latestServerStatus.online_emails || [];
-        const offlineEmails = latestServerStatus.offline_emails || [];
-        const devices = latestServerStatus.devices || [];
-
-        if (onlineEmails.includes(emailVal)) {
-            ivacEmailDot.className = 'dot green';
-            ivacEmailDot.title = `মোবাইল অ্যাপ সংযুক্ত ও লাইভ (${emailVal}) 🟢`;
-            return;
-        }
-
-        if (offlineEmails.includes(emailVal)) {
-            ivacEmailDot.className = 'dot red';
-            ivacEmailDot.title = `মোবাইল অ্যাপ অফলাইনে আছে (${emailVal}) 🔴`;
-            return;
-        }
-
-        for (const dev of devices) {
-            const devEmail = (dev.email || '').trim().toLowerCase();
-            if (devEmail === emailVal) {
-                if (dev.online && dev.is_active !== false) {
-                    ivacEmailDot.className = 'dot green';
-                    ivacEmailDot.title = `${dev.custom_name || dev.device_name || 'মোবাইল অ্যাপ'} সংযুক্ত ও লাইভ (${emailVal}) 🟢`;
-                    return;
-                } else {
-                    ivacEmailDot.className = 'dot red';
-                    ivacEmailDot.title = `${dev.custom_name || dev.device_name || 'মোবাইল অ্যাপ'} অফলাইনে আছে 🔴`;
-                    return;
-                }
-            }
-        }
-
-        ivacEmailDot.className = 'dot amber';
-        ivacEmailDot.title = `ইমেইল প্রস্তুত (${emailVal}) — মোবাইল অ্যাপের কানেকশনের অপেক্ষায়... 🟡`;
-    }
-
-    // Live periodic check for email status dot
-    setInterval(updateEmailStatusDot, 2500);
-
-    // Real-time listener for background updates
-    chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local') {
-            if (changes.ivac_email) {
-                const newMail = changes.ivac_email.newValue;
-                if (newMail && emailInput && emailInput.value !== newMail) {
-                    emailInput.value = newMail;
-                }
-                updateEmailStatusDot();
-            }
-        }
-    });
-
-    // ===== Auto Save IVAC email, phone & password with debouncing =====
+    // ===== Auto Save IVAC phone & password with debouncing =====
     let saveCredsDebounce = null;
     function autoSaveCredentials() {
         if (saveCredsDebounce) clearTimeout(saveCredsDebounce);
         saveCredsDebounce = setTimeout(() => {
             const phone = phoneInput ? phoneInput.value.replace(/[^0-9]/g, '') : '';
             const pass = passInput ? passInput.value : '';
-            const email = emailInput ? emailInput.value.trim() : '';
             
             currentPhone = phone;
             const profileLabel = currentPhone ? `Profile (${currentPhone})` : (currentProfileName || `Profile`);
             const dataToSave = {
                 ivac_phone: currentPhone,
                 ivac_password: pass,
-                ivac_email: email,
                 profile_label: profileLabel
             };
             
@@ -851,7 +760,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ivacDot.className = `dot ${ivacStat.dotClass}`;
                     ivacDot.title = `IVAC: ${ivacStat.label}`;
                 }
-                updateEmailStatusDot();
                 // Sync with local desktop app backend in REAL-TIME
                 fetch('http://127.0.0.1:5000/api/profile/sync', {
                     method: 'POST',
@@ -860,8 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         chrome_profile: currentProfileDir,
                         name: currentProfileName,
                         phone: currentPhone,
-                        password: pass,
-                        email: email
+                        password: pass
                     })
                 }).then(() => {
                     if (allServerProfiles && allServerProfiles.length) {
@@ -872,7 +779,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (mp) {
                             mp.phone = currentPhone;
                             mp.password = pass;
-                            mp.email = email;
                         }
                     }
                 }).catch(() => {});
@@ -1237,7 +1143,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ivacDot.title = `IVAC: ${ivacStat.label}`;
                 }
                 updatePaymentAccountDots();
-                updateEmailStatusDot();
 
 
                 // Update device count badge
@@ -1344,7 +1249,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ivacDot.title = "সার্ভার বন্ধ";
             }
             updatePaymentAccountDots();
-            updateEmailStatusDot();
 
             return;
         }
