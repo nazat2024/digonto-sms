@@ -16,8 +16,25 @@ import os
 from otp_parser import parse_otp_from_sms, digits_to_string, format_otp_display
 
 app = Flask(__name__, static_folder="dashboard", static_url_path="/dashboard")
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+@app.after_request
+def apply_cors_and_pna(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept"
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+@app.route("/api/visa-photo/prepare", methods=["OPTIONS"])
+def api_visa_photo_options():
+    res = app.make_default_options_response()
+    res.headers["Access-Control-Allow-Private-Network"] = "true"
+    res.headers["Access-Control-Allow-Origin"] = "*"
+    res.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept"
+    return res
+
 
 saved_devices = {}
 connected_devices = {}
@@ -910,8 +927,9 @@ def receive_activity():
         amount = data.get("amount", 0)
         status = data.get("status", "info")
         metadata = data.get("metadata", {})
+        off_source = data.get("off_source", "popup")
         
-        is_active = event_type not in ["ext_disabled", "ext_inactive", "ext_off"]
+        is_active = event_type not in ["ext_disabled", "ext_inactive", "ext_off", "manual_off"]
         update_profile_tracker(profile_id, profile_label, is_active=is_active)
         
         success = bool(record_activity(
@@ -922,11 +940,31 @@ def receive_activity():
             details=details,
             amount=amount,
             status=status,
-            metadata=metadata
+            metadata=metadata,
+            off_source=off_source
         ))
         return jsonify({"success": success}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/activity/uninstall", methods=["GET", "POST"])
+def receive_uninstall():
+    try:
+        from license_system.license_manager import record_activity
+        profile_id = request.args.get("profile_id", "default")
+        profile_label = request.args.get("profile_label", "Profile")
+        record_activity(
+            event_type="ext_uninstalled",
+            profile_id=profile_id,
+            profile_label=profile_label,
+            title="Extension রিমুভ/আনইনস্টল",
+            details="ব্যবহারকারী ক্রোম ব্রাউজার থেকে এক্সটেনশন Remove করেছেন",
+            status="error",
+            off_source="uninstalled"
+        )
+        return "OK", 200
+    except Exception as e:
+        return str(e), 500
 
 @app.route("/api/activity/heartbeat", methods=["POST"])
 def receive_heartbeat():
@@ -1225,6 +1263,63 @@ def get_extension_config():
         "active_profile": active_profile_data,
         "config_version": last_config_ts
     }), 200
+
+@app.route("/api/visa-photo/prepare", methods=["POST"])
+def api_visa_photo_prepare():
+    try:
+        import visa_photo
+        img_bytes = None
+        corners = None
+        if "image" in request.files:
+            img_bytes = request.files["image"].read()
+            if "corners" in request.form:
+                try:
+                    import json
+                    corners = json.loads(request.form["corners"])
+                except Exception:
+                    pass
+        elif request.is_json or (request.content_type and "application/json" in request.content_type):
+            data_json = request.get_json(silent=True) or {}
+            corners = data_json.get("corners")
+            if isinstance(corners, str):
+                try:
+                    import json
+                    corners = json.loads(corners)
+                except Exception:
+                    pass
+            b64 = data_json.get("image") or data_json.get("imageBase64")
+            if b64:
+                import base64
+                if "," in b64:
+                    b64 = b64.split(",", 1)[1]
+                img_bytes = base64.b64decode(b64)
+        elif request.data:
+            # Check if request.data is actually a JSON string
+            raw = request.data.strip()
+            if raw.startswith(b"{") and raw.endswith(b"}"):
+                import json, base64
+                try:
+                    j = json.loads(raw.decode("utf-8", errors="ignore"))
+                    corners = j.get("corners")
+                    b64 = j.get("image") or j.get("imageBase64")
+                    if b64:
+                        if "," in b64:
+                            b64 = b64.split(",", 1)[1]
+                        img_bytes = base64.b64decode(b64)
+                except Exception:
+                    img_bytes = request.data
+            else:
+                img_bytes = request.data
+
+        if not img_bytes:
+            return jsonify({"success": False, "message": "কোনো ছবি পাওয়া যায়নি।"}), 400
+
+        res = visa_photo.prepare_photo(img_bytes, corners=corners)
+        return jsonify({"success": True, **res}), 200
+    except Exception as e:
+        err_msg = str(e)
+        status_code = 503 if "আরেকটি ছবি" in err_msg else 400
+        return jsonify({"success": False, "message": err_msg}), status_code
 
 @socketio.on("connect")
 def handle_connect():

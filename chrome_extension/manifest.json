@@ -12,7 +12,8 @@
         "bookmarks",
         "alarms",
         "tabs",
-        "power"
+        "power",
+        "downloads"
     ],
     "host_permissions": [
         "http://localhost:5000/*",

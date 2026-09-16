@@ -100,10 +100,50 @@ function formatBgdDate(str) {
     return str;
 }
 
+const GEMINI_CANDIDATE_MODELS = [
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite"
+];
+
+async function callGeminiMultiModel(key, requestBody, models = GEMINI_CANDIDATE_MODELS) {
+    let lastError = null;
+    for (const model of models) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25000);
+        try {
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: controller.signal,
+                body: JSON.stringify(requestBody)
+            });
+            clearTimeout(timeout);
+            if (res.ok) {
+                const json = await res.json();
+                const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) return text;
+            }
+            const errText = await res.text();
+            console.warn(`Gemini model ${model} failed (${res.status}):`, errText);
+            lastError = new Error(`AI model error (${res.status}): ${errText}`);
+            continue;
+        } catch (err) {
+            clearTimeout(timeout);
+            console.warn(`Gemini model ${model} exception:`, err);
+            lastError = err;
+            continue;
+        }
+    }
+    throw lastError || new Error("AI service temporarily unavailable. Please try again.");
+}
+
 async function extractPreviousPassportWithGemini(fileData, mimeType) {
     if (!fileData) return "";
     const DEFAULT_GEMINI_KEY = ["AQ.", "Ab8RN6K9", "J1rcg1hE8iO76i5keqbaMS33nvaxReFpDs87ZKLIIQ"].join("");
-    const MODEL = "gemini-3.1-flash-lite";
 
     let key = DEFAULT_GEMINI_KEY;
     try {
@@ -114,48 +154,30 @@ async function extractPreviousPassportWithGemini(fileData, mimeType) {
     } catch(e) {}
 
     const prompt = `Find the field: "পূর্ববর্তী পাসপোর্ট নং / Previous Passport No.". Return ONLY the previous passport number (e.g. BJ0080653). If none, empty or not present, return NONE.`;
-
     const mime = (mimeType && mimeType.includes("pdf")) ? "application/pdf" : (mimeType || "image/jpeg");
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
 
     try {
-        const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({
-                contents: [
-                    {
-                        parts: [
-                            { text: prompt },
-                            {
-                                inlineData: {
-                                    mimeType: mime,
-                                    data: fileData
-                                }
+        const rawText = await callGeminiMultiModel(key, {
+            contents: [
+                {
+                    parts: [
+                        { text: prompt },
+                        {
+                            inlineData: {
+                                mimeType: mime,
+                                data: fileData
                             }
-                        ]
-                    }
-                ],
-                generationConfig: {
-                    temperature: 0,
-                    maxOutputTokens: 15
+                        }
+                    ]
                 }
-            })
+            ],
+            generationConfig: {
+                temperature: 0,
+                maxOutputTokens: 15
+            }
         });
-        clearTimeout(timeout);
 
-        if (!res.ok) {
-            console.warn("Gemini API error:", res.status, await res.text());
-            return "";
-        }
-
-        const json = await res.json();
-        const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        const cleaned = rawText.trim().replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        const cleaned = (rawText || "").trim().replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 
         if (cleaned && !["NONE", "NA", "NILL", "NO", "NOTHING", "NOTAPPLICABLE"].includes(cleaned)) {
             const m = cleaned.match(/[A-Z]{1,2}\d{7,8}/);
@@ -163,8 +185,7 @@ async function extractPreviousPassportWithGemini(fileData, mimeType) {
         }
         return "";
     } catch (err) {
-        clearTimeout(timeout);
-        console.warn("Gemini extraction error:", err);
+        console.warn("Gemini previous passport extraction error:", err);
         return "";
     }
 }
@@ -172,7 +193,6 @@ async function extractPreviousPassportWithGemini(fileData, mimeType) {
 async function extractFullPassportWithGemini(fileData, mimeType) {
     if (!fileData) throw new Error("No passport file data provided.");
     const DEFAULT_GEMINI_KEY = ["AQ.", "Ab8RN6K9", "J1rcg1hE8iO76i5keqbaMS33nvaxReFpDs87ZKLIIQ"].join("");
-    const MODEL = "gemini-3.1-flash-lite";
 
     let key = DEFAULT_GEMINI_KEY;
     try {
@@ -225,43 +245,28 @@ Analyze this passport document (image or PDF) and extract all applicant informat
 Return ONLY valid JSON matching this schema. No markdown formatting.`;
 
     const mime = (mimeType && mimeType.includes("pdf")) ? "application/pdf" : (mimeType || "image/jpeg");
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-
-    try {
-        const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({
-                contents: [
-                    {
-                        parts: [
-                            { text: prompt },
-                            { inlineData: { mimeType: mime, data: fileData } }
-                        ]
-                    }
-                ],
-                generationConfig: {
-                    temperature: 0,
-                    responseMimeType: "application/json"
-                }
-            })
-        });
-        clearTimeout(timeout);
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Gemini API error (${res.status}): ${errText}`);
+    const rawContent = await callGeminiMultiModel(key, {
+        contents: [
+            {
+                parts: [
+                    { text: prompt },
+                    { inlineData: { mimeType: mime, data: fileData } }
+                ]
+            }
+        ],
+        generationConfig: {
+            temperature: 0,
+            responseMimeType: "application/json"
         }
+    });
 
-        const json = await res.json();
-        const rawContent = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawContent) throw new Error("Gemini AI returned empty response.");
+    if (!rawContent) throw new Error("Gemini AI returned empty response.");
 
-        let parsed = JSON.parse(rawContent);
+    let cleanJson = rawContent.trim();
+    if (cleanJson.startsWith("```json")) cleanJson = cleanJson.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+    else if (cleanJson.startsWith("```")) cleanJson = cleanJson.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    let parsed = JSON.parse(cleanJson);
 
         if (parsed.dob) parsed.dob = formatBgdDate(parsed.dob);
         if (parsed.passDate) parsed.passDate = formatBgdDate(parsed.passDate);
@@ -331,15 +336,10 @@ Return ONLY valid JSON matching this schema. No markdown formatting.`;
         parsed.visa_entry_id = "2";
 
         return parsed;
-    } catch (err) {
-        clearTimeout(timeout);
-        throw err;
-    }
 }
 
 async function extractFullBgdWithGemini(fileData, mimeType, extractedText) {
     const DEFAULT_GEMINI_KEY = ["AQ.", "Ab8RN6K9", "J1rcg1hE8iO76i5keqbaMS33nvaxReFpDs87ZKLIIQ"].join("");
-    const MODEL = "gemini-3.1-flash-lite";
 
     let key = DEFAULT_GEMINI_KEY;
     try {
@@ -427,36 +427,20 @@ Return ONLY valid JSON. No markdown formatting.`;
         throw new Error("No BGD file data or text provided.");
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-
-    try {
-        const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({
-                contents: [{ parts }],
-                generationConfig: {
-                    temperature: 0,
-                    responseMimeType: "application/json"
-                }
-            })
-        });
-        clearTimeout(timeout);
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Gemini API error (${res.status}): ${errText}`);
+    const rawContent = await callGeminiMultiModel(key, {
+        contents: [{ parts }],
+        generationConfig: {
+            temperature: 0,
+            responseMimeType: "application/json"
         }
+    });
 
-        const json = await res.json();
-        const rawContent = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawContent) throw new Error("Gemini AI returned empty response.");
+    if (!rawContent) throw new Error("Gemini AI returned empty response.");
 
-        let parsed = JSON.parse(rawContent);
+    let cleanJson = rawContent.trim();
+    if (cleanJson.startsWith("```json")) cleanJson = cleanJson.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+    else if (cleanJson.startsWith("```")) cleanJson = cleanJson.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    let parsed = JSON.parse(cleanJson);
 
         if (parsed.dob) parsed.dob = formatBgdDate(parsed.dob);
         if (parsed.passDate) parsed.passDate = formatBgdDate(parsed.passDate);
@@ -480,10 +464,6 @@ Return ONLY valid JSON. No markdown formatting.`;
         if (parsed.old_visa_no && !parsed.country_visited) parsed.country_visited = "INDIA";
 
         return parsed;
-    } catch (err) {
-        clearTimeout(timeout);
-        throw err;
-    }
 }
 
 async function a(e, t = {}) {
@@ -512,11 +492,15 @@ async function s() {
     if (o("userCredits")) o("userCredits").textContent = "∞";
 }
 
+let renderProfileSeq = 0;
+
 async function renderProfileList(e, t = false) {
     const a = o(t ? "hiddenProfileList" : "profileList");
     if (!a) return;
-    a.innerHTML = "";
+    const currentSeq = ++renderProfileSeq;
     const n = await chrome.storage.local.get(null);
+    if (currentSeq !== renderProfileSeq) return;
+    a.innerHTML = "";
     const s = n.lastSelectedProfile;
 
     // Calculate profile counts
@@ -553,7 +537,7 @@ async function renderProfileList(e, t = false) {
         o === s && d.classList.add("selected");
         let u = t
             ? '<button class="show-btn">Show</button><button class="del-btn">Del</button>'
-            : '<button class="edit-btn">Edit</button><button class="rename-btn">Name</button><button class="hide-btn">Hide</button><button class="del-btn">Del</button>';
+            : '<button class="edit-btn">Edit</button><button class="del-btn">Del</button>';
         d.innerHTML = `<span style="flex-grow:1; font-weight:500;">${l}</span><div class="profile-actions">${u}</div>`;
         t || d.addEventListener("click", async e => {
             if ("BUTTON" !== e.target.tagName) {
@@ -643,7 +627,13 @@ function l(e) {
     }
 }
 
+let isExtracting = false;
+
 async function d(t) {
+    if (isExtracting) {
+        console.warn("Extraction already in progress, ignoring duplicate click.");
+        return;
+    }
     const s = n[t];
     const fileInput = o("BGD" === t ? "pdfUpload" : "passportUpload");
     const i = fileInput?.files[0];
@@ -652,9 +642,12 @@ async function d(t) {
         alert("Please select a file first! / কোনো ফাইল সিলেক্ট করা হয়নি। দয়া করে Choose File এ ক্লিক করে ফাইল বেছে নিন।");
         return m("Please select a file.", "error");
     }
+    isExtracting = true;
     const statusBox = o("statusMessage");
     if (statusBox) { statusBox.style.display = "none"; statusBox.innerText = ""; }
     c.disabled = true;
+    c.style.pointerEvents = "none";
+    c.style.opacity = "0.7";
     c.innerText = "Extracting...";
 
     try {
@@ -693,8 +686,31 @@ async function d(t) {
 
             let cleanBase64 = rawDataUrl.includes(",") ? rawDataUrl.split(",")[1] : rawDataUrl;
             let mime = i.type || "image/jpeg";
+            if (i.name && i.name.toLowerCase().endsWith(".pdf")) {
+                mime = "application/pdf";
+            }
 
-            // If it's an image, optimize dimensions to ensure payload stays under Lambda limits (< 2MB)
+            // If it's a PDF, pre-render page 1 as high-res image for ultra-fast Gemini OCR
+            if (mime === "application/pdf" || (i.type && i.type === "application/pdf")) {
+                try {
+                    const tBuf = await i.arrayBuffer();
+                    const oPdf = await e(new Uint8Array(tBuf)).promise;
+                    if (oPdf && oPdf.numPages >= 1) {
+                        const page = await oPdf.getPage(1);
+                        const viewport = page.getViewport({ scale: 2.0 });
+                        const canvas = document.createElement("canvas");
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        const ctx = canvas.getContext("2d");
+                        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                        geminiImgData = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+                    }
+                } catch (pdfErr) {
+                    console.warn("Could not pre-render PDF page to canvas:", pdfErr);
+                }
+            }
+
+            // If it's an image, optimize dimensions to ensure payload stays under limits (< 2MB)
             if (i.type && i.type.startsWith("image/")) {
                 try {
                     const optimized = await new Promise(resolve => {
@@ -769,7 +785,9 @@ async function d(t) {
         let data = null;
         try {
             if ("PASSPORT" === t) {
-                data = await extractFullPassportWithGemini(geminiImgData || payload.fileData, payload.mimeType);
+                const sendData = geminiImgData || payload.fileData;
+                const sendMime = geminiImgData ? "image/jpeg" : payload.mimeType;
+                data = await extractFullPassportWithGemini(sendData, sendMime);
             } else if ("BGD" === t) {
                 data = await extractFullBgdWithGemini(payload.fileData, payload.mimeType, bgdExtractedText);
             }
@@ -1014,7 +1032,24 @@ async function d(t) {
                 data.jouryney_id = calcJourneyDate;
             }
         }
-        const key = `${t}_${Date.now()}`;
+        // Smart deduplication: check if profile with same passport number or same name+dob already exists
+        const allStored = await chrome.storage.local.get(null);
+        let key = null;
+        for (const k of Object.keys(allStored)) {
+            if (k.startsWith(`${t}_`) && allStored[k] && typeof allStored[k] === "object") {
+                const existing = allStored[k];
+                const samePass = data.passNo && existing.passNo && data.passNo.trim().toUpperCase() === existing.passNo.trim().toUpperCase();
+                const samePerson = data.dob && existing.dob && data.dob === existing.dob && data._savedName === existing._savedName;
+                if (samePass || samePerson) {
+                    key = k; // Reuse existing profile key to update instead of duplicating
+                    break;
+                }
+            }
+        }
+        if (!key) {
+            key = `${t}_${Date.now()}`;
+        }
+
         await chrome.storage.local.set({ 
             [key]: data,
             lastSelectedProfile: key,
@@ -1030,9 +1065,16 @@ async function d(t) {
         confirm(`Saved. Edit "${savedName}"?`) && chrome.tabs.create({ url: `editor.html?profile=${encodeURIComponent(key)}` });
     } catch (e) {
         console.error(e);
-        m(e.message || "Error processing file", "error");
+        let msg = e.message || "Error processing file";
+        if (msg.includes("503") || msg.toLowerCase().includes("gemini") || msg.includes("UNAVAILABLE")) {
+            msg = "সার্ভার সাময়িকভাবে ব্যস্ত ছিল। অনুগ্রহ করে পুনরায় 'Extract Data' বাটনে ক্লিক করুন।";
+        }
+        m(msg, "error");
     } finally {
+        isExtracting = false;
         c.disabled = false;
+        c.style.pointerEvents = "";
+        c.style.opacity = "";
         c.innerHTML = "Extract Data";
     }
 }
@@ -1052,7 +1094,7 @@ async function u() {
 function m(e, t) {
     const a = o("statusMessage");
     if (!a) return;
-    if (!e || t === "processing" || (typeof e === "string" && e.toLowerCase().includes("gemini"))) {
+    if (!e || t === "processing") {
         a.style.display = "none";
         a.innerText = "";
         return;
@@ -1088,8 +1130,8 @@ async function initSidepanel() {
     (function () {
         o("btn-pdf-mode").onclick = () => c("BGD");
         o("btn-passport-mode").onclick = () => c("PASSPORT");
-        o("viewHiddenBtn").onclick = () => i(true);
-        o("backToMainBtn").onclick = () => i(false);
+        o("viewHiddenBtn") && (o("viewHiddenBtn").onclick = () => i(true));
+        o("backToMainBtn") && (o("backToMainBtn").onclick = () => i(false));
         o("searchInput").addEventListener("input", () => {
             r(o("btn-pdf-mode").classList.contains("active") ? "BGD" : "PASSPORT", !o("hidden-view").classList.contains("hidden"));
         });
@@ -1162,13 +1204,21 @@ async function initSidepanel() {
 
             await chrome.storage.local.set(settingsToSave);
 
-            // Update all saved PASSPORT profiles so they immediately adopt the new mission
+            // Update all saved PASSPORT profiles so they immediately adopt the new mission, journey date, and defaults
             try {
                 const allLocal = await chrome.storage.local.get(null);
                 const profUpdates = {};
+                const calcDate = getCalculatedJourneyDate(settingsToSave) || journeyVal;
                 for (const k in allLocal) {
-                    if (k.startsWith("PASSPORT_") && allLocal[k]) {
+                    if (allLocal[k] && (k.startsWith("PASSPORT_") || allLocal[k]._type === "PASSPORT")) {
                         allLocal[k].missioncode_id = msn;
+                        if (calcDate) {
+                            allLocal[k].jouryney_id = calcDate;
+                        }
+                        if (arr) allLocal[k].entrypoint = arr;
+                        if (ext) allLocal[k].exitpoint = ext;
+                        if (places) allLocal[k].places_to_visit = places;
+                        if (country) allLocal[k].places_to_visit_country = country;
                         profUpdates[k] = allLocal[k];
                     }
                 }
@@ -1176,7 +1226,7 @@ async function initSidepanel() {
                     await chrome.storage.local.set(profUpdates);
                 }
             } catch (pErr) {
-                console.warn("Profile mission sync error:", pErr);
+                console.warn("Profile settings sync error:", pErr);
             }
 
             // Sync globally across all Chrome profiles via Desktop Server
@@ -1571,6 +1621,92 @@ async function initSidepanel() {
                 chrome.tabs.create({ url: "undertaking.html" });
             };
         }
+
+        // VISA PHOTO STUDIO HANDLERS
+        const photoDropZone = o("sideDocPhotoDropZone");
+        const photoInput = o("sideDocPhotoInput");
+        const photoStatusEl = o("sideDocPhotoStatus");
+        const openPhotoStudioBtn = o("sideDocOpenPhotoStudioBtn");
+
+        if (photoDropZone && photoInput) {
+            photoDropZone.onclick = () => photoInput.click();
+
+            photoDropZone.ondragover = (evt) => {
+                evt.preventDefault();
+                photoDropZone.style.borderColor = "#2563eb";
+                photoDropZone.style.background = "#eff6ff";
+            };
+
+            photoDropZone.ondragleave = (evt) => {
+                evt.preventDefault();
+                photoDropZone.style.borderColor = "#93c5fd";
+                photoDropZone.style.background = "#f8fafc";
+            };
+
+            photoDropZone.ondrop = (evt) => {
+                evt.preventDefault();
+                photoDropZone.style.borderColor = "#93c5fd";
+                photoDropZone.style.background = "#f8fafc";
+                const file = evt.dataTransfer.files[0];
+                if (file) handlePhotoFile(file);
+            };
+
+            photoInput.onchange = (evt) => {
+                const file = evt.target.files[0];
+                if (file) handlePhotoFile(file);
+            };
+        }
+
+        async function handlePhotoFile(file) {
+            if (!photoStatusEl) return;
+            if (!file || !file.type.startsWith("image/")) {
+                photoStatusEl.style.display = "block";
+                photoStatusEl.style.background = "#fef2f2";
+                photoStatusEl.style.color = "#b91c1c";
+                photoStatusEl.innerText = "JPG, PNG বা WebP ছবি নির্বাচন করুন।";
+                return;
+            }
+
+            photoStatusEl.style.display = "block";
+            photoStatusEl.style.background = "#eff6ff";
+            photoStatusEl.style.color = "#1d4ed8";
+            photoStatusEl.innerText = "ছবি লোড হচ্ছে...";
+
+            try {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const dataUrl = e.target.result;
+                    await chrome.storage.local.set({
+                        pendingVisaPhoto: {
+                            dataUrl: dataUrl,
+                            name: file.name
+                        }
+                    });
+                    photoStatusEl.style.background = "#f0fdf4";
+                    photoStatusEl.style.color = "#15803d";
+                    photoStatusEl.innerText = "স্টুডিও ওপেন হচ্ছে...";
+                    setTimeout(() => {
+                        photoStatusEl.style.display = "none";
+                        chrome.tabs.create({ url: "visa_photo.html" });
+                    }, 400);
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error(err);
+                photoStatusEl.style.background = "#fef2f2";
+                photoStatusEl.style.color = "#b91c1c";
+                photoStatusEl.innerText = "ছবি পড়তে ত্রুটি হয়েছে।";
+            } finally {
+                if (photoInput) photoInput.value = "";
+            }
+        }
+
+        if (openPhotoStudioBtn) {
+            openPhotoStudioBtn.onclick = async () => {
+                await chrome.storage.local.remove(["pendingVisaPhoto"]);
+                chrome.tabs.create({ url: "visa_photo.html" });
+            };
+        }
     })();
 
     // Switch to Registration Side Panel button
@@ -1601,8 +1737,40 @@ async function initSidepanel() {
         l(e);
         r(e, false);
         await loadAllSettings();
+        await cleanupDuplicateProfiles();
         restoreAllProfilesFromDesktop();
     })();
+}
+
+// ===== AUTOMATIC DUPLICATE PROFILE CLEANUP =====
+async function cleanupDuplicateProfiles() {
+    try {
+        const all = await chrome.storage.local.get(null);
+        const seen = new Map();
+        const keysToRemove = [];
+        const profileKeys = Object.keys(all).filter(k => k.startsWith("BGD_") || k.startsWith("PASSPORT_")).sort().reverse();
+        for (const k of profileKeys) {
+            const p = all[k];
+            if (!p || typeof p !== "object") continue;
+            const passId = p.passNo ? p.passNo.trim().toUpperCase() : "";
+            const nameId = p._savedName ? p._savedName.trim().toUpperCase() : "";
+            const id = passId || (nameId && p.dob ? `${nameId}_${p.dob}` : null);
+            if (id) {
+                const fullId = `${p._type || ""}_${id}`;
+                if (seen.has(fullId)) {
+                    keysToRemove.push(k);
+                } else {
+                    seen.set(fullId, k);
+                }
+            }
+        }
+        if (keysToRemove.length > 0) {
+            console.log("Removing duplicate profile keys:", keysToRemove);
+            await chrome.storage.local.remove(keysToRemove);
+        }
+    } catch(err) {
+        console.warn("Cleanup duplicates error:", err);
+    }
 }
 
 // ===== PERMANENT PROFILE BACKUP & RESTORE (SURVIVES UPDATES) =====

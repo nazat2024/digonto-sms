@@ -376,6 +376,8 @@ def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> st
         return _CACHED_SAFE_EXT_DIR
 
     safe_ext_dir = r"C:\IVAC_Chrome_Extension"
+    manifest_target = os.path.join(safe_ext_dir, "manifest.json")
+
     try:
         os.makedirs(safe_ext_dir, exist_ok=True)
         CREATE_NO_WINDOW = 0x08000000
@@ -439,7 +441,7 @@ def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> st
                 # 🔒 Anti-Tamper SHA-256 Hash Verification:
                 # If ANY file in C:\IVAC_Chrome_Extension was modified, deleted, or tampered with, auto-heal!
                 import hashlib
-                for f_check in ["content.js", "background.js", "popup.js", "manifest.json", "inject.js"]:
+                for f_check in ["content.js", "background.js", "popup.js", "manifest.json", "inject.js", "visa_photo.js", "visa_photo.html", "visa_photo.css", "formfill.html", "formfill.js"]:
                     s_f = os.path.join(src, f_check)
                     d_f = os.path.join(safe_ext_dir, f_check)
                     if os.path.exists(s_f):
@@ -531,8 +533,20 @@ def update_chrome_desktop_shortcuts(safe_ext_dir: str) -> int:
     except Exception as e:
         print(f"Warning updating desktop shortcuts: {e}")
 
-def get_profiles_extension_status() -> list:
+_profiles_status_cache = {"timestamp": 0.0, "data": []}
+
+def invalidate_profiles_status_cache():
+    global _profiles_status_cache
+    _profiles_status_cache["timestamp"] = 0.0
+    _profiles_status_cache["data"] = []
+
+def get_profiles_extension_status(force_refresh: bool = False) -> list:
     """Returns status of Digonto QuickFill extension across all existing Chrome profiles with high-speed parallel scanning."""
+    global _profiles_status_cache
+    now = time.time()
+    if not force_refresh and (now - _profiles_status_cache["timestamp"] < 10.0) and _profiles_status_cache["data"]:
+        return list(_profiles_status_cache["data"])
+        
     user_data_dir = get_chrome_user_data_dir()
     if not os.path.exists(user_data_dir):
         return []
@@ -600,6 +614,8 @@ def get_profiles_extension_status() -> list:
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_w) as ex:
         results = [r for r in ex.map(_check_single, profiles) if r is not None]
         
+    _profiles_status_cache["timestamp"] = time.time()
+    _profiles_status_cache["data"] = results
     return results
 
 def update_extension_in_all_profiles(base_dir: str = None) -> dict:
@@ -764,6 +780,7 @@ def update_extension_in_all_profiles(base_dir: str = None) -> dict:
             
     # Also update all Chrome shortcuts on Desktop
     update_chrome_desktop_shortcuts(safe_ext_dir)
+    invalidate_profiles_status_cache()
     
     return {
         "success": True,
@@ -1451,6 +1468,7 @@ def create_chrome_profile(
     cmd_args = f'--profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --load-extension="{safe_ext}" {target_url}'
     create_desktop_shortcut(shortcut_path, chrome_exe, cmd_args)
     # 8. Launch Chrome instantly
+    invalidate_profiles_status_cache()
     if launch_now:
         launch_profile(profile_dir, extension_path)
     return {

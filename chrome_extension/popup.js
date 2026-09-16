@@ -80,6 +80,66 @@ document.addEventListener('DOMContentLoaded', () => {
     const addPreferredDateBtn = document.getElementById('add-preferred-date-btn');
     const preferredDatesList = document.getElementById('preferred-dates-list');
 
+    // Instant 0ms Server & License Lock Check from cache (Zero lag on popup open/reopen!)
+    const lockOverlay = document.getElementById('license-lock-overlay');
+    chrome.storage.local.get(['server_connected', 'license_valid'], (res) => {
+        if (res && (res.server_connected === false || res.license_valid === false)) {
+            if (lockOverlay) lockOverlay.style.display = 'flex';
+        }
+    });
+
+    // Toggle Floating Window Button (Hide/Show across all tabs)
+    const toggleFloatingBtn = document.getElementById('toggle-floating-btn');
+    if (toggleFloatingBtn) {
+        function updateFloatingBtnUI(isHidden) {
+            if (isHidden) {
+                toggleFloatingBtn.innerHTML = '👁️ উইন্ডো দেখান';
+                toggleFloatingBtn.title = 'ওয়েবপেজের ফ্লোটিং উইন্ডো চালু করুন';
+                toggleFloatingBtn.classList.add('hidden-mode');
+            } else {
+                toggleFloatingBtn.innerHTML = '👁️ উইন্ডো লুকান';
+                toggleFloatingBtn.title = 'ওয়েবপেজের ফ্লোটিং উইন্ডো হাইড করুন';
+                toggleFloatingBtn.classList.remove('hidden-mode');
+            }
+        }
+        
+        chrome.storage.local.get(['hide_floating_window'], (res) => {
+            updateFloatingBtnUI(res && res.hide_floating_window === true);
+        });
+
+        toggleFloatingBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            chrome.storage.local.get(['hide_floating_window'], (res) => {
+                const currentHidden = res && res.hide_floating_window === true;
+                const newHidden = !currentHidden;
+                
+                // 1. Update popup button UI immediately for instant feedback
+                updateFloatingBtnUI(newHidden);
+
+                // 2. Save state to storage
+                chrome.storage.local.set({ hide_floating_window: newHidden });
+
+                // 3. Broadcast directly to all open tabs for 0ms INSTANT hide/show without reloading!
+                if (chrome.tabs && typeof chrome.tabs.query === 'function') {
+                    chrome.tabs.query({}, (tabs) => {
+                        if (tabs && tabs.length) {
+                            tabs.forEach((tab) => {
+                                if (tab && tab.id) {
+                                    chrome.tabs.sendMessage(tab.id, {
+                                        action: 'TOGGLE_FLOATING_WINDOW',
+                                        hide: newHidden
+                                    }, () => {
+                                        if (chrome.runtime.lastError) {}
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        });
+    }
+
     // Open FormFill Integrated Side Panel with Desktop License Gate
     const btnOpenFormFill = document.getElementById('btn-open-formfill');
     if (btnOpenFormFill) {
@@ -1119,7 +1179,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const devBadge = document.getElementById('popup-device-badge');
         const lockOverlay = document.getElementById('license-lock-overlay');
         try {
-            const statusRes = await fetch('http://127.0.0.1:5000/api/status');
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 1500);
+            let statusRes;
+            try {
+                statusRes = await fetch('http://127.0.0.1:5000/api/status', { signal: controller.signal });
+            } finally {
+                clearTimeout(tid);
+            }
             if (!statusRes.ok) throw new Error("Server offline");
             statusData = await statusRes.json();
             
@@ -1128,8 +1195,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("License invalid or expired");
             }
             
+            // Cache connected & valid state
+            chrome.storage.local.set({
+                server_connected: true,
+                license_valid: true
+            });
+            
             // Server is CONNECTED and LICENSED: Hide lock overlay
-                        // Server is CONNECTED and LICENSED: Hide lock overlay & update status text
             if (lockOverlay) lockOverlay.style.display = 'none';
             serverDot.className = "dot green";
             serverText.innerText = "সংযুক্ত";
@@ -1237,6 +1309,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
         } catch (e) {
+            chrome.storage.local.set({
+                server_connected: false,
+                license_valid: false
+            });
             const lockOverlay = document.getElementById('license-lock-overlay');
             if (lockOverlay) lockOverlay.style.display = 'flex';
             latestServerStatus = null;

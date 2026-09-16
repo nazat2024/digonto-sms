@@ -5,12 +5,12 @@ a = Analysis(
     ['D:/Ivac Auto Fill/obf_dist/gui_app.py'],
     pathex=['D:/Ivac Auto Fill', 'D:/Ivac Auto Fill/obf_dist'],
     binaries=[],
-    datas=[('D:/Ivac Auto Fill/dashboard', 'dashboard'), ('D:/Ivac Auto Fill/obf_dist/chrome_extension', 'chrome_extension'), ('D:/Ivac Auto Fill/config.json', '.'), ('D:/Ivac Auto Fill/sim_mapping.json', '.'), ('D:/Ivac Auto Fill/chrome_profile_manager.py', '.'), ('D:/Ivac Auto Fill/golden_isolated_sp.json', '.'), ('D:/Ivac Auto Fill/icon.ico', '.'), ('D:/Ivac Auto Fill/digonto_icon.ico', '.'), ('D:/Ivac Auto Fill/logo App Light.png', '.')],
-    hiddenimports=['flask', 'flask_socketio', 'flask_cors', 'engineio.async_drivers.threading', 'socketio', 'gevent', 'sms_server', 'customtkinter', 'chrome_profile_manager', 'license_system', 'license_system.hwid', 'license_system.crypto', 'license_system.license_manager', 'customtkinter', 'requests', 'otp_parser', 'tkinter', 'tkinter.simpledialog', 'tkinter.messagebox', 'gui_license', 'paho', 'paho.mqtt', 'paho.mqtt.client', 'websocket'],
+    datas=[('D:/Ivac Auto Fill/dashboard', 'dashboard'), ('D:/Ivac Auto Fill/obf_dist/chrome_extension', 'chrome_extension'), ('D:/Ivac Auto Fill/config.json', '.'), ('D:/Ivac Auto Fill/sim_mapping.json', '.'), ('D:/Ivac Auto Fill/chrome_profile_manager.py', '.'), ('D:/Ivac Auto Fill/golden_isolated_sp.json', '.'), ('D:/Ivac Auto Fill/icon.ico', '.'), ('D:/Ivac Auto Fill/digonto_icon.ico', '.'), ('D:/Ivac Auto Fill/logo App Light.png', '.'), ('D:/Ivac Auto Fill/models', 'models')],
+    hiddenimports=['flask', 'flask_socketio', 'flask_cors', 'engineio.async_drivers.threading', 'socketio', 'gevent', 'sms_server', 'customtkinter', 'chrome_profile_manager', 'license_system', 'license_system.hwid', 'license_system.crypto', 'license_system.license_manager', 'customtkinter', 'requests', 'otp_parser', 'tkinter', 'tkinter.simpledialog', 'tkinter.messagebox', 'gui_license', 'paho', 'paho.mqtt', 'paho.mqtt.client', 'websocket', 'visa_photo', 'cv2', 'PIL', 'PIL.Image', 'PIL.ImageOps'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['numba', 'llvmlite', 'scipy', 'matplotlib', 'skimage', 'torch', 'torchvision', 'torchaudio', 'rembg', 'pymatting', 'onnxruntime'],
     noarchive=False,
     optimize=0,
 )
@@ -32,6 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='D:/Ivac Auto Fill/version_info.txt',
     icon=['D:/Ivac Auto Fill/digonto_icon.ico'],
 )
 coll = COLLECT(

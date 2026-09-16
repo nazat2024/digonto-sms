@@ -33,6 +33,10 @@ OUTPUT_NAME = "IVAC Master Pro"
 def clean():
     """আগের সব বিল্ড ফোল্ডার পরিষ্কার করে।"""
     print("\n  🧹 [1/4] পুরানো ফাইল পরিষ্কার করা হচ্ছে...")
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "IVAC Master Pro.exe"], capture_output=True)
+    except Exception:
+        pass
     for d in [OBF_DIR, DIST_DIR, BUILD_DIR]:
         if os.path.exists(d):
             shutil.rmtree(d)
@@ -83,7 +87,7 @@ def minify_and_obfuscate():
                 shutil.rmtree(dest_lic)
             shutil.copytree("license_system", dest_lic)
             
-        for py_file in ["gui_license.py", "sms_server.py", "gui_app.py", "chrome_profile_manager.py", "otp_parser.py"]:
+        for py_file in ["gui_license.py", "sms_server.py", "gui_app.py", "chrome_profile_manager.py", "otp_parser.py", "visa_photo.py"]:
             if os.path.exists(py_file):
                 shutil.copy(py_file, os.path.join(OBF_DIR, py_file))
         
@@ -141,6 +145,7 @@ def build_exe():
         (os.path.join(BASE_DIR, "icon.ico"), "."),
         (os.path.join(BASE_DIR, "digonto_icon.ico"), "."),
         (os.path.join(BASE_DIR, "logo App Light.png"), "."),
+        (os.path.join(BASE_DIR, "models"), "models"),
     ]
     
     hidden_imports = [
@@ -150,7 +155,14 @@ def build_exe():
         "license_system", "license_system.hwid",
         "license_system.crypto", "license_system.license_manager",
         "customtkinter", "requests", "otp_parser", "tkinter", "tkinter.simpledialog", "tkinter.messagebox", "gui_license",
-        "paho", "paho.mqtt", "paho.mqtt.client", "websocket"
+        "paho", "paho.mqtt", "paho.mqtt.client", "websocket",
+        "visa_photo", "cv2", "PIL", "PIL.Image", "PIL.ImageOps"
+    ]
+
+    excludes = [
+        "numba", "llvmlite", "scipy", "matplotlib", "skimage",
+        "torch", "torchvision", "torchaudio", "rembg", "pymatting",
+        "onnxruntime"
     ]
     
     # We build from the obfuscated `gui_app.py`
@@ -178,6 +190,9 @@ def build_exe():
         
     for imp in hidden_imports:
         cmd.extend(["--hidden-import", imp])
+
+    for exc in excludes:
+        cmd.extend(["--exclude-module", exc])
         
     # include pyarmor runtime path
     cmd.extend(["--paths", OBF_DIR])
@@ -187,11 +202,28 @@ def build_exe():
     result = subprocess.run(cmd, cwd=BASE_DIR)
     
     if result.returncode == 0:
+        app_root = os.path.join(DIST_DIR, OUTPUT_NAME)
+        internal_dir = os.path.join(app_root, '_internal')
+
+        # Size Optimization: Remove unused heavy OpenCV video DLLs (30.8MB) and .map files
+        if os.path.exists(internal_dir):
+            for root, dirs, files in os.walk(internal_dir):
+                for file in files:
+                    if file.startswith("opencv_videoio_ffmpeg") and file.endswith(".dll"):
+                        try:
+                            os.remove(os.path.join(root, file))
+                            print(f"    🗑️ অপ্রয়োজনীয় ভিডিও DLL সরানো হয়েছে ({file}) - ৩০ মেগাবাইট সাশ্রয়!")
+                        except Exception:
+                            pass
+                    elif file.endswith(".map"):
+                        try:
+                            os.remove(os.path.join(root, file))
+                        except Exception:
+                            pass
+
         # Windows 7 Compatibility Fix: copy api-ms-win-core-path-l1-1-0.dll
         win7_dll_src = os.path.join(BASE_DIR, 'win7_fix', 'x64', 'api-ms-win-core-path-l1-1-0.dll')
         if os.path.exists(win7_dll_src):
-            app_root = os.path.join(DIST_DIR, OUTPUT_NAME)
-            internal_dir = os.path.join(app_root, '_internal')
             shutil.copy2(win7_dll_src, os.path.join(app_root, 'api-ms-win-core-path-l1-1-0.dll'))
             if os.path.exists(internal_dir):
                 shutil.copy2(win7_dll_src, os.path.join(internal_dir, 'api-ms-win-core-path-l1-1-0.dll'))

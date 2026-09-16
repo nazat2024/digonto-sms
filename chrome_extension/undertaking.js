@@ -71,11 +71,23 @@ function initUI() {
     document.getElementById("inputTreatment").value = state.treatment || "";
     document.getElementById("inputMission").value = state.mission || "RAJSHAHI";
 
-    // Bind Hospital inputs to state
-    document.getElementById("inputHospitalName").addEventListener("input", e => state.hospitalName = e.target.value.toUpperCase());
-    document.getElementById("inputHospitalAddress").addEventListener("input", e => state.hospitalAddress = e.target.value.toUpperCase());
-    document.getElementById("inputTreatment").addEventListener("input", e => state.treatment = e.target.value.toUpperCase());
-    document.getElementById("inputMission").addEventListener("change", e => state.mission = e.target.value);
+    // Bind Hospital inputs to state & update live preview
+    document.getElementById("inputHospitalName").addEventListener("input", e => {
+        state.hospitalName = e.target.value.toUpperCase();
+        updateLivePreview();
+    });
+    document.getElementById("inputHospitalAddress").addEventListener("input", e => {
+        state.hospitalAddress = e.target.value.toUpperCase();
+        updateLivePreview();
+    });
+    document.getElementById("inputTreatment").addEventListener("input", e => {
+        state.treatment = e.target.value.toUpperCase();
+        updateLivePreview();
+    });
+    document.getElementById("inputMission").addEventListener("change", e => {
+        state.mission = e.target.value;
+        updateLivePreview();
+    });
 
     renderProfilePicker();
     renderSignerAndAccompanying();
@@ -111,6 +123,7 @@ function renderProfilePicker() {
                 state.selectedProfileIndex = 0;
             }
             renderSignerAndAccompanying();
+            updateLivePreview();
         };
         return;
     }
@@ -145,6 +158,7 @@ function renderProfilePicker() {
             state.selectedProfileIndex = p.index;
             renderProfilePicker();
             renderSignerAndAccompanying();
+            updateLivePreview();
         };
         grid.appendChild(card);
     });
@@ -174,11 +188,11 @@ function renderSignerAndAccompanying() {
         document.getElementById("inputSignerPhone").value = att.phone || "";
         document.getElementById("inputSignerRelationship").value = att.relationship || "BROTHER";
 
-        document.getElementById("inputSignerName").oninput = e => att.name = e.target.value.toUpperCase();
-        document.getElementById("inputSignerPassport").oninput = e => att.passport = e.target.value.toUpperCase();
-        document.getElementById("inputSignerDob").oninput = e => att.dob = e.target.value;
-        document.getElementById("inputSignerPhone").oninput = e => att.phone = e.target.value;
-        document.getElementById("inputSignerRelationship").oninput = e => att.relationship = e.target.value.toUpperCase();
+        document.getElementById("inputSignerName").oninput = e => { att.name = e.target.value.toUpperCase(); updateLivePreview(); };
+        document.getElementById("inputSignerPassport").oninput = e => { att.passport = e.target.value.toUpperCase(); updateLivePreview(); };
+        document.getElementById("inputSignerDob").oninput = e => { att.dob = e.target.value; updateLivePreview(); };
+        document.getElementById("inputSignerPhone").oninput = e => { att.phone = e.target.value; updateLivePreview(); };
+        document.getElementById("inputSignerRelationship").oninput = e => { att.relationship = e.target.value.toUpperCase(); updateLivePreview(); };
 
         // Accompanying Patient Details
         accHeader.innerText = "Accompanying Patient Details (সঙ্গী রোগী)";
@@ -195,8 +209,8 @@ function renderSignerAndAccompanying() {
                 </div>
             </div>
         `;
-        document.getElementById("inputAccPatName").oninput = e => state.patient.name = e.target.value.toUpperCase();
-        document.getElementById("inputAccPatPassport").oninput = e => state.patient.passport = e.target.value.toUpperCase();
+        document.getElementById("inputAccPatName").oninput = e => { state.patient.name = e.target.value.toUpperCase(); updateLivePreview(); };
+        document.getElementById("inputAccPatPassport").oninput = e => { state.patient.passport = e.target.value.toUpperCase(); updateLivePreview(); };
 
     } else {
         signerHdr.innerHTML = `
@@ -211,10 +225,10 @@ function renderSignerAndAccompanying() {
         document.getElementById("inputSignerDob").value = pat.dob || "";
         document.getElementById("inputSignerPhone").value = pat.phone || "";
 
-        document.getElementById("inputSignerName").oninput = e => pat.name = e.target.value.toUpperCase();
-        document.getElementById("inputSignerPassport").oninput = e => pat.passport = e.target.value.toUpperCase();
-        document.getElementById("inputSignerDob").oninput = e => pat.dob = e.target.value;
-        document.getElementById("inputSignerPhone").oninput = e => pat.phone = e.target.value;
+        document.getElementById("inputSignerName").oninput = e => { pat.name = e.target.value.toUpperCase(); updateLivePreview(); };
+        document.getElementById("inputSignerPassport").oninput = e => { pat.passport = e.target.value.toUpperCase(); updateLivePreview(); };
+        document.getElementById("inputSignerDob").oninput = e => { pat.dob = e.target.value; updateLivePreview(); };
+        document.getElementById("inputSignerPhone").oninput = e => { pat.phone = e.target.value; updateLivePreview(); };
 
         // Accompanying Attendants List
         accHeader.innerText = "Accompanying Attendants Details (সঙ্গী সহকারীগণ)";
@@ -260,10 +274,11 @@ function renderAccompanyingAttendantsList() {
             }
             renderProfilePicker();
             renderSignerAndAccompanying();
+            updateLivePreview();
         };
 
-        item.querySelector(".input-att-name").oninput = e => att.name = e.target.value.toUpperCase();
-        item.querySelector(".input-att-ppt").oninput = e => att.passport = e.target.value.toUpperCase();
+        item.querySelector(".input-att-name").oninput = e => { att.name = e.target.value.toUpperCase(); updateLivePreview(); };
+        item.querySelector(".input-att-ppt").oninput = e => { att.passport = e.target.value.toUpperCase(); updateLivePreview(); };
 
         accBody.appendChild(item);
     });
@@ -275,6 +290,7 @@ function renderAccompanyingAttendantsList() {
         state.attendants.push({ name: "", passport: "", dob: "", phone: "", relationship: "BROTHER" });
         renderProfilePicker();
         renderSignerAndAccompanying();
+        updateLivePreview();
     };
     accBody.appendChild(addBtn);
 }
@@ -508,32 +524,39 @@ function parseInvitationText(raw) {
 }
 
 // ----------------------------------------------------
-// 7. PDF GENERATION LOGIC
+// 7. 1-PAGE GUARANTEED PDF & LIVE PREVIEW LOGIC
 // ----------------------------------------------------
 function getSignerData() {
     const isAttendant = state.selectedProfileIndex > 0;
+    const inputName = document.getElementById("inputSignerName")?.value.trim() || "";
+    const inputPpt = document.getElementById("inputSignerPassport")?.value.trim() || "";
+    const inputPhone = document.getElementById("inputSignerPhone")?.value.trim() || "";
+    const inputRel = document.getElementById("inputSignerRelationship")?.value.trim() || "";
+    const patName = document.getElementById("inputAccPatName")?.value.trim() || state.patient?.name || "";
+    const patPpt = document.getElementById("inputAccPatPassport")?.value.trim() || state.patient?.passport || "";
+
     if (isAttendant) {
         const att = state.attendants[state.selectedProfileIndex - 1] || {};
         return {
             isAttendant: true,
-            signerName: att.name || "Signer",
-            signerPassport: att.passport || "",
-            signerPhone: att.phone || "",
+            signerName: inputName || att.name || "Signer",
+            signerPassport: inputPpt || att.passport || "",
+            signerPhone: inputPhone || att.phone || "",
             signerDob: att.dob || "",
-            relationship: att.relationship || "BROTHER",
-            patientName: state.patient?.name || "",
-            patientPassport: state.patient?.passport || ""
+            relationship: inputRel || att.relationship || "BROTHER",
+            patientName: patName || state.patient?.name || "",
+            patientPassport: patPpt || state.patient?.passport || ""
         };
     } else {
         return {
             isAttendant: false,
-            signerName: state.patient?.name || "Signer",
-            signerPassport: state.patient?.passport || "",
-            signerPhone: state.patient?.phone || "",
+            signerName: inputName || state.patient?.name || "Signer",
+            signerPassport: inputPpt || state.patient?.passport || "",
+            signerPhone: inputPhone || state.patient?.phone || "",
             signerDob: state.patient?.dob || "",
             relationship: "",
-            patientName: state.patient?.name || "",
-            patientPassport: state.patient?.passport || ""
+            patientName: inputName || state.patient?.name || "",
+            patientPassport: inputPpt || state.patient?.passport || ""
         };
     }
 }
@@ -546,14 +569,12 @@ function getSignatureImageSrc() {
     return null;
 }
 
-function generateUndertakingPdf() {
-    const s = getSignerData();
-    const sigSrc = getSignatureImageSrc();
-
-    if (!state.hospitalName || !s.signerName) {
-        alert("Please ensure Hospital Name and Signer Name are filled.");
-        return;
-    }
+function buildUndertakingHtml(s, sigSrc) {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, "0");
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const yyyy = today.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
 
     const validAtts = (Array.isArray(state.attendants) ? state.attendants : []).filter(a => a.name && a.name.trim());
     let companionDetailsHtml = "";
@@ -562,9 +583,11 @@ function generateUndertakingPdf() {
 
     if (s.isAttendant) {
         companionDetailsHtml = `
-            <p style="margin: 0 0 3px 0; color: #000000 !important;">Details of the patient I will be accompanying:</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #000000 !important;">Name: ${escapeHtml(s.patientName)}</p>
-            <p style="margin: 0 0 10px 0; font-weight: bold; color: #000000 !important;">Passport Number: ${escapeHtml(s.patientPassport)}</p>
+            <div style="margin: 6px 0; padding: 4px 8px; background: #fafafa; border-left: 2px solid #555;">
+                <p style="margin: 0 0 2px 0; font-size: 13.5px; color: #111;">Details of the patient I will be accompanying:</p>
+                <p style="margin: 0 0 1px 0; font-weight: bold; font-size: 14px; color: #000;">Name: ${escapeHtml(s.patientName)}</p>
+                <p style="margin: 0; font-weight: bold; font-size: 14px; color: #000;">Passport Number: ${escapeHtml(s.patientPassport)}</p>
+            </div>
         `;
         listItemsHtml = `
             <li style="margin-bottom: 3.5px;">All information provided in the visa application and supporting documents is true and correct to the best of my knowledge.</li>
@@ -578,50 +601,53 @@ function generateUndertakingPdf() {
     } else if (validAtts.length > 0) {
         if (validAtts.length > 1) {
             companionDetailsHtml = `
-                <p style="margin: 0 0 4px 0; color: #000000 !important;">I would also like to request the issuance of a Medical Attendant Visa for my attendants:</p>
-                ${validAtts.map((a, i) => `
-                    <div style="margin-bottom: 4px;">
-                        <p style="margin: 0 0 1px 0; font-weight: bold; color: #000000 !important;">Attendant ${i + 1} Name: ${escapeHtml(a.name)}</p>
-                        <p style="margin: 0 0 0 0; font-weight: bold; color: #000000 !important;">Passport Number: ${escapeHtml(a.passport)}</p>
-                    </div>
-                `).join("")}
+                <div style="margin: 14px 0 16px 0; padding: 10px 14px; background: #f8fafc; border-left: 3px solid #334155;">
+                    <p style="margin: 0 0 5px 0; font-size: 14.5px; color: #111;">I would also like to request the issuance of Medical Attendant Visas for my attendants:</p>
+                    ${validAtts.map((a, i) => `
+                        <div style="margin-bottom: 4px;">
+                            <span style="font-size: 14.5px; font-weight: bold; color: #000;">${i + 1}. Name: ${escapeHtml(a.name)}</span> |
+                            <span style="font-size: 14.5px; font-weight: bold; color: #000;">Passport: ${escapeHtml(a.passport)}</span>
+                        </div>
+                    `).join("")}
+                </div>
             `;
             const attNamesStr = validAtts.map(a => `<b>${escapeHtml(a.name)}</b>`).join(" and ");
             listItemsHtml = `
-                <li style="margin-bottom: 3.5px;">All information provided in the visa application and supporting documents is true and correct to the best of my knowledge.</li>
-                <li style="margin-bottom: 3.5px;">My attendants, ${attNamesStr}, will accompany me only for the purpose of providing necessary assistance during my medical treatment.</li>
-                <li style="margin-bottom: 3.5px;">We shall abide by all laws, rules, and regulations of India during our stay.</li>
-                <li style="margin-bottom: 3.5px;">We shall not engage in any activity other than those permitted under the respective visa categories.</li>
-                <li style="margin-bottom: 3.5px;">We shall bear all expenses related to travel, accommodation, medical treatment, and other associated costs during our stay in India.</li>
-                <li style="margin-bottom: 3.5px;">We shall leave India upon completion of the medical treatment and within the validity period of the visas granted.</li>
+                <li style="margin-bottom: 8px;">All information provided in the visa application and supporting documents is true and correct to the best of my knowledge.</li>
+                <li style="margin-bottom: 8px;">My attendants, ${attNamesStr}, will accompany me only for the purpose of providing necessary assistance during my medical treatment.</li>
+                <li style="margin-bottom: 8px;">We shall abide by all laws, rules, and regulations of India during our stay.</li>
+                <li style="margin-bottom: 8px;">We shall not engage in any activity other than those permitted under the respective visa categories.</li>
+                <li style="margin-bottom: 8px;">We shall bear all expenses related to travel, accommodation, medical treatment, and other associated costs during our stay in India.</li>
+                <li style="margin-bottom: 8px;">We shall leave India upon completion of the medical treatment and within the validity period of the visas granted.</li>
             `;
         } else {
             const a = validAtts[0];
             companionDetailsHtml = `
-                <p style="margin: 0 0 3px 0; color: #000000 !important;">I would also like to request the issuance of a Medical Attendant Visa for my attendant:</p>
-                <p style="margin: 0 0 2px 0; font-weight: bold; color: #000000 !important;">Name: ${escapeHtml(a.name)}</p>
-                <p style="margin: 0 0 10px 0; font-weight: bold; color: #000000 !important;">Passport Number: ${escapeHtml(a.passport)}</p>
+                <div style="margin: 14px 0 16px 0; padding: 10px 14px; background: #f8fafc; border-left: 3px solid #334155;">
+                    <p style="margin: 0 0 5px 0; font-size: 14.5px; color: #111;">I would also like to request the issuance of a Medical Attendant Visa for my attendant:</p>
+                    <p style="margin: 0 0 3px 0; font-weight: bold; font-size: 14.5px; color: #000;">Name: ${escapeHtml(a.name)}</p>
+                    <p style="margin: 0; font-weight: bold; font-size: 14.5px; color: #000;">Passport Number: ${escapeHtml(a.passport)}</p>
+                </div>
             `;
             listItemsHtml = `
-                <li style="margin-bottom: 3.5px;">All information provided in the visa application and supporting documents is true and correct to the best of my knowledge.</li>
-                <li style="margin-bottom: 3.5px;">My attendant, <b>${escapeHtml(a.name)}</b>, will accompany me only for the purpose of providing necessary assistance during my medical treatment.</li>
-                <li style="margin-bottom: 3.5px;">We shall abide by all laws, rules, and regulations of India during our stay.</li>
-                <li style="margin-bottom: 3.5px;">We shall not engage in any activity other than those permitted under the respective visa categories.</li>
-                <li style="margin-bottom: 3.5px;">We shall bear all expenses related to travel, accommodation, medical treatment, and other associated costs during our stay in India.</li>
-                <li style="margin-bottom: 3.5px;">We shall leave India upon completion of the medical treatment and within the validity period of the visas granted.</li>
+                <li style="margin-bottom: 8px;">All information provided in the visa application and supporting documents is true and correct to the best of my knowledge.</li>
+                <li style="margin-bottom: 8px;">My attendant, <b>${escapeHtml(a.name)}</b>, will accompany me only for the purpose of providing necessary assistance during my medical treatment.</li>
+                <li style="margin-bottom: 8px;">We shall abide by all laws, rules, and regulations of India during our stay.</li>
+                <li style="margin-bottom: 8px;">We shall not engage in any activity other than those permitted under the respective visa categories.</li>
+                <li style="margin-bottom: 8px;">We shall bear all expenses related to travel, accommodation, medical treatment, and other associated costs during our stay in India.</li>
+                <li style="margin-bottom: 8px;">We shall leave India upon completion of the medical treatment and within the validity period of the visas granted.</li>
             `;
         }
         requestText = `I respectfully request the High Commission of India to kindly consider our visa applications and grant the necessary visas.`;
     } else {
-        // Solo Patient (0 Attendants)
         companionDetailsHtml = "";
         listItemsHtml = `
-            <li style="margin-bottom: 3.5px;">All information provided in the visa application and supporting documents is true and correct to the best of my knowledge.</li>
-            <li style="margin-bottom: 3.5px;">I shall travel to India solely for the purpose of receiving medical treatment.</li>
-            <li style="margin-bottom: 3.5px;">I shall abide by all laws, rules, and regulations of India during my stay.</li>
-            <li style="margin-bottom: 3.5px;">I shall not engage in any activity other than those permitted under the medical visa category.</li>
-            <li style="margin-bottom: 3.5px;">I shall bear all expenses related to travel, accommodation, medical treatment, and other associated costs during my stay in India.</li>
-            <li style="margin-bottom: 3.5px;">I shall leave India upon completion of the medical treatment and within the validity period of the visa granted.</li>
+            <li style="margin-bottom: 8px;">All information provided in the visa application and supporting documents is true and correct to the best of my knowledge.</li>
+            <li style="margin-bottom: 8px;">I shall travel to India solely for the purpose of receiving medical treatment.</li>
+            <li style="margin-bottom: 8px;">We shall abide by all laws, rules, and regulations of India during our stay.</li>
+            <li style="margin-bottom: 8px;">I shall not engage in any activity other than those permitted under the medical visa category.</li>
+            <li style="margin-bottom: 8px;">I shall bear all expenses related to travel, accommodation, medical treatment, and other associated costs during my stay in India.</li>
+            <li style="margin-bottom: 8px;">I shall leave India upon completion of the medical treatment and within the validity period of the visa granted.</li>
         `;
         requestText = `I respectfully request the High Commission of India to kindly consider my visa application and grant the necessary Medical Visa.`;
     }
@@ -631,65 +657,159 @@ function generateUndertakingPdf() {
         : `I, <b>${escapeHtml(s.signerName)}</b>, holder of Bangladesh Passport No. <b>${escapeHtml(s.signerPassport)}</b>, am applying for a Medical Visa to travel to India for treatment at <b>${escapeHtml(state.hospitalName)}</b>, located at <b>${escapeHtml(state.hospitalAddress)}</b>.`;
 
     const sigBlock = sigSrc
-        ? `<div style="margin: 4px 0 6px 0;"><img src="${sigSrc}" style="height: 38px; object-fit: contain; max-width: 180px;"></div>`
-        : `<div style="height: 28px; margin: 4px 0 6px 0;"></div>`;
+        ? `<div style="height: 52px; display: flex; align-items: flex-end; margin: 6px 0 10px 0;"><img src="${sigSrc}" style="max-height: 48px; max-width: 175px; object-fit: contain;"></div>`
+        : `<div style="height: 42px; display: flex; align-items: flex-end; margin: 6px 0 10px 0;"><div style="width: 160px; border-bottom: 1.5px solid #000;"></div></div>`;
+
+    const missionClean = (state.mission || "RAJSHAHI").trim().toUpperCase();
+
+    return `
+        <div style="
+            background: #ffffff;
+            color: #000000;
+            font-family: 'Times New Roman', Times, Georgia, serif;
+            font-size: 14.5px;
+            line-height: 1.56;
+            text-align: left;
+            padding-right: 4px;
+            box-sizing: border-box;
+        ">
+            <!-- Top Header: To Address & Date -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px;">
+                <div style="line-height: 1.45; font-size: 14.5px; color: #000;">
+                    <p style="margin: 0;">To,</p>
+                    <p style="margin: 0; font-weight: bold;">The Visa Officer,</p>
+                    <p style="margin: 0;">High Commission of India,</p>
+                    <p style="margin: 0;">${escapeHtml(missionClean)}, Bangladesh.</p>
+                </div>
+                <div style="font-size: 14.5px; font-weight: bold; text-align: right; color: #000; line-height: 1.45; white-space: nowrap; padding-right: 4px;">
+                    Date: ${dateStr}
+                </div>
+            </div>
+
+            <!-- Subject Title -->
+            <div style="text-align: center; margin: 20px 0 18px 0;">
+                <span style="font-size: 15.5px; font-weight: bold; text-decoration: underline; text-transform: uppercase; letter-spacing: 0.3px; color: #000;">
+                    SUBJECT: UNDERTAKING FOR ${s.isAttendant ? "MEDICAL ATTENDANT" : "MEDICAL"} VISA APPLICATION.
+                </span>
+            </div>
+
+            <!-- First Paragraph -->
+            <p style="margin: 0 0 16px 0; text-align: justify; text-justify: inter-word; color: #000; line-height: 1.58; font-size: 14.5px;">
+                ${firstParagraph}
+            </p>
+
+            <!-- Companion / Attendant Details -->
+            ${companionDetailsHtml}
+
+            <!-- Undertaking Points -->
+            <div style="margin: 16px 0 16px 0;">
+                <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 14.5px; color: #000;">I undertake that:</p>
+                <ol style="margin: 0; padding-left: 22px; text-align: justify; text-justify: inter-word; color: #000; line-height: 1.54; font-size: 14px;">
+                    ${listItemsHtml}
+                </ol>
+            </div>
+
+            <!-- Request Paragraph -->
+            <p style="margin: 16px 0 0 0; text-align: justify; text-justify: inter-word; color: #000; line-height: 1.58; font-size: 14.5px;">
+                ${requestText}
+            </p>
+
+            <!-- FOOTER: SIGNATURE & SIGNER DETAILS -->
+            <div style="margin-top: 32px; line-height: 1.40; color: #000;">
+                <p style="margin: 0 0 4px 0; font-size: 14.5px;">Sincerely yours,</p>
+                ${sigBlock}
+                <p style="margin: 0 0 3px 0; font-weight: bold; font-size: 14.5px;">(${escapeHtml(s.signerName)})</p>
+                <p style="margin: 0 0 3px 0; font-size: 14px;">Passport Number: <b>${escapeHtml(s.signerPassport)}</b></p>
+                ${s.signerPhone ? `<p style="margin: 0; font-size: 14px;">Contact Number: ${escapeHtml(s.signerPhone)}</p>` : ""}
+            </div>
+        </div>
+    `;
+}
+
+function updateLivePreview() {
+    // No-op: previews removed per user request
+}
+
+function generateUndertakingPdf() {
+    const s = getSignerData();
+    const sigSrc = getSignatureImageSrc();
+
+    if (!state.hospitalName || !s.signerName) {
+        alert("Please ensure Hospital Name and Signer Name are filled.");
+        return;
+    }
+
+    const btn = document.getElementById("btnDownloadUndertaking");
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Preparing 1-Page PDF...</span>`;
+    }
 
     const container = document.createElement("div");
-    container.style.position = "relative";
     container.style.width = "180mm";
     container.style.boxSizing = "border-box";
     container.style.background = "#ffffff";
     container.style.color = "#000000";
     container.style.padding = "0";
     container.style.margin = "0";
-    container.style.display = "block";
-    container.style.pageBreakInside = "avoid";
-    container.style.breakInside = "avoid";
-    container.innerHTML = `
-        <div style="font-family: Arial, sans-serif; font-size: 13px; line-height: 1.38; color: #000000 !important; text-align: left;">
-            <p style="margin: 0 0 2px 0; color: #000000 !important;">To</p>
-            <p style="margin: 0 0 2px 0; color: #000000 !important;">The Visa Officer</p>
-            <p style="margin: 0 0 2px 0; color: #000000 !important;">High Commission of India</p>
-            <p style="margin: 0 0 12px 0; color: #000000 !important;">${escapeHtml((state.mission || "RAJSHAHI").toUpperCase())}, Bangladesh</p>
+    container.innerHTML = buildUndertakingHtml(s, sigSrc);
 
-            <p style="margin: 0 0 12px 0; font-weight: bold; text-decoration: underline; color: #000000 !important;">
-                Subject: Undertaking for ${s.isAttendant ? "Medical Attendant" : "Medical"} Visa Application.
-            </p>
+    const cleanName = (s.signerName || "Applicant").trim().replace(/[-_()<>:"/\\|?*]/g, " ").replace(/\s+/g, " ").trim();
+    const filename = `${cleanName} Medical Undertaking.pdf`;
 
-            <p style="margin: 0 0 10px 0; text-align: justify; color: #000000 !important;">
-                ${firstParagraph}
-            </p>
-
-            ${companionDetailsHtml}
-
-            <p style="margin: 0 0 5px 0; font-weight: bold; color: #000000 !important;">I undertake that:</p>
-            <ol style="margin: 0 0 10px 0; padding-left: 20px; text-align: justify; color: #000000 !important;">
-                ${listItemsHtml}
-            </ol>
-
-            <p style="margin: 0 0 12px 0; text-align: justify; color: #000000 !important;">
-                ${requestText}
-            </p>
-
-            <p style="margin: 0 0 4px 0; color: #000000 !important;">Sincerely yours,</p>
-            ${sigBlock}
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #000000 !important;">(${escapeHtml(s.signerName)})</p>
-            <p style="margin: 0 0 2px 0; color: #000000 !important;">Passport Number: ${escapeHtml(s.signerPassport)}</p>
-            ${s.signerPhone ? `<p style="margin: 0 0 2px 0; color: #000000 !important;">Contact Number: ${escapeHtml(s.signerPhone)}</p>` : ""}
-        </div>
-    `;
-
-    const filename = `${s.signerName.trim().replace(/[<>:"/\\|?*]/g, "")} - Medical Undertaking.pdf`;
     const opt = {
-        margin: [10, 14, 10, 14],
+        margin: [12, 15, 12, 15],
         filename: filename,
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
+        html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            scrollY: 0,
+            scrollX: 0
+        },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["avoid-all", "css", "legacy"] }
+        pagebreak: { mode: [] }
     };
 
-    html2pdf().from(container).set(opt).save().then(() => {
+    html2pdf().from(container).set(opt).output("blob").then(blob => {
+        const blobUrl = URL.createObjectURL(blob);
+        if (typeof chrome !== "undefined" && chrome.downloads && chrome.downloads.download) {
+            chrome.downloads.download({
+                url: blobUrl,
+                filename: filename,
+                conflictAction: "overwrite",
+                saveAs: false
+            }, () => {
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+            });
+        } else {
+            const a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                a.remove();
+                URL.revokeObjectURL(blobUrl);
+            }, 3000);
+        }
+
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Download Medical Undertaking
+            `;
+        }
         showToast("Medical Undertaking downloaded!");
+    }).catch(err => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `Download Medical Undertaking`;
+        }
+        console.error("PDF generation error:", err);
+        alert("Failed to generate PDF: " + err.message);
     });
 }
+

@@ -1,6 +1,3 @@
-
-
-
 // ===== PAYMENT METHOD DETECTOR & INTERACTION TRACKER =====
 function detectPaymentMethodOnPage() {
     try {
@@ -144,27 +141,7 @@ function initProfileIdentity() {
                     emitActivity('ext_disabled', 'Extension বন্ধ (Off)', 'গ্রাহক এই প্রোফাইলে এক্সটেনশন অফ রেখেছেন', 0, 'warning');
                 }
             }
-            // Periodically ping local server while page is open (guarantees profile stays active even if service worker sleeps)
-            setInterval(() => {
-                try {
-                    chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone', 'ext_enabled'], (s) => {
-                        if (chrome.runtime.lastError) return;
-                        const pId = s.profile_id || currentProfileId;
-                        const phone = s.ivac_phone || '';
-                        const pLabel = phone ? `Profile (${phone})` : (s.profile_label || currentProfileLabel);
-                        const isAct = s.ext_enabled !== false;
-                        fetch('http://127.0.0.1:5000/api/activity/heartbeat', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                profile_id: pId,
-                                profile_label: pLabel,
-                                is_active: isAct
-                            })
-                        }).catch(() => {});
-                    });
-                } catch(e) {}
-            }, 20000);
+            // Profile activity heartbeat is managed centrally by background.js (sendProfileHeartbeat)
         });
     } catch(e) {}
 }
@@ -610,8 +587,17 @@ function checkInputForPhone(inputEl) {
 
 // Document event listeners handle phone capture safely on user input/change
 
-// Answer queries from popup regarding current page phone number
+// Answer queries from popup regarding current page phone number & widget toggle
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request && request.action === 'TOGGLE_FLOATING_WINDOW') {
+        const shouldHide = request.hide === true;
+        isFloatingWidgetHidden = shouldHide;
+        if (typeof setFloatingWidgetVisible === 'function') {
+            setFloatingWidgetVisible(!shouldHide);
+        }
+        sendResponse({ success: true, hidden: shouldHide });
+        return false;
+    }
     if (request && request.action === 'getLoginPagePhone') {
         const pInput = findIvacLoginPhoneInput();
         const pDigits = pInput ? (pInput.value || '').replace(/[^0-9]/g, '') : '';
@@ -764,11 +750,39 @@ setTimeout(autoFillLoginCredentials, 2500);
     } catch(e) {}
 })();
 
-// Real-time listener for credentials changes
+// Global in-memory visibility flag for instant zero-latency hide/show
+let isFloatingWidgetHidden = false;
+try {
+    chrome.storage.local.get(['hide_floating_window'], (res) => {
+        if (res && res.hide_floating_window === true) {
+            isFloatingWidgetHidden = true;
+            if (typeof setFloatingWidgetVisible === 'function') {
+                setFloatingWidgetVisible(false);
+            }
+        }
+    });
+} catch(e) {}
+
+// Real-time listener for credentials changes and floating window visibility
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && (changes.ivac_phone || changes.ivac_password)) {
-        if (!isProgrammaticFilling && typeof autoFillLoginCredentials === 'function') {
-            autoFillLoginCredentials();
+    if (area === 'local') {
+        if (changes.ivac_phone || changes.ivac_password) {
+            if (!isProgrammaticFilling && typeof autoFillLoginCredentials === 'function') {
+                autoFillLoginCredentials();
+            }
+        }
+        if (changes.hide_floating_window !== undefined) {
+            const isHidden = changes.hide_floating_window.newValue === true;
+            isFloatingWidgetHidden = isHidden;
+            if (typeof setFloatingWidgetVisible === 'function') {
+                setFloatingWidgetVisible(!isHidden);
+            }
+        }
+        if (changes.ext_enabled !== undefined) {
+            const isOff = changes.ext_enabled.newValue === false;
+            if (isOff && typeof setFloatingWidgetVisible === 'function') {
+                setFloatingWidgetVisible(false);
+            }
         }
     }
 });
@@ -777,26 +791,70 @@ chrome.storage.onChanged.addListener((changes, area) => {
 let pinWidgetEl = null;
 let widgetMinimized = false;
 
+function setFloatingWidgetVisible(visible) {
+    isFloatingWidgetHidden = !visible;
+    const rootEl = document.getElementById('ivac-pin-widget-root') || pinWidgetEl;
+    if (rootEl) {
+        rootEl.style.setProperty('display', visible ? 'block' : 'none', 'important');
+        const shadow = rootEl.shadowRoot || shadowDomRoot;
+        if (shadow) {
+            const box = shadow.getElementById('pin-box');
+            if (box) {
+                box.style.setProperty('display', visible ? 'block' : 'none', 'important');
+            }
+        }
+        if (!visible) {
+            // Physically detach from DOM so browser cannot render it under any circumstances
+            if (rootEl.parentNode) {
+                rootEl.parentNode.removeChild(rootEl);
+            } else if (typeof rootEl.remove === 'function') {
+                rootEl.remove();
+            }
+        } else {
+            // Re-attach to document if not present
+            if (!document.getElementById('ivac-pin-widget-root') || !document.contains(rootEl)) {
+                const docRoot = document.documentElement || document.body;
+                if (docRoot) docRoot.appendChild(rootEl);
+            }
+        }
+    }
+}
+
 function ensurePinWidgetAttached() {
     if (window.self !== window.top) return;
     if (window.location.protocol === 'chrome-extension:' || window.location.protocol === 'chrome:') return;
-    
-    const root = document.documentElement;
-    if (!root) return;
-
-    const existing = document.getElementById('ivac-pin-widget-root');
-    if (!existing || !document.contains(existing)) {
-        if (pinWidgetEl && shadowDomRoot) {
-            pinWidgetEl.style.display = 'block';
-            root.appendChild(pinWidgetEl);
-        } else {
-            createPinWidget();
+    if (isFloatingWidgetHidden) {
+        const existing = document.getElementById('ivac-pin-widget-root');
+        if (existing) {
+            if (existing.parentNode) existing.parentNode.removeChild(existing);
+            else existing.remove();
         }
-    } else {
-        if (existing.style.display === 'none') {
-            existing.style.display = 'block';
-        }
+        return;
     }
+    
+    chrome.storage.local.get(['ext_enabled', 'hide_floating_window'], (s) => {
+        if (s && (s.ext_enabled === false || s.hide_floating_window === true)) {
+            isFloatingWidgetHidden = true;
+            setFloatingWidgetVisible(false);
+            return;
+        }
+        if (isFloatingWidgetHidden) return;
+        
+        const root = document.documentElement || document.body;
+        if (!root) return;
+
+        const existing = document.getElementById('ivac-pin-widget-root');
+        if (!existing || !document.contains(existing)) {
+            if (pinWidgetEl && (pinWidgetEl.shadowRoot || shadowDomRoot)) {
+                setFloatingWidgetVisible(true);
+                root.appendChild(pinWidgetEl);
+            } else {
+                createPinWidget();
+            }
+        } else {
+            setFloatingWidgetVisible(true);
+        }
+    });
 }
 
 function createPinWidget() {
@@ -813,7 +871,7 @@ function createPinWidget() {
     if (!pinWidgetEl) {
         pinWidgetEl = document.createElement('div');
         pinWidgetEl.id = 'ivac-pin-widget-root';
-        pinWidgetEl.style.cssText = 'all: initial !important; display: block !important; position: fixed !important; z-index: 2147483647 !important; top: 0; left: 0; width: 0; height: 0;';
+        pinWidgetEl.style.cssText = 'all: initial !important; position: fixed !important; z-index: 2147483647 !important; top: 0; left: 0; width: 0; height: 0;';
         const shadow = pinWidgetEl.attachShadow({ mode: 'open' });
         shadowDomRoot = shadow;
     }
@@ -943,7 +1001,10 @@ function createPinWidget() {
                     <span id="pin-title">IVAC OTP</span>
                     <span id="pin-device-badge" style="display:none; font-size:9px; background:rgba(255,255,255,0.22); padding:1px 4px; border-radius:3px; margin-left:4px; font-weight:700; letter-spacing:0.3px;" title="সংযুক্ত মোবাইল / মোট মোবাইল">📱 0/0</span>
                 </div>
-                <button class="hdr-btn" id="min-btn">−</button>
+                <div style="display:flex; align-items:center; gap:2px;">
+                    <button class="hdr-btn" id="min-btn" title="মিনিমাইজ">−</button>
+                    <button class="hdr-btn" id="close-widget-btn" title="উইন্ডো লুকান" style="font-size:10px; padding:0 3px;">✕</button>
+                </div>
             </div>
             <div id="pin-body">
                 <div id="otp-display">
@@ -973,7 +1034,22 @@ function createPinWidget() {
     `;
 
     shadow.appendChild(wrapper);
-    document.documentElement.appendChild(pinWidgetEl);
+    if (!isFloatingWidgetHidden) {
+        const docRoot = document.documentElement || document.body;
+        if (docRoot) docRoot.appendChild(pinWidgetEl);
+    }
+
+    // Initial check to respect hide_floating_window
+    chrome.storage.local.get(['hide_floating_window', 'ext_enabled'], (s) => {
+        if (s && (s.ext_enabled === false || s.hide_floating_window === true)) {
+            isFloatingWidgetHidden = true;
+            setFloatingWidgetVisible(false);
+        } else {
+            if (!isFloatingWidgetHidden) {
+                setFloatingWidgetVisible(true);
+            }
+        }
+    });
 
     // Minimize/Expand toggle
     const minBtn = shadow.getElementById('min-btn');
@@ -984,6 +1060,16 @@ function createPinWidget() {
         pinBody.style.display = widgetMinimized ? 'none' : 'block';
         minBtn.textContent = widgetMinimized ? '+' : '-';
     });
+
+    // Close/Hide Widget button
+    const closeBtn = shadow.getElementById('close-widget-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            chrome.storage.local.set({ hide_floating_window: true });
+            setFloatingWidgetVisible(false);
+        });
+    }
 
 
 
@@ -1052,6 +1138,24 @@ function createPinWidget() {
 async function updateWidgetOtp(box) {
     if (!box) return;
     
+    // Fast check if widget is hidden by user
+    if (isFloatingWidgetHidden) {
+        setFloatingWidgetVisible(false);
+        return;
+    }
+    try {
+        const pref = await new Promise(r => chrome.storage.local.get(['hide_floating_window', 'ext_enabled'], s => r(s || {})));
+        if (pref.ext_enabled === false || pref.hide_floating_window === true || isFloatingWidgetHidden) {
+            isFloatingWidgetHidden = true;
+            setFloatingWidgetVisible(false);
+            return;
+        } else {
+            if (!isFloatingWidgetHidden) {
+                setFloatingWidgetVisible(true);
+            }
+        }
+    } catch(e) {}
+    
     // Check elements
     const pinHeader = shadowDomRoot ? shadowDomRoot.getElementById('pin-header') : null;
     const pinBoxEl = shadowDomRoot ? shadowDomRoot.getElementById('pin-box') : null;
@@ -1119,7 +1223,7 @@ async function updateWidgetOtp(box) {
 
     try {
     // Always get the freshest data directly from storage! No out-of-sync tabs.
-    const res = await new Promise(r => chrome.storage.local.get(['ext_enabled', 'ivac_phone', 'ivac_email', 'rocket_accounts', 'active_rocket_id', 'payment_link', 'latest_email_otp'], (result) => {
+    const res = await new Promise(r => chrome.storage.local.get(['ext_enabled', 'hide_floating_window', 'ivac_phone', 'ivac_email', 'rocket_accounts', 'active_rocket_id', 'payment_link', 'latest_email_otp'], (result) => {
         if (chrome.runtime.lastError) {
             r({});
         } else {
@@ -1127,11 +1231,14 @@ async function updateWidgetOtp(box) {
         }
     }));
     
-    if (res.ext_enabled === false) {
-        if (pinWidgetEl) pinWidgetEl.style.display = 'none';
+    if (res.ext_enabled === false || res.hide_floating_window === true || isFloatingWidgetHidden) {
+        isFloatingWidgetHidden = true;
+        setFloatingWidgetVisible(false);
         return;
     } else {
-        if (pinWidgetEl) pinWidgetEl.style.display = 'block';
+        if (!isFloatingWidgetHidden) {
+            setFloatingWidgetVisible(true);
+        }
     }
 
     const currentSavedPhone = res.ivac_phone || "";
@@ -1992,7 +2099,9 @@ function updateSlotTimerUI(statusText, remainingSec, attemptNumber) {
 
 // Live High-Frequency (500ms) ticker for permanent floating widget & ultra-smooth slot countdown
 setInterval(() => {
-    ensurePinWidgetAttached();
+    if (!isFloatingWidgetHidden) {
+        ensurePinWidgetAttached();
+    }
     if (!isCalendarPage()) {
         if (shadowDomRoot) {
             const p = shadowDomRoot.getElementById('slot-timer-panel');
@@ -2114,7 +2223,7 @@ function clickMissionSubmitButton() {
 
 // ===== Main Automation Loop =====
         // Ensure floating PIN widget is always active on all pages
-        if (!document.getElementById('ivac-pin-widget-root')) {
+        if (!isFloatingWidgetHidden && !document.getElementById('ivac-pin-widget-root')) {
             ensurePinWidgetAttached();
         }
 setInterval(() => {
@@ -3360,8 +3469,3 @@ function getResolvedPaymentAccount(res) {
         } catch(e) {}
     }, 180);
 })();
-
-
-
-
-

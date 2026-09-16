@@ -1,23 +1,143 @@
 {
-    "server": {
-        "host": "0.0.0.0",
-        "port": 5000,
-        "dashboard_port": 5001
+  "profiles": [
+    {
+      "id": 1,
+      "name": "22T BOSIR",
+      "chrome_profile": "Profile 86",
+      "phone": "01351178457",
+      "password": "Boshir@01351178457",
+      "enabled": true
     },
-    "chrome": {
-        "user_data_dir": "C:\\Users\\Mustafizur Rahman\\AppData\\Local\\Google\\Chrome\\User Data",
-        "executable_path": "",
-        "headless": false,
-        "start_delay_seconds": 3
+    {
+      "id": 2,
+      "name": "36T HIRENDERONATH",
+      "chrome_profile": "Profile 18",
+      "phone": "01712129877",
+      "password": "Anoma@01712129877",
+      "enabled": true
     },
-    "profiles": [],
-    "ivac": {
-        "login_url": "https://appointment.ivacbd.com/signin",
-        "otp_url": "https://appointment.ivacbd.com/verify/login/phone_otp",
-        "sms_sender": "IVAC_BD"
+    {
+      "id": 3,
+      "name": "37. SUMON",
+      "chrome_profile": "Profile 19",
+      "phone": "01635039240",
+      "password": "Baishakhi@01635039240",
+      "enabled": true
     },
-    "sms_method": "http",
-    "adb": {
-        "device_serials": []
+    {
+      "id": 4,
+      "name": "55. AKTEAR",
+      "chrome_profile": "Profile 17",
+      "phone": "01940375117",
+      "password": "Md@01940375117",
+      "enabled": true
+    },
+    {
+      "id": 5,
+      "name": "56M Mushfiqur",
+      "chrome_profile": "Profile 1009",
+      "phone": "01408327060",
+      "password": "Musriqur@01408327060",
+      "enabled": true
+    },
+    {
+      "id": 6,
+      "name": "58M SAGOR",
+      "chrome_profile": "Profile 29",
+      "phone": "01577778187",
+      "password": "Sagor@01577778187",
+      "enabled": true
+    },
+    {
+      "id": 7,
+      "name": "59T SOJON",
+      "chrome_profile": "Profile 91",
+      "phone": "01612703910",
+      "password": "Sojon@01612703910",
+      "enabled": true
+    },
+    {
+      "id": 8,
+      "name": "60T UJJOL",
+      "chrome_profile": "Profile 101",
+      "phone": "01345111233",
+      "password": "Hasanul@01345111233",
+      "enabled": true
+    },
+    {
+      "id": 9,
+      "name": "61T AJAD",
+      "chrome_profile": "Profile 106",
+      "phone": "01816784466",
+      "password": "Abul@01816784466",
+      "enabled": true
+    },
+    {
+      "id": 10,
+      "name": "64T SAIF",
+      "chrome_profile": "Profile 1008",
+      "phone": "01940554876",
+      "password": "",
+      "enabled": true
+    },
+    {
+      "id": 11,
+      "name": "66T ABU BAKKAR",
+      "chrome_profile": "Profile 1012",
+      "phone": "01809612419",
+      "password": "",
+      "enabled": true
+    },
+    {
+      "id": 12,
+      "name": "67T DABLU",
+      "chrome_profile": "Profile 1013",
+      "phone": "01951233489",
+      "password": "",
+      "enabled": true
     }
+  ],
+  "sim_mapping": {
+    "P1_1": "01612703910",
+    "P1_2": "01959166796",
+    "P2_1": "01700000000",
+    "P2_2": "01800000000"
+  },
+  "rocket_accounts": [
+    {
+      "id": "acc_1",
+      "number": "0195916679",
+      "rocket_extra": "6",
+      "rocket_pin": "",
+      "bkash_pin": "",
+      "nagad_pin": ""
+    },
+    {
+      "id": "acc_2",
+      "number": "01612703910",
+      "rocket_extra": "",
+      "rocket_pin": "",
+      "bkash_pin": "",
+      "nagad_pin": ""
+    }
+  ],
+  "chrome_bookmarks": [
+    {
+      "title": "proton",
+      "url": "https://mail.proton.me/u/1/inbox",
+      "name": "proton"
+    },
+    {
+      "title": "mail.google.com/mail/u/0:",
+      "url": "https://mail.google.com/mail/u/0/#inbox",
+      "name": "mail.google.com/mail/u/0:"
+    }
+  ],
+  "chrome_extension_path": "C:\\IVAC_Chrome_Extension",
+  "active_profile": {
+    "chrome_profile": "Profile 1013",
+    "name": "67T DABLU",
+    "phone": "01951233489",
+    "password": ""
+  }
 }

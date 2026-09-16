@@ -1,7 +1,7 @@
 import mqtt from 'mqtt';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Key, Plus, Trash2, ShieldBan, RefreshCw, CheckCircle2, Shield, Search, X, ChevronRight, ArrowLeft, User, Phone, FileText, Clock, Calendar, CalendarPlus, Save, Edit3, Copy, Activity, Chrome, Power, CheckCircle, AlertCircle, AlertTriangle, ArrowUpRight, Filter, Smartphone, CreditCard, FileUp, LogIn, Layers, Radio, Sparkles } from 'lucide-react';
+import { Key, Plus, Trash2, ShieldBan, RefreshCw, CheckCircle2, Shield, Search, X, ChevronRight, ArrowLeft, ArrowRight, User, Phone, FileText, Clock, Calendar, CalendarPlus, Save, Edit3, Copy, Activity, Chrome, Power, CheckCircle, AlertCircle, AlertTriangle, ArrowUpRight, Filter, Smartphone, CreditCard, FileUp, LogIn, Layers, Radio, Sparkles, Database, HardDrive, Server, ExternalLink } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc } from 'firebase/firestore';
 
@@ -144,6 +144,7 @@ interface PaymentRecord {
 interface ActivityRecord {
   id: string;
   event_type: string;
+  off_source?: string;
   profile_id: string;
   profile_label: string;
   title: string;
@@ -228,6 +229,666 @@ function formatDateTime12Hour(timestampOrStr?: number | string): { dateStr: stri
 // Keep-alive threshold: 3 minutes buffer (prevents background Chrome power throttling from flickering profiles)
 const PROFILE_OFFLINE_THRESHOLD_MS = 180000;
 
+// Helper for Event Icon & Badge
+const getEventVisual = (act: ActivityRecord) => {
+  const type = act.event_type || '';
+  if (type === 'payment_success') {
+    return {
+      icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
+      badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+      label: 'Payment Success'
+    };
+  }
+  if (type === 'confirm_clicked') {
+    return {
+      icon: <CheckCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />,
+      badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-orange-200 dark:border-orange-800',
+      label: 'Confirm Clicked'
+    };
+  }
+  if (type.includes('webfile_retry')) {
+    return {
+      icon: <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
+      badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+      label: 'Webfile Retry'
+    };
+  }
+  if (type.includes('webfile')) {
+    return {
+      icon: <FileUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />,
+      badge: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+      label: 'Webfile Upload'
+    };
+  }
+  if (type.includes('login') || type.includes('otp')) {
+    return {
+      icon: <LogIn className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />,
+      badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+      label: 'Login & OTP'
+    };
+  }
+  if (type.includes('gateway') || type.includes('payment') || type.includes('account') || type.includes('pin')) {
+    return {
+      icon: <CreditCard className="h-4 w-4 text-purple-600 dark:text-purple-400" />,
+      badge: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+      label: 'Payment Flow'
+    };
+  }
+  if (type === 'ext_enabled') {
+    return {
+      icon: <Power className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
+      badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+      label: 'Extension ON'
+    };
+  }
+  if (type === 'ext_disabled' || type === 'ext_inactive' || type === 'manual_off' || type === 'ext_uninstalled') {
+    return {
+      icon: <Power className="h-4 w-4 text-rose-600 dark:text-rose-400" />,
+      badge: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+      label: 'Extension OFF'
+    };
+  }
+  return {
+    icon: <Activity className="h-4 w-4 text-slate-600 dark:text-slate-400" />,
+    badge: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+    label: 'Activity'
+  };
+};
+
+// ===== TURSO DATABASE CLOUD VAULT VIEW =====
+function TursoVaultView({ license, onBack }: {
+  license: IvacLicense;
+  onBack: () => void;
+}) {
+  const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(true);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(true);
+  const [selectedProfile, setSelectedProfile] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<'activities' | 'payments'>('activities');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>('');
+
+  const tursoUrl = 'https://ivac-master-pro-ivacmasterpro.aws-ap-south-1.turso.io/v2/pipeline';
+  const tursoToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk1NjkwNTMsImlkIjoiMDFhMGFhYTAtOTAwMS03M2QwLWEwY2YtMDU1YTA1MjIzMTEyIiwia2lkIjoiSks1VmYtT1BqX0lRVFBOd3R3QlhfNXkzMk43YVRwdXhsX0RIRmtrNHRzdyIsInJpZCI6ImNlOGUzYzk1LTI0ZjAtNDY3ZC1iNjkzLWI4MDVkZWY4ZWIzZiJ9.RA6Gd_8XSSFesSdqB8E_SqbWQTrqgbbl_0Q2vExxUE3H0USdkscTa0Dfs7NWaYcT0-S9WhPREpmdmbQKbilgAg';
+
+  const fetchTursoData = async () => {
+    setIsRefreshing(true);
+    setLoadingActivities(true);
+    setLoadingPayments(true);
+
+    try {
+      const actBody = {
+        requests: [
+          {
+            type: 'execute',
+            stmt: {
+              sql: 'SELECT id, license_key, profile_id, profile_label, event_type, off_source, title, details, amount, status, timestamp, datetime, time_formatted FROM activities WHERE license_key = ? ORDER BY timestamp DESC LIMIT 150',
+              args: [{ type: 'text', value: license.key }]
+            }
+          },
+          { type: 'close' }
+        ]
+      };
+
+      const payBody = {
+        requests: [
+          {
+            type: 'execute',
+            stmt: {
+              sql: 'SELECT id, license_key, profile_id, profile_label, amount, amount_1, amount_2, amount_3, status, stage, rocket_account, description, timestamp, datetime FROM payments WHERE license_key = ? ORDER BY timestamp DESC LIMIT 150',
+              args: [{ type: 'text', value: license.key }]
+            }
+          },
+          { type: 'close' }
+        ]
+      };
+
+      const [actRes, payRes] = await Promise.all([
+        fetch(tursoUrl, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${tursoToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(actBody)
+        }),
+        fetch(tursoUrl, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${tursoToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payBody)
+        })
+      ]);
+
+      if (actRes.ok) {
+        const actJson = await actRes.json();
+        const actResult = actJson.results?.[0]?.response?.result;
+        if (actResult && Array.isArray(actResult.rows)) {
+          const cols: string[] = actResult.cols?.map((c: any) => c.name) || [];
+          const records: ActivityRecord[] = actResult.rows.map((row: any[]) => {
+            const obj: any = {};
+            cols.forEach((col, idx) => {
+              obj[col] = row[idx]?.value !== undefined ? row[idx].value : null;
+            });
+            return obj as ActivityRecord;
+          });
+          setActivities(records);
+        }
+      }
+
+      if (payRes.ok) {
+        const payJson = await payRes.json();
+        const payResult = payJson.results?.[0]?.response?.result;
+        if (payResult && Array.isArray(payResult.rows)) {
+          const cols: string[] = payResult.cols?.map((c: any) => c.name) || [];
+          const records: PaymentRecord[] = payResult.rows.map((row: any[]) => {
+            const obj: any = {};
+            cols.forEach((col, idx) => {
+              obj[col] = row[idx]?.value !== undefined ? row[idx].value : null;
+            });
+            return obj as PaymentRecord;
+          });
+          setPayments(records);
+        }
+      }
+      setLastRefreshedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('[Turso Vault Fetch Error]', err);
+    } finally {
+      setLoadingActivities(false);
+      setLoadingPayments(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTursoData();
+  }, [license.key]);
+
+  // Live MQTT listener while in Turso Vault view
+  useEffect(() => {
+    let client: mqtt.MqttClient | null = null;
+    try {
+      client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+        clientId: `vault_live_${Math.random().toString(16).slice(2, 8)}`,
+        connectTimeout: 5000,
+      });
+      client.on('connect', () => {
+        client?.subscribe(`ivac_live_${license.key}`);
+      });
+      client.on('message', (topic: string, message: any) => {
+        try {
+          const data = JSON.parse(message.toString());
+          if (data && data.type === 'activity_event') {
+            setActivities((prev: ActivityRecord[]) => {
+              if (prev.some((a: ActivityRecord) => a.id === data.id)) return prev;
+              return [data as ActivityRecord, ...prev];
+            });
+          }
+        } catch (e) {}
+      });
+    } catch (e) {}
+
+    return () => {
+      if (client) client.end();
+    };
+  }, [license.key]);
+
+  // Distinct profiles for profile-wise selector
+  const distinctProfiles = useMemo(() => {
+    const map = new Map<string, string>();
+    activities.forEach((a: ActivityRecord) => {
+      if (a.profile_id) map.set(a.profile_id, a.profile_label || `Profile ${a.profile_id}`);
+    });
+    payments.forEach((p: PaymentRecord) => {
+      if (p.profile_id) map.set(p.profile_id, p.profile_label || `Profile ${p.profile_id}`);
+    });
+    return Array.from(map.entries());
+  }, [activities, payments]);
+
+  // Filtered Activities
+  const filteredActivities = activities.filter((act: ActivityRecord) => {
+    if (selectedProfile !== 'all' && act.profile_id !== selectedProfile) return false;
+    if (selectedCategory === 'all') return true;
+    if (selectedCategory === 'status') return act.event_type.includes('ext_') || act.event_type.includes('status') || act.event_type.includes('off');
+    if (selectedCategory === 'payment') return act.event_type.includes('payment') || act.event_type.includes('pay');
+    if (selectedCategory === 'webfile') return act.event_type.includes('webfile') || act.event_type.includes('confirm');
+    if (selectedCategory === 'login') return act.event_type.includes('login') || act.event_type.includes('otp');
+    return true;
+  });
+
+  // Filtered Payments
+  const filteredPayments = payments.filter((p: PaymentRecord) => {
+    if (selectedProfile !== 'all' && p.profile_id !== selectedProfile) return false;
+    return true;
+  });
+
+  const totalPaymentsAmount = filteredPayments.reduce((sum: number, p: PaymentRecord) => p.status === 'success' ? sum + (p.amount || 0) : sum, 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Top Header & Big Reload Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium text-xs transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to License
+          </button>
+          <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
+                <Database className="h-4 w-4" />
+              </span>
+              <h1 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                Turso Database Cloud Vault
+              </h1>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                libSQL Edge
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              {license.client_name || license.key} — ফায়ারবেস ডাউন থাকলেও সমস্ত হিস্ট্রি ও ডাটা তুরসোতে সংরক্ষিত
+            </p>
+          </div>
+        </div>
+
+        {/* BIG RELOAD BUTTON */}
+        <div className="flex items-center gap-2">
+          {lastRefreshedAt && (
+            <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
+              শেষ রিফ্রেশ: {lastRefreshedAt}
+            </span>
+          )}
+          <button
+            onClick={fetchTursoData}
+            disabled={isRefreshing}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>ভোল্ট ডাটা রিফ্রেশ করুন (Reload Data)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-emerald-100 dark:border-emerald-900/30">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">অ্যাক্টিভিটি রেকর্ড (Turso)</p>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">{activities.length}</h3>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">ম্যানুয়াল অফ ও টাইমলাইন</p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+              <Activity className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-purple-100 dark:border-purple-900/30">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">পেমেন্ট রেকর্ড (Turso)</p>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">{payments.length}</h3>
+              <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5 font-medium">Dual-Cloud Backup</p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400">
+              <CreditCard className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-blue-100 dark:border-blue-900/30">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">মোট সফল পেমেন্ট (৳)</p>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1 font-mono">
+                {'৳'}{totalPaymentsAmount.toLocaleString()}
+              </h3>
+              <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-0.5 font-medium">Turso ডাটাবেজ হিসাব</p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400">
+              <Sparkles className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-teal-100 dark:border-teal-900/30">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">ডাটাবেজ স্ট্যাটাস</p>
+              <h3 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Edge Live (0 Quota Spike)
+              </h3>
+              <p className="text-[10px] text-slate-400 mt-0.5">aws-ap-south-1 (Mumbai)</p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400">
+              <Server className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Content Area */}
+      <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <CardHeader className="p-4 border-b dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Tab Switcher: Activities vs Payments */}
+            <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-700/60 p-1 rounded-xl w-fit">
+              <button
+                onClick={() => setActiveTab('activities')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'activities'
+                    ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                <Activity className="h-3.5 w-3.5" />
+                লাইভ অ্যাক্টিভিটি ও অফ লগ ({activities.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('payments')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'payments'
+                    ? 'bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-300 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                <CreditCard className="h-3.5 w-3.5" />
+                পেমেন্ট হিস্ট্রি - Turso Backup ({payments.length})
+              </button>
+            </div>
+
+            {/* Profile Selector (Profile অনুযায়ী দেখা) */}
+            <div className="flex items-center flex-wrap gap-2">
+              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs">
+                <Filter className="h-3.5 w-3.5 text-slate-400" />
+                <span className="text-[11px] font-semibold text-slate-500">প্রোফাইল:</span>
+                <select
+                  value={selectedProfile}
+                  onChange={(e: any) => setSelectedProfile(e.target.value)}
+                  className="bg-transparent text-slate-800 dark:text-slate-200 font-bold outline-none cursor-pointer text-xs"
+                >
+                  <option value="all">সব প্রোফাইল (All Profiles)</option>
+                  {distinctProfiles.map(([pId, pLabel]: [string, string]) => (
+                    <option key={pId} value={pId}>{pLabel}</option>
+                  ))}
+                </select>
+              </div>
+
+              {activeTab === 'activities' && (
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                  <button
+                    onClick={() => setSelectedCategory('all')}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${selectedCategory === 'all' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500'}`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setSelectedCategory('status')}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${selectedCategory === 'status' ? 'bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-400 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    ⚙️ On/Off
+                  </button>
+                  <button
+                    onClick={() => setSelectedCategory('payment')}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${selectedCategory === 'payment' ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    💳 Payment
+                  </button>
+                  <button
+                    onClick={() => setSelectedCategory('webfile')}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${selectedCategory === 'webfile' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    📄 Webfile
+                  </button>
+                  <button
+                    onClick={() => setSelectedCategory('login')}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${selectedCategory === 'login' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    🔑 Login
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Profile Quick Pill Filter Bar (প্রোফাইল ক্লিক বার) */}
+          {distinctProfiles.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-0.5 no-scrollbar">
+              <button
+                onClick={() => setSelectedProfile('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                  selectedProfile === 'all'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                সব প্রোফাইল ({distinctProfiles.length})
+              </button>
+              {distinctProfiles.map(([pId, pLabel]: [string, string]) => {
+                const color = getProfileColor(pId);
+                const isSelected = selectedProfile === pId;
+                return (
+                  <button
+                    key={pId}
+                    onClick={() => setSelectedProfile(pId)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap border transition-all cursor-pointer ${
+                      isSelected
+                        ? `${color.bg} ${color.text} ring-2 ring-indigo-500 border-indigo-400`
+                        : `${color.bg} ${color.text} ${color.border} opacity-80 hover:opacity-100`
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${color.dot}`}></span>
+                    {pLabel}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </CardHeader>
+
+        <CardContent className="p-0">
+          {activeTab === 'activities' ? (
+            /* ===== ACTIVITIES TABLE ===== */
+            <div className="overflow-x-auto max-h-[550px]">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    <th className="px-4 py-3">Time</th>
+                    <th className="px-4 py-3">Chrome Profile</th>
+                    <th className="px-4 py-3">Step / Event</th>
+                    <th className="px-4 py-3">Details</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y dark:divide-slate-800 text-sm">
+                  {loadingActivities ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-12 text-slate-500">
+                        <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-emerald-500" />
+                        Turso ডাটাবেজ থেকে অ্যাক্টিভিটি লোড হচ্ছে...
+                      </td>
+                    </tr>
+                  ) : filteredActivities.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-12 text-slate-400">
+                        <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        কোনো অ্যাক্টিভিটি পাওয়া যায়নি।
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredActivities.map((act: ActivityRecord) => {
+                      const profColor = getProfileColor(act.profile_id);
+                      const visual = getEventVisual(act);
+                      return (
+                        <tr
+                          key={act.id}
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                        >
+                          {/* Time */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="font-mono text-xs text-slate-700 dark:text-slate-300">
+                              {act.time_formatted || (act.datetime ? act.datetime.split(' ')[1] : new Date(act.timestamp).toLocaleTimeString())}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {formatRelativeTime(act.timestamp)}
+                            </div>
+                          </td>
+
+                          {/* Profile Badge */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${profColor.bg} ${profColor.text} ${profColor.border}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${profColor.dot}`}></span>
+                              {act.profile_label || `Profile #${act.profile_id.slice(-4)}`}
+                            </span>
+                          </td>
+
+                          {/* Event / Step */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span className={`p-1.5 rounded-lg border flex items-center justify-center ${visual.badge}`}>
+                                {visual.icon}
+                              </span>
+                              <div>
+                                <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {act.title}
+                                </div>
+                                {act.off_source && (
+                                  <span className="inline-block mt-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded border bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800">
+                                    {act.off_source === 'popup'
+                                      ? 'পপআপ থেকে অফ (Popup)'
+                                      : act.off_source === 'manage_extensions_page'
+                                      ? 'chrome://extensions থেকে অফ'
+                                      : act.off_source === 'uninstalled'
+                                      ? 'এক্সটেনশন আনইনস্টল/রিমুভ'
+                                      : act.off_source}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Details */}
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                            <div className="line-clamp-2 text-xs font-medium">
+                              {act.details || '-'}
+                            </div>
+                          </td>
+
+                          {/* Amount */}
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            {act.amount && act.amount > 0 ? (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-mono">
+                                {'৳'}{act.amount.toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* ===== TURSO PAYMENTS TABLE ===== */
+            <div className="overflow-x-auto max-h-[550px]">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    <th className="px-4 py-3">Date & Time</th>
+                    <th className="px-4 py-3">Chrome Profile</th>
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Stage / Gateway</th>
+                    <th className="px-4 py-3">Account No.</th>
+                    <th className="px-4 py-3 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y dark:divide-slate-800 text-sm">
+                  {loadingPayments ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-12 text-slate-500">
+                        <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-purple-500" />
+                        Turso ডাটাবেজ থেকে পেমেন্ট হিস্ট্রি লোড হচ্ছে...
+                      </td>
+                    </tr>
+                  ) : filteredPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-12 text-slate-400">
+                        <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        Turso ডাটাবেজে কোনো পেমেন্ট পাওয়া যায়নি।
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPayments.map((pay: PaymentRecord) => {
+                      const profColor = getProfileColor(pay.profile_id || 'default');
+                      return (
+                        <tr
+                          key={pay.id}
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                        >
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="font-mono text-xs text-slate-700 dark:text-slate-300">
+                              {pay.datetime}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {formatRelativeTime(pay.timestamp)}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${profColor.bg} ${profColor.text} ${profColor.border}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${profColor.dot}`}></span>
+                              {pay.profile_label || (pay.profile_id ? `Profile #${pay.profile_id.slice(-4)}` : 'Profile')}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="font-mono font-bold text-sm text-slate-800 dark:text-slate-100">
+                              {'৳'}{(pay.amount || pay.amount_3 || 0).toLocaleString()}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              {pay.stage || 'Rocket'}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-slate-600 dark:text-slate-300">
+                            {pay.rocket_account || '—'}
+                          </td>
+
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                              pay.status === 'success'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                : pay.status === 'failed'
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                            }`}>
+                              {pay.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ===== PROFILE VIEW (একজনের একটাই পেজ — সবকিছু এখান থেকে) =====
 function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
   license: IvacLicense;
@@ -235,15 +896,12 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
   onBlockKey: (key: string, status: string) => void;
   onDeleteKey: (key: string) => void;
 }) {
+  const [showTursoVault, setShowTursoVault] = useState(false);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
 
-  // Real-time Activities & Connected Profiles
-  const [activities, setActivities] = useState<ActivityRecord[]>([]);
-  const [loadingActivities, setLoadingActivities] = useState(true);
+  // Connected Profiles (MQTT Live Tunnel)
   const [activeProfiles, setActiveProfiles] = useState<ActiveProfile[]>([]);
-  const [selectedProfileFilter, setSelectedProfileFilter] = useState<string>('all');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
 
   // Client info editing
   const [isEditing, setIsEditing] = useState(false);
@@ -263,9 +921,9 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
   // 1. Payments Listener
   useEffect(() => {
     const q = query(collection(db, `ivac_licenses/${license.key}/payments`));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot: any) => {
       const data: PaymentRecord[] = [];
-      snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() } as PaymentRecord));
+      snapshot.forEach((doc: any) => data.push({ id: doc.id, ...doc.data() } as PaymentRecord));
       data.sort((a, b) => b.timestamp - a.timestamp);
       setPayments(data);
       setLoadingPayments(false);
@@ -273,20 +931,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     return () => unsubscribe();
   }, [license.key]);
 
-  // 2. Real-time Activities Listener
-  useEffect(() => {
-    const q = query(collection(db, `ivac_licenses/${license.key}/activities`));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data: ActivityRecord[] = [];
-      snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() } as ActivityRecord));
-      data.sort((a, b) => b.timestamp - a.timestamp);
-      setActivities(data);
-      setLoadingActivities(false);
-    });
-    return () => unsubscribe();
-  }, [license.key]);
-
-  // 3. Real-time Live Connected Chrome Profiles (MQTT Live Tunnel - 0 Firebase Writes & Reads!)
+  // 2. Real-time Live Connected Chrome Profiles (MQTT Live Tunnel - 0 Firebase Writes & Reads!)
   useEffect(() => {
     let client: mqtt.MqttClient | null = null;
     try {
@@ -297,13 +942,13 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
       client.on('connect', () => {
         client?.subscribe(`ivac_live_${license.key}`);
       });
-      client.on('message', (topic, message) => {
+      client.on('message', (topic: string, message: any) => {
         try {
           const data = JSON.parse(message.toString());
           if (data && data.profile_id) {
             const now = Date.now();
-            setActiveProfiles(prev => {
-              const existingIdx = prev.findIndex(p => p.profile_id === data.profile_id);
+            setActiveProfiles((prev: ActiveProfile[]) => {
+              const existingIdx = prev.findIndex((p: ActiveProfile) => p.profile_id === data.profile_id);
               const existing = existingIdx >= 0 ? prev[existingIdx] : null;
 
               if (data.is_active === false) {
@@ -313,7 +958,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                 if (existing && !isExplicitOff && (now - existing.last_seen < 120000)) {
                   return prev;
                 }
-                return prev.filter(p => p.profile_id !== data.profile_id);
+                return prev.filter((p: ActiveProfile) => p.profile_id !== data.profile_id);
               }
 
               // Prefer phone label over generic fallback
@@ -338,7 +983,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
               } else {
                 nextList = [...prev, updatedProfile];
               }
-              return nextList.filter(p => p.is_active && (now - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).sort((a, b) => {
+              return nextList.filter((p: ActiveProfile) => p.is_active && (now - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).sort((a, b) => {
                 const labelA = a.profile_label || a.profile_id || '';
                 const labelB = b.profile_label || b.profile_id || '';
                 return labelA.localeCompare(labelB);
@@ -356,7 +1001,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     // Auto-cleanup: If no heartbeat received for > 2 min, remove profile from UI (Offline profiles never saved)
     const cleanupInterval = setInterval(() => {
       const now = Date.now();
-      setActiveProfiles(prev => prev.filter(p => p.is_active && (now - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)));
+      setActiveProfiles((prev: ActiveProfile[]) => prev.filter((p: ActiveProfile) => p.is_active && (now - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)));
     }, 3000);
 
     return () => {
@@ -376,8 +1021,8 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     }
   }, [license, isEditing]);
 
-  const totalAmount = payments.reduce((sum, p) => p.status === 'success' ? sum + (p.amount || 0) : sum, 0);
-  const successCount = payments.filter(p => p.status === 'success').length;
+  const totalAmount = payments.reduce((sum: number, p: PaymentRecord) => p.status === 'success' ? sum + (p.amount || 0) : sum, 0);
+  const successCount = payments.filter((p: PaymentRecord) => p.status === 'success').length;
 
   const handleSaveProfile = async () => {
     setSaving(true);
@@ -403,7 +1048,8 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     }
     setExtending(true);
     try {
-      const currentDays = license.duration_days || (license.duration_months ? license.duration_months * 30 : 0);
+      const rawDays = Number(license.duration_days) || (license.duration_months ? Number(license.duration_months) * 30 : 0);
+      const currentDays = isNaN(rawDays) ? 0 : rawDays;
       const newTotalDays = currentDays + days;
       await updateDoc(doc(db, 'ivac_licenses', license.key), {
         duration_days: newTotalDays,
@@ -428,115 +1074,11 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
   const expiry = getLicenseExpiryInfo(license);
   const durationText = `${expiry.totalDays} Days`;
 
-  // Deduplicate consecutive identical events within 3 seconds of each other
-  const deduplicatedActivities = activities.filter((act, idx, arr) => {
-    if (idx === 0) return true;
-    const prev = arr[idx - 1];
-    if (
-      act.profile_id === prev.profile_id &&
-      act.event_type === prev.event_type &&
-      Math.abs((act.timestamp || 0) - (prev.timestamp || 0)) < 3000
-    ) {
-      return false; // Skip duplicate burst event
-    }
-    return true;
-  });
+  // Dedicated Turso Database Vault View
+  if (showTursoVault) {
+    return <TursoVaultView license={license} onBack={() => setShowTursoVault(false)} />;
+  }
 
-  // Filter activities
-  const filteredActivities = deduplicatedActivities.filter(act => {
-    // 1. Profile filter
-    if (selectedProfileFilter !== 'all' && act.profile_id !== selectedProfileFilter) {
-      return false;
-    }
-    // 2. Category filter
-    if (selectedCategoryFilter === 'all') return true;
-    if (selectedCategoryFilter === 'login') {
-      return act.event_type.includes('login') || act.event_type.includes('otp');
-    }
-    if (selectedCategoryFilter === 'webfile') {
-      return act.event_type.includes('webfile') || act.event_type.includes('confirm');
-    }
-    if (selectedCategoryFilter === 'payment') {
-      return act.event_type.includes('payment') || act.event_type.includes('pay') || act.event_type.includes('account') || act.event_type.includes('pin') || act.event_type.includes('gateway');
-    }
-    if (selectedCategoryFilter === 'status') {
-      return act.event_type.includes('ext_') || act.event_type.includes('status');
-    }
-    return true;
-  });
-
-  // Extract distinct profiles from activities + active_profiles
-  const profileEntries: [string, string][] = [
-    ...activeProfiles.map(p => [p.profile_id, p.profile_label || `Profile ${p.profile_id}`] as [string, string]),
-    ...activities.map(a => [a.profile_id, a.profile_label || `Profile ${a.profile_id}`] as [string, string])
-  ];
-  const allKnownProfiles: [string, string][] = Array.from(new Map(profileEntries).entries());
-
-  // Helper for Event Icon & Badge
-  const getEventVisual = (act: ActivityRecord) => {
-    const type = act.event_type || '';
-    if (type === 'payment_success') {
-      return {
-        icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
-        badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-        label: 'Payment Success'
-      };
-    }
-    if (type === 'confirm_clicked') {
-      return {
-        icon: <CheckCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />,
-        badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-orange-200 dark:border-orange-800',
-        label: 'Confirm Clicked'
-      };
-    }
-    if (type.includes('webfile_retry')) {
-      return {
-        icon: <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
-        badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-        label: 'Webfile Retry'
-      };
-    }
-    if (type.includes('webfile')) {
-      return {
-        icon: <FileUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />,
-        badge: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-        label: 'Webfile Upload'
-      };
-    }
-    if (type.includes('login') || type.includes('otp')) {
-      return {
-        icon: <LogIn className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />,
-        badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-        label: 'Login & OTP'
-      };
-    }
-    if (type.includes('gateway') || type.includes('payment') || type.includes('account') || type.includes('pin')) {
-      return {
-        icon: <CreditCard className="h-4 w-4 text-purple-600 dark:text-purple-400" />,
-        badge: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-        label: 'Payment Flow'
-      };
-    }
-    if (type === 'ext_enabled') {
-      return {
-        icon: <Power className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
-        badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-        label: 'Extension ON'
-      };
-    }
-    if (type === 'ext_disabled' || type === 'ext_inactive') {
-      return {
-        icon: <Power className="h-4 w-4 text-rose-600 dark:text-rose-400" />,
-        badge: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800',
-        label: 'Extension OFF'
-      };
-    }
-    return {
-      icon: <Activity className="h-4 w-4 text-slate-600 dark:text-slate-400" />,
-      badge: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
-      label: 'Activity'
-    };
-  };
 
   return (
     <div className="space-y-6">
@@ -567,31 +1109,41 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                 </div>
               </div>
             </div>
-            {!isEditing ? (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsEditing(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors font-medium text-sm"
+                onClick={() => setShowTursoVault(true)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg transition-all font-semibold text-xs shadow-sm hover:shadow cursor-pointer"
+                title="Turso Database Vault"
               >
-                <Edit3 className="h-4 w-4" /> Edit Profile
+                <Database className="h-4 w-4" />
+                <span>Turso Database</span>
               </button>
-            ) : (
-              <div className="flex gap-2">
+              {!isEditing ? (
                 <button
-                  onClick={() => { setIsEditing(false); setEditName(license.client_name || ''); setEditPhone(license.client_phone || ''); setEditDescription(license.client_description || ''); }}
-                  className="px-4 py-2 text-slate-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm"
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors font-medium text-sm"
                 >
-                  Cancel
+                  <Edit3 className="h-4 w-4" /> Edit Profile
                 </button>
-                <button
-                  onClick={handleSaveProfile}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50"
-                >
-                  {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save
-                </button>
-              </div>
-            )}
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setIsEditing(false); setEditName(license.client_name || ''); setEditPhone(license.client_phone || ''); setEditDescription(license.client_description || ''); }}
+                    className="px-4 py-2 text-slate-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm disabled:opacity-50"
+                  >
+                    {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-6">
@@ -710,6 +1262,14 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-3">
+            {/* Turso Database Vault */}
+            <button
+              onClick={() => setShowTursoVault(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors font-semibold text-sm border border-emerald-200 dark:border-emerald-800 shadow-xs cursor-pointer"
+            >
+              <Database className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> Turso Database
+            </button>
+
             {/* Extend Duration */}
             {!showExtend ? (
               <button
@@ -889,190 +1449,34 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
         </CardContent>
       </Card>
 
-      {/* ===== REAL-TIME MULTI-STEP ACTIVITY LOG ===== */}
-      <Card className="border-indigo-100 dark:border-indigo-900/30 overflow-hidden shadow-sm">
-        <CardHeader className="bg-slate-50/70 dark:bg-slate-800/40 border-b dark:border-slate-800 py-3.5 px-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
-                <Activity className="h-4 w-4" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                  Live Activity Timeline
-                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400">
-                    {filteredActivities.length}
-                  </span>
-                </CardTitle>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  লগইন ওটিপি, ফাইল আপলোড, কনফার্ম ও পেমেন্টের প্রতিটি লাইভ ধাপ
-                </p>
-              </div>
+      {/* ===== TURSO DATABASE VAULT BANNER ===== */}
+      <Card className="border border-emerald-200 dark:border-emerald-800/60 bg-gradient-to-r from-emerald-50/70 via-teal-50/40 to-cyan-50/50 dark:from-emerald-950/20 dark:via-teal-950/20 dark:to-cyan-950/10 shadow-sm">
+        <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/30">
+              <Database className="h-5 w-5" />
             </div>
-
-            {/* Profile Selector & Category Filter */}
-            <div className="flex items-center flex-wrap gap-2">
-              {/* Profile Dropdown */}
-              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                <Filter className="h-3.5 w-3.5 text-slate-400" />
-                <select
-                  value={selectedProfileFilter}
-                  onChange={(e) => setSelectedProfileFilter(e.target.value)}
-                  className="bg-transparent text-slate-700 dark:text-slate-200 font-medium outline-none cursor-pointer"
-                >
-                  <option value="all">সব প্রোফাইল (All Profiles)</option>
-                  {allKnownProfiles.map(([pId, pLabel]) => (
-                    <option key={pId} value={pId}>{pLabel}</option>
-                  ))}
-                </select>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                  Turso Database Vault
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                  0% Firebase Quota
+                </span>
               </div>
-
-              {/* Category Pills */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                <button
-                  onClick={() => setSelectedCategoryFilter('all')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                    selectedCategoryFilter === 'all'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setSelectedCategoryFilter('login')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                    selectedCategoryFilter === 'login'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  🔑 Login & OTP
-                </button>
-                <button
-                  onClick={() => setSelectedCategoryFilter('webfile')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                    selectedCategoryFilter === 'webfile'
-                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  📄 Webfile
-                </button>
-                <button
-                  onClick={() => setSelectedCategoryFilter('payment')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                    selectedCategoryFilter === 'payment'
-                      ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  💳 Payment
-                </button>
-                <button
-                  onClick={() => setSelectedCategoryFilter('status')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                    selectedCategoryFilter === 'status'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  ⚙️ On/Off
-                </button>
-              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                লাইভ অ্যাক্টিভিটি টাইমলাইন (প্রোফাইল অনুযায়ী ফিল্টার), এক্সটেনশন অন/অফ ট্র্যাকিং এবং টারসো পেমেন্ট ব্যাকআপ
+              </p>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto max-h-[480px]">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
-                  <th className="px-4 py-3">Time</th>
-                  <th className="px-4 py-3">Chrome Profile</th>
-                  <th className="px-4 py-3">Step / Event</th>
-                  <th className="px-4 py-3">Details</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y dark:divide-slate-800 text-sm">
-                {loadingActivities ? (
-                  <tr>
-                    <td colSpan={5} className="text-center py-12 text-slate-500">
-                      <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-indigo-500" />
-                      লাইভ অ্যাক্টিভিটি লোড হচ্ছে...
-                    </td>
-                  </tr>
-                ) : filteredActivities.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="text-center py-12 text-slate-400">
-                      <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      কোনো অ্যাক্টিভিটি পাওয়া যায়নি।
-                    </td>
-                  </tr>
-                ) : (
-                  filteredActivities.map((act) => {
-                    const profColor = getProfileColor(act.profile_id);
-                    const visual = getEventVisual(act);
-                    return (
-                      <tr
-                        key={act.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                      >
-                        {/* Time */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {act.time_formatted || (act.datetime ? act.datetime.split(' ')[1] : new Date(act.timestamp).toLocaleTimeString())}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            {formatRelativeTime(act.timestamp)}
-                          </div>
-                        </td>
-
-                        {/* Chrome Profile Badge */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${profColor.bg} ${profColor.text} ${profColor.border}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${profColor.dot}`}></span>
-                            {act.profile_label || `Profile #${act.profile_id.slice(-4)}`}
-                          </span>
-                        </td>
-
-                        {/* Event / Step */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <span className={`p-1.5 rounded-lg border flex items-center justify-center ${visual.badge}`}>
-                              {visual.icon}
-                            </span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">
-                              {act.title}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Details */}
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                          <div className="line-clamp-2 text-xs font-medium">
-                            {act.details || '-'}
-                          </div>
-                        </td>
-
-                        {/* Amount */}
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          {act.amount && act.amount > 0 ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-mono">
-                              {'৳'}{act.amount.toLocaleString()}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <button
+            onClick={() => setShowTursoVault(true)}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all font-semibold text-xs shadow-sm hover:shadow cursor-pointer"
+          >
+            <span>ওপেন ডাটাবেজ পেজ</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </CardContent>
       </Card>
 
@@ -1113,10 +1517,9 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                     </td>
                   </tr>
                 ) : (
-                  payments.map(p => {
+                  payments.map((p: PaymentRecord) => {
                     const matchedKnown = (p.profile_id && p.profile_id !== 'default')
-                      ? (activeProfiles.find(ap => ap.profile_id === p.profile_id)?.profile_label ||
-                         activities.find(ac => ac.profile_id === p.profile_id && ac.profile_label)?.profile_label)
+                      ? activeProfiles.find((ap: ActiveProfile) => ap.profile_id === p.profile_id)?.profile_label
                       : null;
                     
                     let label = p.profile_label;

@@ -9,11 +9,25 @@ chrome.storage.local.get(['rocket_accounts'], (res) => {
 // ===== OTP CLAIM LOCK =====
 const otpClaims = {};
 
+// ===== IN-MEMORY SERVER STATUS CACHE (Eliminates duplicate TCP connections) =====
+let _cachedStatusData = null;
+let _cachedStatusTime = 0;
+let _cachedStatusConnected = false;
+
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // ===== LICENSE & CONFIG SYNC (Proxy via Background to bypass third-party site CSP) =====
     if (request.action === 'checkServerStatus') {
+        const now = Date.now();
+        // Return fresh cached status if refreshed within the last 2500ms
+        if (_cachedStatusTime > 0 && (now - _cachedStatusTime < 2500) && _cachedStatusData) {
+            const isLic = Boolean(_cachedStatusData.licensed !== false);
+            sendResponse({ connected: true, licensed: isLic, data: _cachedStatusData });
+            return true;
+        }
+
+        // Direct fetch fallback if cache is empty or stale
         fetch('http://127.0.0.1:5000/api/status')
             .then(r => {
                 if (r.ok) return r.json();
@@ -21,9 +35,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             })
             .then(data => {
                 const isLic = (data && data.licensed !== false);
+                _cachedStatusData = data;
+                _cachedStatusTime = Date.now();
+                _cachedStatusConnected = true;
+                chrome.storage.local.set({ server_connected: true, license_valid: isLic });
                 sendResponse({ connected: true, licensed: isLic, data: data });
             })
-            .catch(e => sendResponse({ connected: false, licensed: false, error: e.message }));
+            .catch(e => {
+                _cachedStatusConnected = false;
+                chrome.storage.local.set({ server_connected: false, license_valid: false });
+                sendResponse({ connected: false, licensed: false, error: e.message });
+            });
         return true;
     }
 
@@ -48,12 +70,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return false;
     }
 
+    if (request && request.type === "PREPARE_VISA_PHOTO") {
+        (async () => {
+            try {
+                const payload = { image: request.imageBase64 };
+                if (request.corners) {
+                    payload.corners = request.corners;
+                }
+                const resp = await fetch("http://127.0.0.1:5000/api/visa-photo/prepare", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                sendResponse(data);
+            } catch (err) {
+                console.error("Visa photo prepare error in background:", err);
+                sendResponse({ success: false, message: err.message || "লোকাল ফটো সার্ভারে সংযোগ করা যায়নি।" });
+            }
+        })();
+        return true;
+    }
+
     if (request && request.type === "SOLVE_CAPTCHA") {
         (async () => {
             try {
                 const s = await chrome.storage.local.get(["geminiApiKey"]);
                 const apiKey = (s.geminiApiKey || ["AQ.", "Ab8RN6K9", "J1rcg1hE8iO76i5keqbaMS33nvaxReFpDs87ZKLIIQ"].join("")).trim();
-                const modelsToTry = ["gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+                const modelsToTry = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest"];
                 let text = "";
                 let lastError = null;
 
@@ -113,17 +157,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === 'checkLicenseStatus') {
-        fetch('http://127.0.0.1:5000/api/license-status')
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 400);
+        fetch('http://127.0.0.1:5000/api/license-status', { signal: controller.signal })
             .then(r => {
+                clearTimeout(tid);
                 if (r.ok) return r.json();
                 throw new Error('Server offline');
             })
             .then(data => {
                 const active = Boolean(data && data.active === true);
+                chrome.storage.local.set({ server_connected: true, license_valid: active });
                 sendResponse({ active: active, token: data.token || '' });
             })
             .catch(e => {
+                clearTimeout(tid);
                 // STRICT SECURITY: Never fallback to true when desktop app is closed!
+                chrome.storage.local.set({ server_connected: false, license_valid: false });
                 sendResponse({ active: false, error: 'Desktop software offline' });
             });
         return true;
@@ -447,6 +497,43 @@ try {
 } catch (e) {}
 
 
+// Track if user currently has chrome://extensions open in any tab
+let isManageExtensionsOpen = false;
+
+function checkManageExtensionsTabs() {
+    try {
+        if (chrome.tabs && typeof chrome.tabs.query === 'function') {
+            chrome.tabs.query({}, (tabs) => {
+                if (chrome.runtime.lastError || !tabs) return;
+                isManageExtensionsOpen = tabs.some(t => t.url && t.url.startsWith('chrome://extensions'));
+            });
+        }
+    } catch(e) {}
+}
+
+if (chrome.tabs) {
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+        if (tab && tab.url && tab.url.startsWith('chrome://extensions')) {
+            isManageExtensionsOpen = true;
+        }
+    });
+    chrome.tabs.onRemoved.addListener(() => {
+        checkManageExtensionsTabs();
+    });
+}
+checkManageExtensionsTabs();
+
+// Register uninstall URL to detect if extension is removed/deleted from Chrome
+try {
+    chrome.storage.local.get(['profile_id', 'profile_label'], (st) => {
+        const pId = st.profile_id || 'prof_default';
+        const pLabel = encodeURIComponent(st.profile_label || `Profile #${pId.slice(-4)}`);
+        if (chrome.runtime.setUninstallURL) {
+            chrome.runtime.setUninstallURL(`http://127.0.0.1:5000/api/activity/uninstall?profile_id=${pId}&profile_label=${pLabel}`);
+        }
+    });
+} catch(e) {}
+
 // Watch extension enabled/disabled state in background exclusively (prevents multi-tab duplicate logs)
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.ext_enabled) {
@@ -461,10 +548,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     event_type: isEnabled ? 'ext_enabled' : 'ext_disabled',
+                    off_source: 'popup',
                     profile_id: profileId,
                     profile_label: profileLabel,
-                    title: isEnabled ? 'Extension চালু (Active)' : 'Extension বন্ধ (Off)',
-                    details: isEnabled ? 'গ্রাহক এক্সটেনশন অন করেছেন' : 'গ্রাহক এক্সটেনশন অফ করেছেন',
+                    title: isEnabled ? 'Extension চালু (Active)' : 'Extension বন্ধ (Popup)',
+                    details: isEnabled ? 'গ্রাহক এক্সটেনশন অন করেছেন' : 'গ্রাহক এক্সটেনশন পপআপ থেকে অফ করেছেন',
                     amount: 0,
                     status: isEnabled ? 'success' : 'warning',
                     metadata: { phone: phone }
@@ -473,6 +561,36 @@ chrome.storage.onChanged.addListener((changes, area) => {
         });
     }
 });
+
+// Watch extension suspension / disable in background
+if (chrome.runtime.onSuspend) {
+    chrome.runtime.onSuspend.addListener(() => {
+        try {
+            chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone'], (st) => {
+                const profileId = st.profile_id || 'prof_default';
+                const phone = st.ivac_phone || '';
+                const profileLabel = phone ? `Profile (${phone})` : (st.profile_label || `Profile #${profileId.slice(-4)}`);
+                const offSource = isManageExtensionsOpen ? 'manage_extensions_page' : 'browser_unload';
+                
+                // Using keepalive: true ensures the HTTP POST is transmitted even as Chrome destroys the worker
+                fetch('http://127.0.0.1:5000/api/activity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    keepalive: true,
+                    body: JSON.stringify({
+                        event_type: 'ext_disabled',
+                        off_source: offSource,
+                        profile_id: profileId,
+                        profile_label: profileLabel,
+                        title: isManageExtensionsOpen ? 'Extension বন্ধ (Manage Extensions)' : 'Extension আনলোড (Browser Close)',
+                        details: isManageExtensionsOpen ? 'গ্রাহক chrome://extensions পেজ থেকে অফ করেছেন' : 'ব্রাউজার বন্ধ করা হয়েছে',
+                        status: 'warning'
+                    })
+                }).catch(() => {});
+            });
+        } catch(e) {}
+    });
+}
 
 // ===== GLOBAL SIDE PANEL CONSISTENCY ACROSS ALL TABS =====
 async function ensureSidePanelConsistency(tabId) {
@@ -588,4 +706,50 @@ chrome.runtime.onConnect.addListener((port) => {
         port.onDisconnect.addListener(() => {});
     }
 });
+
+// High-Speed Server & License Heartbeat Poller (Every 1000ms) - Detects Blocked/Offline instantly!
+async function runServerHeartbeat() {
+    try {
+        const res = await fetch('http://127.0.0.1:5000/api/status');
+        if (!res.ok) throw new Error("Offline");
+        const data = await res.json();
+        const isLic = Boolean(data && data.licensed !== false);
+        _cachedStatusData = data;
+        _cachedStatusTime = Date.now();
+        _cachedStatusConnected = true;
+        chrome.storage.local.set({ server_connected: true, license_valid: isLic });
+    } catch (e) {
+        _cachedStatusData = null;
+        _cachedStatusTime = 0;
+        _cachedStatusConnected = false;
+        chrome.storage.local.set({ server_connected: false, license_valid: false });
+    }
+}
+setInterval(runServerHeartbeat, 1000);
+runServerHeartbeat();
+
+// Broadcast floating window visibility to all tabs whenever hide_floating_window changes
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.hide_floating_window !== undefined) {
+        const isHidden = changes.hide_floating_window.newValue === true;
+        if (chrome.tabs && typeof chrome.tabs.query === 'function') {
+            chrome.tabs.query({}, (tabs) => {
+                if (tabs && tabs.length) {
+                    tabs.forEach((tab) => {
+                        if (tab && tab.id) {
+                            chrome.tabs.sendMessage(tab.id, {
+                                action: 'TOGGLE_FLOATING_WINDOW',
+                                hide: isHidden
+                            }, () => {
+                                if (chrome.runtime.lastError) {}
+                            });
+                        }
+                    });
+                }
+            });
+        }
+    }
+});
+
+
 

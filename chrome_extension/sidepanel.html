@@ -9,24 +9,23 @@
 </head>
 <body>
     <div class="container">
-        <div class="header-wrapper">
-            <div class="panel-brand">
-                <img src="logo.png" class="panel-brand-logo" alt="IVAC Master Pro">
-                <div class="panel-brand-info">
-                    <span class="panel-brand-title">IVAC Master Pro</span>
-                    <span class="panel-brand-sub">⚡ Registration Panel</span>
+        <div class="header-wrapper" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid var(--border-color);">
+            <div class="panel-brand" style="display: flex; align-items: center; gap: 5px; min-width: 0;">
+                <img src="icon.png" class="panel-brand-logo" alt="IVAC Master Pro" style="width: 20px; height: 20px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.12));">
+                <div style="display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+                    <span style="font-size: 11px; font-weight: 800; color: var(--text-main); letter-spacing: -0.2px;">IVAC Master</span>
+                    <span style="font-size: 8.5px; font-weight: 800; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 0.5px 3.5px; border-radius: 4px; line-height: 1.1;">REG</span>
                 </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-                <button type="button" id="btnSwitchToFormFill" title="FormFill Side Panel এ যান" style="font-size: 11px; font-weight: 700; padding: 3px 8px; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s ease;">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                <button type="button" id="btnSwitchToFormFill" title="FormFill Side Panel এ যান" style="font-size: 10px; font-weight: 700; padding: 2.5px 6px; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 6px; background: #eff6ff; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: all 0.15s ease; white-space: nowrap;">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     <span>FormFill</span>
                 </button>
-                <div class="zoom-wrapper">
-                    <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Zoom:</span>
-                    <button type="button" class="theme-toggle" id="zoomOutBtn" style="min-width: 26px; font-size: 14px; padding: 2px 6px; display: flex; justify-content: center;">-</button>
-                    <span id="zoomLevelTxt" style="font-size: 11px; font-weight: 700; min-width: 32px; text-align: center;">90%</span>
-                    <button type="button" class="theme-toggle" id="zoomInBtn" style="min-width: 26px; font-size: 14px; padding: 2px 6px; display: flex; justify-content: center;">+</button>
+                <div class="zoom-wrapper" style="display: inline-flex; align-items: center; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 1.5px 3px; gap: 2px;">
+                    <button type="button" class="theme-toggle" id="zoomOutBtn" title="Zoom Out" style="width: 17px; height: 17px; padding: 0; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: none; background: transparent; cursor: pointer; border-radius: 3px; color: var(--text-main);">−</button>
+                    <span id="zoomLevelTxt" style="font-size: 9.5px; font-weight: 700; min-width: 24px; text-align: center; color: var(--text-muted); line-height: 1;">90%</span>
+                    <button type="button" class="theme-toggle" id="zoomInBtn" title="Zoom In" style="width: 17px; height: 17px; padding: 0; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: none; background: transparent; cursor: pointer; border-radius: 3px; color: var(--text-main);">+</button>
                 </div>
             </div>
         </div>

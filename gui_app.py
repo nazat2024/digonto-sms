@@ -236,18 +236,18 @@ class IVACApp(ctk.CTk):
         super().__init__()
         
         self.title(f"{APP_NAME} v{APP_VERSION}")
-        self.geometry("700x580")
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        # Mathematical centering
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        win_w = 700
+        win_h = 580
+        x = max(0, (screen_w - win_w) // 2)
+        y = max(0, (screen_h - win_h) // 2)
+        self.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        
         self._apply_crisp_icon()
-        self.after(100, self._apply_crisp_icon)
-        self.after(500, self._apply_crisp_icon)
-            
-        # Center on screen
-        self.update_idletasks()
-        x = (self.winfo_screenwidth() - 700) // 2
-        y = (self.winfo_screenheight() - 580) // 2
-        self.geometry(f"700x580+{x}+{y}")
         
         # State
         self.license_info = None
@@ -257,12 +257,13 @@ class IVACApp(ctk.CTk):
         self._last_config_version = os.path.getmtime(CONFIG_FILE) if os.path.exists(CONFIG_FILE) else 0
         self.otp_data = {}
         self._expanded_phones = set()
+        self._loaded_tabs = set()
         
         # Instant UI Launch (< 50ms) - No slow loading screen!
         self.loading_label = None
         self._check_license_and_start()
-        self.after(50, self._start_gui_mqtt_listener)
-        self.after(300, self._cleanup_legacy_installation)
+        self.after(100, self._start_gui_mqtt_listener)
+        self.after(500, self._cleanup_legacy_installation)
 
     def _cleanup_legacy_installation(self):
         """Removes leftover desktop shortcut and Start Menu folder from older 'Digonto QuickFill'."""
@@ -292,9 +293,27 @@ class IVACApp(ctk.CTk):
             pass
     
     def _load_config(self):
+        backup_file = os.path.join(APP_DATA_DIR, "config_backup.json")
         try:
+            if not os.path.exists(CONFIG_FILE) and os.path.exists(backup_file):
+                import shutil
+                shutil.copy(backup_file, CONFIG_FILE)
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
+                
+            # Auto-recover profiles from backup if config.json was emptied
+            if not self.config.get("profiles") and os.path.exists(backup_file):
+                try:
+                    with open(backup_file, 'r', encoding='utf-8') as bf:
+                        bdata = json.load(bf)
+                        if bdata.get("profiles"):
+                            self.config["profiles"] = bdata["profiles"]
+                        if bdata.get("rocket_accounts") and not self.config.get("rocket_accounts"):
+                            self.config["rocket_accounts"] = bdata["rocket_accounts"]
+                        if bdata.get("chrome_bookmarks") and not self.config.get("chrome_bookmarks"):
+                            self.config["chrome_bookmarks"] = bdata["chrome_bookmarks"]
+                except Exception:
+                    pass
                 
             # Data Migration for older rocket accounts
             accounts = self.config.get("rocket_accounts", [])
@@ -333,6 +352,11 @@ class IVACApp(ctk.CTk):
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
             if os.path.exists(CONFIG_FILE):
                 self._last_config_version = os.path.getmtime(CONFIG_FILE)
+            # Automatic safety backup
+            backup_file = os.path.join(APP_DATA_DIR, "config_backup.json")
+            if self.config.get("profiles") or self.config.get("rocket_accounts"):
+                with open(backup_file, 'w', encoding='utf-8') as bf:
+                    json.dump(self.config, bf, ensure_ascii=False, indent=2)
         except Exception:
             pass
     def _lockout_license(self, error_msg="আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!", status="blocked"):
@@ -502,8 +526,7 @@ class IVACApp(ctk.CTk):
             command=self.destroy
         ).pack(pady=6)
         
-        # Start Auto-Unblock Poller (Polls every 3 seconds to auto-restore when unblocked!)
-        # Poller removed: 100% Zero Firebase reads! Handled via MQTT
+        self._apply_crisp_icon()
 
     def _activate_new_key_inline(self):
         key = self.new_key_entry.get().strip()
@@ -745,35 +768,11 @@ class IVACApp(ctk.CTk):
         # Create tabs
         self.tab_home = self.tabview.add("🏠 Home")
         self.tab_otps = self.tabview.add("📨 Recent OTPs")
-        self.tab_extension = self.tabview.add("🔌 Extension")
         self.tab_profiles = self.tabview.add("👥 Profiles")
+        self.tab_extension = self.tabview.add("🧩 Extension")
         self.tab_payment = self.tabview.add("💳 Payment")
         self.tab_settings = self.tab_payment
         self.tab_license = self.tabview.add("🔑 License")
-        
-        # Permanently grid and map all tabs in OS memory (prevents unmap/remap lag and zero blank screen)
-        for name, tab in self.tabview._tab_dict.items():
-            tab.grid(
-                row=3, column=0, sticky="nsew",
-                padx=self.tabview._apply_widget_scaling(max(self.tabview._corner_radius, self.tabview._border_width)),
-                pady=self.tabview._apply_widget_scaling(max(self.tabview._corner_radius, self.tabview._border_width))
-            )
-            
-        # 0ms Instant Tab Switcher via hardware Z-stacking (tkraise)
-        def _raise_tab(name: str):
-            if name in self.tabview._tab_dict:
-                self.tabview._current_name = name
-                self.tabview._segmented_button.set(name)
-                self.tabview._tab_dict[name].tkraise()
-                self._on_tab_changed()
-            else:
-                raise ValueError(f"CTkTabview has no tab named '{name}'")
-
-        self.tabview._segmented_button.configure(command=_raise_tab)
-        self.tabview._segmented_button_callback = _raise_tab
-        self.tabview.set = _raise_tab
-        self.tabview._grid_forget_all_tabs = lambda *args, **kwargs: None
-        self.tabview._set_grid_current_tab = lambda *args, **kwargs: None
         
         # Auto sync hidden extension directory asynchronously (0ms UI impact)
         def _sync_ext():
@@ -796,17 +795,22 @@ class IVACApp(ctk.CTk):
         )
         self.footer_label.pack(pady=5)
 
-        # Pre-build Home and Profiles immediately: BOTH are 100% pre-rendered and ready at launch!
-        self._loaded_tabs = {"🏠 Home", "👥 Profiles"}
+        # Build ONLY Home tab on startup for true 0-second launch!
+        self._loaded_tabs = {"🏠 Home"}
         self._build_home_tab()
-        self._build_profiles_tab()
-        self.tabview._tab_dict["🏠 Home"].tkraise()
+        self.tabview.set("🏠 Home")
 
-        # Background idle pre-warming: pre-renders secondary tabs silently so clicks are 0ms instant!
-        self.after(20, lambda: self._prewarm_tab("🔌 Extension"))
-        self.after(50, lambda: self._prewarm_tab("📨 Recent OTPs"))
-        self.after(80, lambda: self._prewarm_tab("💳 Payment"))
-        self.after(110, lambda: self._prewarm_tab("🔑 License"))
+        self._apply_crisp_icon()
+
+        # Background prewarm tabs sequentially during idle time (true 0-second switch for Extension & Profiles!)
+        def _prewarm_bg():
+            # Extension tab first so it is immediately loaded and ready when user clicks
+            self.after(50, lambda: self._prewarm_tab("🧩 Extension"))
+            self.after(110, lambda: self._prewarm_tab("👥 Profiles"))
+            self.after(180, lambda: self._prewarm_tab("📨 Recent OTPs"))
+            self.after(260, lambda: self._prewarm_tab("💳 Payment"))
+
+        self.after(60, _prewarm_bg)
 
     def _prewarm_tab(self, tab_name: str):
         if not hasattr(self, '_loaded_tabs'):
@@ -821,12 +825,12 @@ class IVACApp(ctk.CTk):
                 self._build_otps_tab()
             elif tab_name in ("💳 Payment", "⚙️ Settings"):
                 self._build_settings_tab()
-            elif tab_name == "🔌 Extension":
+            elif tab_name in ("🧩 Extension", "🔌 Extension"):
                 self._build_extension_tab()
             elif tab_name == "🔑 License":
                 self._build_license_tab()
         except Exception as e:
-            print(f"Prewarm tab {tab_name} error: {e}")
+            print(f"Build tab {tab_name} error: {e}")
 
     def _on_tab_changed(self):
         selected = self.tabview.get()
@@ -835,13 +839,14 @@ class IVACApp(ctk.CTk):
             
         if selected not in self._loaded_tabs:
             self._prewarm_tab(selected)
-            self.update_idletasks()
         elif selected == "👥 Profiles":
             if getattr(self, "_profiles_tab_dirty", False):
                 self._profiles_tab_dirty = False
                 if hasattr(self, "_refresh_profiles_tab"):
                     self._refresh_profiles_tab()
-        elif selected == "🔌 Extension":
+        elif selected in ("🧩 Extension", "🔌 Extension"):
+            if hasattr(self, "_on_ext_configure"):
+                self.after(10, self._on_ext_configure)
             if getattr(self, "_ext_profiles_dirty", False):
                 self._ext_profiles_dirty = False
                 if hasattr(self, "_refresh_extension_profiles_list"):
@@ -849,6 +854,7 @@ class IVACApp(ctk.CTk):
 
     def select_tab(self, name: str):
         self.tabview.set(name)
+        self._on_tab_changed()
 
     # ===== HOME TAB =====
     def _build_home_tab(self):
@@ -2423,7 +2429,7 @@ class IVACApp(ctk.CTk):
             p_list_header, text="🔄 তালিকা রিফ্রেশ",
             font=ctk.CTkFont(size=11),
             fg_color="#1e293b", hover_color="#334155", height=26, width=100,
-            command=self._refresh_extension_profiles_list
+            command=lambda: (cpm.invalidate_profiles_status_cache() if hasattr(cpm, "invalidate_profiles_status_cache") else None, self._refresh_extension_profiles_list())
         ).pack(side="right")
         
         self.btn_add_all_profiles = ctk.CTkButton(
@@ -2434,8 +2440,24 @@ class IVACApp(ctk.CTk):
         )
         self.btn_add_all_profiles.pack(side="right", padx=(0, 8))
         
-        # Native High-Speed Scroll Container for Chrome Profiles (Zero-lag, 0.4ms init)
+        # Search Bar for Extension Tab (Matches Profiles Tab Style)
         import tkinter as tk
+        ext_search_wrap = tk.Frame(update_card, bg="#112240", highlightbackground="#233554", highlightthickness=1)
+        ext_search_wrap.pack(fill="x", padx=15, pady=(0, 8))
+        
+        tk.Label(ext_search_wrap, text="🔍", font=("Segoe UI", 10), fg="#8892b0", bg="#112240").pack(side="left", padx=(8, 4))
+        
+        self.ext_search_entry = tk.Entry(
+            ext_search_wrap,
+            font=("Segoe UI", 10),
+            bg="#112240", fg="#f8fafc",
+            insertbackground="#64ffda",
+            relief="flat", bd=0
+        )
+        self.ext_search_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
+        self.ext_search_entry.bind("<KeyRelease>", lambda *_: self._filter_extension_profiles_search())
+        
+        # Native High-Speed Scroll Container for Chrome Profiles (Zero-lag, 0.4ms init)
         scroll_wrap = tk.Frame(update_card, bg="#0a192f", highlightbackground="#233554", highlightthickness=1)
         scroll_wrap.pack(fill="x", padx=15, pady=(0, 15))
         
@@ -2483,7 +2505,13 @@ class IVACApp(ctk.CTk):
                     
         self._on_ext_configure = _on_ext_configure
         self._ext_profiles_container.bind("<Configure>", _on_ext_configure)
-        self._ext_canvas.bind("<Configure>", lambda e: self._ext_canvas.itemconfig(self._ext_canvas_window, width=e.width))
+        def _on_canvas_configure(e):
+            if hasattr(self, "_ext_canvas") and hasattr(self, "_ext_canvas_window"):
+                if e.width > 10:
+                    self._ext_canvas.itemconfig(self._ext_canvas_window, width=e.width)
+            if hasattr(self, "_on_ext_configure"):
+                self._on_ext_configure()
+        self._ext_canvas.bind("<Configure>", _on_canvas_configure)
         
         def _on_ext_mousewheel(e):
             if not hasattr(self, "_ext_canvas") or not self._ext_canvas.winfo_exists():
@@ -2528,6 +2556,8 @@ class IVACApp(ctk.CTk):
             except Exception:
                 pass
                 
+        _bind_ext_wheel(ext_search_wrap)
+        _bind_ext_wheel(self.ext_search_entry)
         _bind_ext_wheel(scroll_wrap)
         _bind_ext_wheel(self._ext_canvas)
         _bind_ext_wheel(self._ext_scrollbar)
@@ -2549,6 +2579,7 @@ class IVACApp(ctk.CTk):
                 
             self._last_ext_statuses = statuses
             self._ext_profile_row_widgets = {}
+            self._ext_profile_row_items = []
             
             if hasattr(self, "lbl_ext_profiles_count") and self.lbl_ext_profiles_count.winfo_exists():
                 self.lbl_ext_profiles_count.configure(text=f"👥 Chrome Profiles ({len(statuses)}টি পাওয়া গেছে):")
@@ -2648,6 +2679,14 @@ class IVACApp(ctk.CTk):
                 btn_tab.pack(side="right", padx=(0, 6))
                 self._ext_profile_row_widgets[p_dir] = btn_tab
                 
+                item_record = {
+                    "row": row,
+                    "status": s,
+                    "search_text": f"{name} {p_dir}".lower(),
+                    "visible": True
+                }
+                self._ext_profile_row_items.append(item_record)
+                
                 if hasattr(self, "_bind_ext_wheel"):
                     for elem in (row, badge, btn_tab, lbl_title, lbl_dir):
                         self._bind_ext_wheel(elem)
@@ -2656,10 +2695,60 @@ class IVACApp(ctk.CTk):
             for s in statuses:
                 _render_row(s)
                 
+            if hasattr(self, "ext_search_entry") and self.ext_search_entry.winfo_exists():
+                if self.ext_search_entry.get().strip():
+                    self._filter_extension_profiles_search()
+
             if hasattr(self, "_on_ext_configure"):
                 self._on_ext_configure()
                 
         self.run_in_background(cpm.get_profiles_extension_status, _update_ui)
+
+    def _filter_extension_profiles_search(self):
+        if not hasattr(self, "_ext_profile_row_items") or not self._ext_profile_row_items:
+            return
+            
+        query = ""
+        if hasattr(self, "ext_search_entry") and self.ext_search_entry.winfo_exists():
+            query = self.ext_search_entry.get().strip().lower()
+            
+        count = 0
+        for item in self._ext_profile_row_items:
+            match = not query or (query in item["search_text"])
+            if match:
+                item["row"].pack(fill="x", pady=2, padx=4)
+                item["visible"] = True
+                count += 1
+            else:
+                item["row"].pack_forget()
+                item["visible"] = False
+                    
+        total = len(self._ext_profile_row_items)
+        if hasattr(self, "lbl_ext_profiles_count") and self.lbl_ext_profiles_count.winfo_exists():
+            if query:
+                self.lbl_ext_profiles_count.configure(text=f"👥 Chrome Profiles ({count}/{total}টি পাওয়া গেছে):")
+            else:
+                self.lbl_ext_profiles_count.configure(text=f"👥 Chrome Profiles ({total}টি পাওয়া গেছে):")
+                
+        if not hasattr(self, "_ext_no_search_box") or not self._ext_no_search_box.winfo_exists():
+            import tkinter as tk
+            self._ext_no_search_box = tk.Frame(self._ext_profiles_container, bg="#112240", padx=15, pady=15)
+            self._ext_no_search_lbl = tk.Label(
+                self._ext_no_search_box, text="🔍 মিল রয়েছে এমন কোনো Chrome প্রোফাইল পাওয়া যায়নি।",
+                font=("Segoe UI", 10), fg="#64748b", bg="#112240"
+            )
+            self._ext_no_search_lbl.pack()
+            if hasattr(self, "_bind_ext_wheel"):
+                self._bind_ext_wheel(self._ext_no_search_box)
+                self._bind_ext_wheel(self._ext_no_search_lbl)
+
+        if count == 0 and total > 0 and query:
+            self._ext_no_search_box.pack(fill="x", padx=5, pady=10)
+        else:
+            self._ext_no_search_box.pack_forget()
+
+        if hasattr(self, "_on_ext_configure"):
+            self._on_ext_configure()
 
     def _add_existing_chrome_profile_to_tab(self, p_dir, name, btn_widget=None):
         existing_p = self.config.get("profiles", [])
@@ -2824,8 +2913,9 @@ class IVACApp(ctk.CTk):
             row = tk.Frame(self.bm_list_frame, bg="#0a192f")
             row.pack(fill="x", padx=10, pady=3)
             
+            bm_title = bm.get('name') or bm.get('title', '')
             tk.Label(
-                row, text=f"🔗 {bm.get('name', '')}:",
+                row, text=f"🔗 {bm_title}:",
                 font=("Segoe UI", 9, "bold"), fg="#ccd6f6", bg="#0a192f"
             ).pack(side="left")
             

@@ -9,6 +9,7 @@ import json
 import time
 import requests
 from datetime import datetime
+import uuid
 
 from license_system.hwid import generate_hwid, get_legacy_hwid, get_all_candidate_legacy_hwids
 from license_system.crypto import encrypt_data, decrypt_data
@@ -249,8 +250,14 @@ def _sync_with_cloud(license_key, current_hwid, license_data):
     info.remaining_short = "1d"
     return info
 
+_cached_license_info = None
+_cached_license_mtime = 0
+_cached_license_timestamp = 0
+
 def mark_license_blocked_locally(license_key: str):
     """Instantly mark local license.dat as blocked"""
+    global _cached_license_info
+    _cached_license_info = None
     try:
         current_hwid = generate_hwid()
         data = {
@@ -267,6 +274,7 @@ def mark_license_blocked_locally(license_key: str):
 
 def check_license(force_cloud: bool = False) -> LicenseInfo:
     """Ultra-fast instant local license check (< 1ms) with asynchronous cloud sync"""
+    global _cached_license_info, _cached_license_mtime, _cached_license_timestamp
     info = LicenseInfo()
     
     if not os.path.exists(LICENSE_FILE):
@@ -275,6 +283,11 @@ def check_license(force_cloud: bool = False) -> LicenseInfo:
         return info
         
     try:
+        mtime = os.path.getmtime(LICENSE_FILE)
+        now = time.time()
+        if not force_cloud and _cached_license_info is not None and mtime == _cached_license_mtime and (now - _cached_license_timestamp < 15):
+            return _cached_license_info
+
         with open(LICENSE_FILE, 'r', encoding='utf-8') as f:
             encrypted_data = f.read().strip()
             
@@ -355,6 +368,9 @@ def check_license(force_cloud: bool = False) -> LicenseInfo:
                 
             # Silent async background sync (App launches instantly without waiting for cloud)
             threading.Thread(target=_bg_cloud_sync, args=(license_key, current_hwid), daemon=True).start()
+            _cached_license_info = info
+            _cached_license_mtime = mtime
+            _cached_license_timestamp = time.time()
             return info
             
         # 2. CLOUD SYNC (Only if expiry_ms not yet cached)
@@ -471,6 +487,8 @@ def activate_license(license_key: str) -> LicenseInfo:
         info.plan = cloud_data.get("plan", "Standard")
         _format_expiry_details(info, expiry_ms, now_ms)
         
+        global _cached_license_info
+        _cached_license_info = info
         return info
         
     except requests.exceptions.RequestException:
@@ -484,6 +502,8 @@ def activate_license(license_key: str) -> LicenseInfo:
 
 
 def deactivate_license():
+    global _cached_license_info
+    _cached_license_info = None
     if os.path.exists(LICENSE_FILE):
         os.remove(LICENSE_FILE)
         return True
@@ -544,7 +564,10 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
             local_list.insert(0, payment_record)
             _save_local_payments(local_list)
             
-        # ২. ক্লাউড ফায়ারবেসে পাঠানোর চেষ্টা করো
+        # ২. Turso Database-এ সেভ করো (Dual-Cloud Failsafe: ফায়ারবেস ডাউন থাকলেও Turso সচল থাকবে)
+        insert_turso_payment_async(payment_record)
+            
+        # ৩. ক্লাউড ফায়ারবেসে পাঠানোর চেষ্টা করো
         payments_url = f"{BASE_URL}/{license_key}/payments"
         payload = {
             "fields": {
@@ -707,56 +730,167 @@ def _get_presence_client():
     return _presence_client
 
 
-def record_activity(event_type: str, profile_id: str = "default", profile_label: str = "Profile", title: str = "", details: str = "", amount: float = 0, status: str = "info", metadata: dict = None):
-    """Records meaningful activity events into Firebase Firestore, filtering out noisy on/off spam to preserve write limits"""
-    # Filter out noisy on/off status pings from hammering Firestore!
-    # Real-time status is tracked via MQTT Live Tunnel without database writes.
-    if event_type in ["ext_disabled", "ext_inactive", "ext_off", "ext_enabled"]:
-        update_profile_heartbeat(profile_id, profile_label, is_active=(event_type == "ext_enabled"), last_step=title or details)
+TURSO_DB_URL = "https://ivac-master-pro-ivacmasterpro.aws-ap-south-1.turso.io/v2/pipeline"
+TURSO_AUTH_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk1NjkwNTMsImlkIjoiMDFhMGFhYTAtOTAwMS03M2QwLWEwY2YtMDU1YTA1MjIzMTEyIiwia2lkIjoiSks1VmYtT1BqX0lRVFBOd3R3QlhfNXkzMk43YVRwdXhsX0RIRmtrNHRzdyIsInJpZCI6ImNlOGUzYzk1LTI0ZjAtNDY3ZC1iNjkzLWI4MDVkZWY4ZWIzZiJ9.RA6Gd_8XSSFesSdqB8E_SqbWQTrqgbbl_0Q2vExxUE3H0USdkscTa0Dfs7NWaYcT0-S9WhPREpmdmbQKbilgAg"
+
+
+def _insert_turso_worker(record: dict):
+    """Background worker thread to insert activity records into Turso Database (zero impact on main thread)"""
+    try:
+        sql = """
+            INSERT INTO activities 
+            (id, license_key, profile_id, profile_label, event_type, off_source, title, details, amount, status, timestamp, datetime, time_formatted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        body = {
+            "requests": [
+                {
+                    "type": "execute",
+                    "stmt": {
+                        "sql": sql,
+                        "args": [
+                            {"type": "text", "value": str(record.get("id", ""))},
+                            {"type": "text", "value": str(record.get("license_key", ""))},
+                            {"type": "text", "value": str(record.get("profile_id", "default"))},
+                            {"type": "text", "value": str(record.get("profile_label", "Profile"))},
+                            {"type": "text", "value": str(record.get("event_type", ""))},
+                            {"type": "text", "value": str(record.get("off_source", "popup"))},
+                            {"type": "text", "value": str(record.get("title", ""))},
+                            {"type": "text", "value": str(record.get("details", ""))},
+                            {"type": "float", "value": float(record.get("amount", 0))},
+                            {"type": "text", "value": str(record.get("status", "warning"))},
+                            {"type": "integer", "value": str(int(record.get("timestamp", 0)))},
+                            {"type": "text", "value": str(record.get("datetime", ""))},
+                            {"type": "text", "value": str(record.get("time_formatted", ""))}
+                        ]
+                    }
+                },
+                {"type": "close"}
+            ]
+        }
+        headers = {
+            "Authorization": f"Bearer {TURSO_AUTH_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        requests.post(TURSO_DB_URL, json=body, headers=headers, timeout=5)
+    except Exception as e:
+        print(f"[Turso Insert Error] {e}")
+
+
+def insert_turso_activity_async(record: dict):
+    """Dispatches Turso insert to a non-blocking daemon thread"""
+    threading.Thread(target=_insert_turso_worker, args=(record,), daemon=True).start()
+
+
+def _insert_turso_payment_worker(payment_data: dict):
+    """Background worker thread to insert payment records into Turso Database (zero impact on main thread)"""
+    try:
+        sql = """
+            INSERT OR REPLACE INTO payments 
+            (id, license_key, profile_id, profile_label, amount, amount_1, amount_2, amount_3, status, stage, rocket_account, description, timestamp, datetime)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        body = {
+            "requests": [
+                {
+                    "type": "execute",
+                    "stmt": {
+                        "sql": sql,
+                        "args": [
+                            {"type": "text", "value": str(payment_data.get("id") or payment_data.get("local_id") or "")},
+                            {"type": "text", "value": str(payment_data.get("license_key", ""))},
+                            {"type": "text", "value": str(payment_data.get("profile_id", "prof_default"))},
+                            {"type": "text", "value": str(payment_data.get("profile_label", "Profile"))},
+                            {"type": "float", "value": float(payment_data.get("amount", 0))},
+                            {"type": "float", "value": float(payment_data.get("amount_1", 0))},
+                            {"type": "float", "value": float(payment_data.get("amount_2", 0))},
+                            {"type": "float", "value": float(payment_data.get("amount_3", 0))},
+                            {"type": "text", "value": str(payment_data.get("status", "initiated"))},
+                            {"type": "text", "value": str(payment_data.get("stage", ""))},
+                            {"type": "text", "value": str(payment_data.get("rocket_account", ""))},
+                            {"type": "text", "value": str(payment_data.get("description", ""))},
+                            {"type": "integer", "value": str(int(payment_data.get("timestamp", 0)))},
+                            {"type": "text", "value": str(payment_data.get("datetime", ""))}
+                        ]
+                    }
+                },
+                {"type": "close"}
+            ]
+        }
+        headers = {
+            "Authorization": f"Bearer {TURSO_AUTH_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        requests.post(TURSO_DB_URL, json=body, headers=headers, timeout=5)
+    except Exception as e:
+        print(f"[Turso Payment Insert Error] {e}")
+
+
+def insert_turso_payment_async(payment_data: dict):
+    """Dispatches Turso payment insert to a non-blocking daemon thread"""
+    threading.Thread(target=_insert_turso_payment_worker, args=(payment_data,), daemon=True).start()
+
+
+def record_activity(event_type: str, profile_id: str = "default", profile_label: str = "Profile", title: str = "", details: str = "", amount: float = 0, status: str = "info", metadata: dict = None, off_source: str = "popup"):
+    """Records manual off events into Turso Database (0 Firebase writes) and broadcasts live via MQTT"""
+    # 1. Ignore normal browser close or background unload (prevent false positives!)
+    if off_source == "browser_unload":
         return True
 
-    if not os.path.exists(LICENSE_FILE):
+    # 2. Update live presence via MQTT (0 database writes)
+    is_active = (event_type != "ext_disabled" and event_type != "ext_off" and event_type != "manual_off")
+    update_profile_heartbeat(profile_id, profile_label, is_active=is_active, last_step=title or details)
+
+    # 3. We ONLY record genuine MANUAL OFF events (or payments/milestones) to Turso Database!
+    is_manual_off = (event_type in ["ext_disabled", "manual_off", "ext_uninstalled"] and off_source in ["popup", "manage_extensions_page", "uninstalled"])
+    is_payment = (event_type in ["payment_recorded", "payment_success"])
+
+    # If it's not a manual off and not a payment milestone, skip database insertion completely
+    if not (is_manual_off or is_payment):
+        return True
+
+    license_key = get_active_license_key_fast()
+    if not license_key:
         return None
+
+    now = datetime.now()
+    timestamp_ms = int(now.timestamp() * 1000)
+    datetime_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    time_str = now.strftime("%I:%M:%S %p")
+    record_id = f"act_{uuid.uuid4().hex[:12]}"
+
+    record_data = {
+        "id": record_id,
+        "license_key": license_key,
+        "profile_id": str(profile_id or "default"),
+        "profile_label": str(profile_label or "Profile"),
+        "event_type": str(event_type),
+        "off_source": str(off_source or "popup"),
+        "title": str(title),
+        "details": str(details or ""),
+        "amount": float(amount or 0),
+        "status": str(status or "warning"),
+        "timestamp": timestamp_ms,
+        "datetime": datetime_str,
+        "time_formatted": time_str
+    }
+
+    # Save to Turso Database in non-blocking background thread (0 Firebase writes!)
+    insert_turso_activity_async(record_data)
+
+    # Broadcast to MQTT Live Channel for 0-latency live streaming to Owner Panel
     try:
-        with open(LICENSE_FILE, 'r', encoding='utf-8') as f:
-            encrypted_data = f.read().strip()
-        current_hwid = generate_hwid()
-        decrypted = decrypt_data(encrypted_data, extra_key=current_hwid)
-        license_key = json.loads(decrypted).get("license_key", "")
-        if not license_key:
-            return None
-            
-        now = datetime.now()
-        timestamp_ms = int(now.timestamp() * 1000)
-        datetime_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        time_str = now.strftime("%I:%M:%S %p")
-        
-        # Post meaningful activity to Firestore activities sub-collection
-        activities_url = f"{BASE_URL}/{license_key}/activities"
-        fields = {
-            "event_type": {"stringValue": str(event_type)},
-            "profile_id": {"stringValue": str(profile_id or "default")},
-            "profile_label": {"stringValue": str(profile_label or "Profile")},
-            "title": {"stringValue": str(title)},
-            "details": {"stringValue": str(details or "")},
-            "amount": {"doubleValue": float(amount or 0)},
-            "status": {"stringValue": str(status or "info")},
-            "timestamp": {"integerValue": timestamp_ms},
-            "datetime": {"stringValue": datetime_str},
-            "time_formatted": {"stringValue": time_str}
-        }
-        if metadata and isinstance(metadata, dict):
-            fields["metadata_json"] = {"stringValue": json.dumps(metadata)}
-            
-        payload = {"fields": fields}
-        res = requests.post(f"{activities_url}?key={API_KEY}", json=payload, timeout=5)
-        
-        # Update live presence via MQTT (0 Firestore writes)
-        update_profile_heartbeat(profile_id, profile_label, is_active=True, last_step=title)
-        return res.status_code == 200
+        mqtt_client = _get_presence_client()
+        if mqtt_client:
+            live_payload = json.dumps({
+                "type": "activity_event",
+                **record_data
+            })
+            mqtt_client.publish(f"ivac_live_{license_key}", live_payload, qos=0)
     except Exception as e:
-        print(f"Activity recording error: {e}")
-        return False
+        print(f"[MQTT Live Activity Broadcast] Error: {e}")
+
+    return True
 
 
 _cached_active_license_key = None

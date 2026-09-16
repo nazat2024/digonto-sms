@@ -38,9 +38,9 @@ Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "C:\IVAC_C
 Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "{localappdata}\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; IconFilename: "{app}\_internal\digonto_icon.ico"
+Name: "{group}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; WorkingDir: "{app}"; IconFilename: "{app}\_internal\digonto_icon.ico"
 Name: "{group}\{cm:UninstallProgram,IVAC Master Pro}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; IconFilename: "{app}\_internal\digonto_icon.ico"; Tasks: desktopicon
+Name: "{autodesktop}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; WorkingDir: "{app}"; IconFilename: "{app}\_internal\digonto_icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "attrib.exe"; Parameters: "-h -s ""C:\IVAC_Chrome_Extension"""; Flags: runhidden
@@ -49,38 +49,15 @@ Filename: "icacls.exe"; Parameters: """C:\IVAC_Chrome_Extension"" /grant *S-1-5-
 Filename: "{app}\IVAC Master Pro.exe"; Description: "{cm:LaunchProgram,IVAC Master Pro}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
-function GetOldUninstallString(): String;
-var
-  sUnInstPath: String;
-begin
-  sUnInstPath := '';
-  if not RegQueryStringValue(HKLM64, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Digonto QuickFill_is1', 'UninstallString', sUnInstPath) then
-    if not RegQueryStringValue(HKLM32, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Digonto QuickFill_is1', 'UninstallString', sUnInstPath) then
-      if not RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Digonto QuickFill_is1', 'UninstallString', sUnInstPath) then
-        sUnInstPath := '';
-  Result := sUnInstPath;
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  sUnInstPath: String;
   iResultCode: Integer;
 begin
   if CurStep = ssInstall then
   begin
-    // 1. Silently terminate any running old Digonto QuickFill instance
+    // 1. Silently terminate any running old Digonto QuickFill or IVAC Master Pro instance
     Exec('taskkill.exe', '/F /IM "Digonto QuickFill.exe"', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);
-    
-    // 2. Silently run the old uninstaller to cleanly unregister Digonto QuickFill from Windows
-    sUnInstPath := GetOldUninstallString();
-    if sUnInstPath <> '' then
-    begin
-      sUnInstPath := RemoveQuotes(sUnInstPath);
-      if FileExists(sUnInstPath) then
-      begin
-        Exec(sUnInstPath, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);
-      end;
-    end;
+    Exec('taskkill.exe', '/F /IM "IVAC Master Pro.exe"', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);
 
     // 3. Delete any old Digonto shortcuts & program directory
     DeleteFile(ExpandConstant('{userdesktop}\Digonto QuickFill.lnk'));
