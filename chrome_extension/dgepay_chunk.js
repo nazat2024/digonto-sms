@@ -209,26 +209,33 @@
                                 paymentStepDone.payClicked = true;
                                 console.log('[IVAC] Pay বাটনে ক্লিক করা হয়েছে!');
                                 
-                                // NEW: Track Payment Initiated
+                                // NEW: Track Payment Initiated with strict 1-time session lock
                                 try {
-                                    const amountMatch = payBtn.textContent.match(/[\d,]+\.?\d*/);
-                                    const amount = amountMatch ? parseFloat(amountMatch[0].replace(/,/g, '')) : 0;
-                                    
-                                    chrome.runtime.sendMessage({
-    action: 'recordPayment',
-    data: {
-        amount: amount,
-        status: 'initiated',
-        stage: 'pay_clicked',
-        rocket_account: activeAccount.number,
-        description: ''
-    }
-}, (d) => {
-    if (d && d.payment_id) {
-        chrome.storage.local.set({ current_payment_id: d.payment_id });
-        console.log('[IVAC] Payment initiated recorded, ID:', d.payment_id);
-    }
-});
+                                    if (!sessionStorage.getItem('dgepay_pay_clicked_tracked')) {
+                                        sessionStorage.setItem('dgepay_pay_clicked_tracked', 'true');
+                                        const amountMatch = payBtn.textContent.match(/[\d,]+\.?\d*/);
+                                        const amount = amountMatch ? parseFloat(amountMatch[0].replace(/,/g, '')) : 0;
+                                        const cleanAcc = (activeAccount.number || '').replace(/[^0-9]/g, '');
+                                        const timeBucket = Math.floor(Date.now() / 60000);
+                                        const paymentSessionId = `pay_dge_${cleanAcc || 'acc'}_${timeBucket}`;
+                                        
+                                        chrome.runtime.sendMessage({
+                                            action: 'recordPayment',
+                                            data: {
+                                                payment_session_id: paymentSessionId,
+                                                amount: amount,
+                                                status: 'initiated',
+                                                stage: 'pay_clicked',
+                                                rocket_account: activeAccount.number,
+                                                description: ''
+                                            }
+                                        }, (d) => {
+                                            if (d && d.payment_id) {
+                                                chrome.storage.local.set({ current_payment_id: d.payment_id });
+                                                console.log('[IVAC] Payment initiated recorded, ID:', d.payment_id);
+                                            }
+                                        });
+                                    }
                                 } catch(e) {}
                             }
                         }

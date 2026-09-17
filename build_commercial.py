@@ -39,12 +39,12 @@ def clean():
         pass
     for d in [OBF_DIR, DIST_DIR, BUILD_DIR]:
         if os.path.exists(d):
-            shutil.rmtree(d)
+            shutil.rmtree(d, ignore_errors=True)
     
     # Delete __pycache__ to prevent PyInstaller from using stale bytecode
     pycache_dir = os.path.join(BASE_DIR, "__pycache__")
     if os.path.exists(pycache_dir):
-        shutil.rmtree(pycache_dir)
+        shutil.rmtree(pycache_dir, ignore_errors=True)
         print("    🧹 __pycache__ পরিষ্কার করা হয়েছে।")
 def minify_and_obfuscate():
     import ast
@@ -84,7 +84,7 @@ def minify_and_obfuscate():
         if os.path.exists("license_system"):
             dest_lic = os.path.join(OBF_DIR, "license_system")
             if os.path.exists(dest_lic):
-                shutil.rmtree(dest_lic)
+                shutil.rmtree(dest_lic, ignore_errors=True)
             shutil.copytree("license_system", dest_lic)
             
         for py_file in ["gui_license.py", "sms_server.py", "gui_app.py", "chrome_profile_manager.py", "otp_parser.py", "visa_photo.py"]:
@@ -107,7 +107,7 @@ def obfuscate_extension():
     obf_ext_dir = os.path.join(OBF_DIR, "chrome_extension")
     
     if os.path.exists(obf_ext_dir):
-        shutil.rmtree(obf_ext_dir)
+        shutil.rmtree(obf_ext_dir, ignore_errors=True)
     os.makedirs(obf_ext_dir, exist_ok=True)
     
     obf_tool = os.path.join(BASE_DIR, "tools", "obfuscate_extension.js")

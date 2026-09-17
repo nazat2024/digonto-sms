@@ -441,7 +441,7 @@ def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> st
                 # 🔒 Anti-Tamper SHA-256 Hash Verification:
                 # If ANY file in C:\IVAC_Chrome_Extension was modified, deleted, or tampered with, auto-heal!
                 import hashlib
-                for f_check in ["content.js", "background.js", "popup.js", "manifest.json", "inject.js", "visa_photo.js", "visa_photo.html", "visa_photo.css", "formfill.html", "formfill.js"]:
+                for f_check in ["content.js", "background.js", "popup.js", "manifest.json", "inject.js", "visa_photo.js", "visa_photo.html", "visa_photo.css", "formfill.html", "formfill.js", "formfill_content.js"]:
                     s_f = os.path.join(src, f_check)
                     d_f = os.path.join(safe_ext_dir, f_check)
                     if os.path.exists(s_f):

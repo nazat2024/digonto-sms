@@ -298,10 +298,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
+const paymentRecordDebounceMap = new Map();
+
     if (request.action === 'recordPayment') {
         chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone'], (st) => {
             const profileId = (request.data && request.data.profile_id) || st.profile_id || 'prof_default';
             const phone = (request.data && request.data.phone) || st.ivac_phone || '';
+            const rocketAcc = ((request.data && request.data.rocket_account) || '').replace(/[^0-9]/g, '');
+            const amount = (request.data && (request.data.amount_3 || request.data.amount)) || 0;
+            const stage = (request.data && request.data.stage) || 'initiated';
+            
+            // Client-Side 25-Second Sliding Window Debounce Lock
+            const dedupKey = `${profileId}_${rocketAcc}_${amount}_${stage}`;
+            const now = Date.now();
+            const cached = paymentRecordDebounceMap.get(dedupKey);
+            if (cached && (now - cached.time < 25000) && cached.response) {
+                console.log(`[IVAC Background] Debounce hit for ${dedupKey}. Reusing payment ID:`, cached.response.payment_id);
+                sendResponse(cached.response);
+                return;
+            }
+
             let profileLabel = (request.data && request.data.profile_label);
             if (!profileLabel || profileLabel === 'Profile' || profileLabel.startsWith('Profile #')) {
                 if (phone) {
@@ -328,7 +344,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 body: JSON.stringify(payload)
             })
             .then(r => r.json())
-            .then(sendResponse)
+            .then(res => {
+                if (res && res.success) {
+                    paymentRecordDebounceMap.set(dedupKey, { time: Date.now(), response: res });
+                    for (const [k, v] of paymentRecordDebounceMap.entries()) {
+                        if (Date.now() - v.time > 60000) paymentRecordDebounceMap.delete(k);
+                    }
+                }
+                sendResponse(res);
+            })
             .catch(e => sendResponse({ success: false, error: e.message }));
         });
         return true;

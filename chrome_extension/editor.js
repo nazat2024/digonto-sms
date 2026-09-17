@@ -171,12 +171,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     // 8. Visa Duration (Months) -> "12"
     if (!r.duration) {
         r.duration = "12";
+    } else {
+        r.duration = String(r.duration).replace(/[^0-9]/g, "") || "12";
     }
 
     // 9. No. of Entries -> "2" (MULTIPLE)
-    if (!r.visa_entry_id || r.visa_entry_id === "1" || r.visa_entry_id === "SINGLE") {
-        r.visa_entry_id = "2";
-    }
+    let edv = String(r.visa_entry_id || "2").toUpperCase();
+    if (edv.includes("SINGLE") || edv === "1") r.visa_entry_id = "1";
+    else if (edv.includes("TRIPLE") || edv === "4") r.visa_entry_id = "4";
+    else if (edv.includes("DOUBLE") || edv === "3") r.visa_entry_id = "3";
+    else r.visa_entry_id = "2";
 
     // Additional country code and phone formatting
     if (!r.pobCountry || r.pobCountry === "BANGLADESH") {

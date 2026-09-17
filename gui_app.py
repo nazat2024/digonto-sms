@@ -580,7 +580,7 @@ class IVACApp(ctk.CTk):
     def _start_gui_mqtt_listener(self):
         """100% Zero Firebase Reads: Persistent MQTT kill-switch & instant unblock listener (50ms latency)"""
         try:
-            import paho.mqtt.client as mqtt
+            import paho.mqtt.client as mqtt  # type: ignore
             import time
             
             def on_connect(client, userdata, flags, rc):

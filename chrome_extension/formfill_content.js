@@ -12,11 +12,19 @@ console.log("IV Autofill: content.js script has been loaded."); const e = { DELH
             optVal === target ||
             optTxt === target ||
             (target === "BANGLADESH" && (optVal === "BGD" || optTxt === "BGD" || optTxt.startsWith("BANGLADESH"))) ||
+            (target === "BGD" && (optVal === "BGD" || optTxt.includes("BANGLADESH") || optTxt === "BGD")) ||
+            (target.includes("BIRTH") && (optVal.includes("BIRTH") || optTxt.includes("BIRTH"))) ||
+            ((target === "M" || target === "MALE") && (optVal === "M" || optVal === "MALE" || optTxt === "MALE")) ||
+            ((target === "F" || target === "FEMALE") && (optVal === "F" || optVal === "FEMALE" || optTxt === "FEMALE")) ||
             (target === "BGDR" && optTxt.includes("RAJSHAHI")) ||
             (target === "BGDD" && optTxt.includes("DHAKA")) ||
             (target === "BGDC" && optTxt.includes("CHITTAGONG")) ||
             (target === "BGDK" && optTxt.includes("KHULNA")) ||
-            (target === "BGDS" && optTxt.includes("SYLHET"))
+            (target === "BGDS" && optTxt.includes("SYLHET")) ||
+            ((target === "2" || target.includes("MULTI")) && (optVal === "2" || optTxt.includes("MULTI"))) ||
+            ((target === "1" || target.includes("SINGLE")) && (optVal === "1" || optTxt.includes("SINGLE"))) ||
+            ((target === "3" || target.includes("DOUBLE")) && (optVal === "3" || optTxt.includes("DOUBLE"))) ||
+            ((target === "4" || target.includes("TRIPLE")) && (optVal === "4" || optTxt.includes("TRIPLE")))
         ) {
             el.selectedIndex = idx;
             el.value = opt.value;
@@ -29,6 +37,9 @@ console.log("IV Autofill: content.js script has been loaded."); const e = { DELH
         console.log(`- Setting Dropdown #${e} to: ${t}`);
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.dispatchEvent(new Event("blur", { bubbles: true }));
+        try { if (window.jQuery) window.jQuery(el).trigger("change"); } catch(err) {}
+        try { y(e, el.value); } catch(err) {}
     } else {
         console.warn(`   -> Could not find option "${t}" in dropdown #${e}`);
     }
@@ -715,18 +726,39 @@ async function fillPrintApplicationPage(e) {
             e.missioncode_id = defMsn;
         }
 
-        // 1. Select Regular Visa radio if present
+        // 1. Ensure Regular Visa radio is selected (NEVER call .click() as it triggers website redirect to eVisa portal)
         const radioBtns = Array.from(document.querySelectorAll('input[type="radio"]'));
-        for (const r of radioBtns) {
-            const container = r.closest("label, tr, td, div") || r.parentElement;
-            const txt = ((container ? container.innerText : "") + " " + (r.value || "")).toLowerCase();
-            if (txt.includes("regular")) {
-                if (!r.checked) {
-                    r.checked = true;
-                    r.click();
-                    r.dispatchEvent(new Event("change", { bubbles: true }));
+        if (radioBtns.length >= 2) {
+            let regularRadio = null;
+            let etvRadio = null;
+
+            for (const r of radioBtns) {
+                const prevTxt = ((r.previousSibling && r.previousSibling.nodeType === 3 ? r.previousSibling.nodeValue : "") + " " +
+                                (r.previousElementSibling ? (r.previousElementSibling.innerText || r.previousElementSibling.textContent || "") : "")).toLowerCase();
+                const ownTxt = ((r.value || "") + " " + (r.id || "") + " " + (r.name || "")).toLowerCase();
+
+                if (prevTxt.includes("regular") || ownTxt.includes("regular") || ownTxt === "1") {
+                    regularRadio = r;
+                } else if (prevTxt.includes("etv") || prevTxt.includes("tourist") || ownTxt.includes("etv") || ownTxt === "0") {
+                    etvRadio = r;
                 }
-                break;
+            }
+
+            // Fallback by index: in Indian Visa PrintApplication, 1st radio is e-Tourist, 2nd radio is Regular Visa
+            if (!regularRadio && radioBtns.length >= 2) {
+                etvRadio = radioBtns[0];
+                regularRadio = radioBtns[1];
+            }
+
+            if (etvRadio && etvRadio.checked) {
+                etvRadio.checked = false;
+                etvRadio.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+
+            if (regularRadio && !regularRadio.checked) {
+                regularRadio.checked = true;
+                regularRadio.dispatchEvent(new Event("input", { bubbles: true }));
+                regularRadio.dispatchEvent(new Event("change", { bubbles: true }));
             }
         }
 
@@ -776,7 +808,25 @@ async function fillPrintApplicationPage(e) {
             }
         }
 
-        // 3. Fill Date of Birth
+        // Helper to forcefully hide any open jQuery UI datepicker popup
+        const hideAnyDatepicker = () => {
+            const dp = document.getElementById("ui-datepicker-div");
+            if (dp) {
+                dp.style.display = "none";
+            }
+            try {
+                if (window.jQuery && window.jQuery.datepicker) {
+                    window.jQuery.datepicker._hideDatepicker();
+                }
+            } catch(e) {}
+            try {
+                if (window.jQuery) {
+                    window.jQuery('input[name*="dob" i], input[id*="dob" i], .hasDatepicker').datepicker("hide");
+                }
+            } catch(e) {}
+        };
+
+        // 3. Fill Date of Birth (without triggering / leaving jQuery datepicker open)
         let dobVal = (e.dob || e.birth_date || e.date_of_birth || "").trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(dobVal)) {
             const parts = dobVal.split("-");
@@ -785,13 +835,17 @@ async function fillPrintApplicationPage(e) {
         if (dobVal) {
             const dobInp = findPrintDobInput();
             if (dobInp) {
-                dobInp.focus();
+                // DO NOT focus dobInp as that triggers the jQuery UI calendar overlay!
                 dobInp.value = dobVal;
                 dobInp.dispatchEvent(new Event("input", { bubbles: true }));
                 dobInp.dispatchEvent(new Event("change", { bubbles: true }));
-                dobInp.dispatchEvent(new Event("blur", { bubbles: true }));
+                dobInp.blur();
                 try { if (window.jQuery) window.jQuery(dobInp).trigger("change"); } catch(e) {}
                 console.log("IV Autofill: Filled Date of Birth on PrintApplication:", dobVal);
+                hideAnyDatepicker();
+                setTimeout(hideAnyDatepicker, 50);
+                setTimeout(hideAnyDatepicker, 150);
+                setTimeout(hideAnyDatepicker, 300);
             }
         }
 
@@ -800,7 +854,6 @@ async function fillPrintApplicationPage(e) {
         if (pptVal) {
             const pptInp = findPrintPassportInput();
             if (pptInp) {
-                pptInp.focus();
                 pptInp.value = pptVal;
                 pptInp.dispatchEvent(new Event("input", { bubbles: true }));
                 pptInp.dispatchEvent(new Event("change", { bubbles: true }));
@@ -815,7 +868,6 @@ async function fillPrintApplicationPage(e) {
         if (appIdVal) {
             const appInp = findPrintAppIdInput();
             if (appInp && (!appInp.value || appInp.value.trim() === "")) {
-                appInp.focus();
                 appInp.value = appIdVal;
                 appInp.dispatchEvent(new Event("input", { bubbles: true }));
                 appInp.dispatchEvent(new Event("change", { bubbles: true }));
@@ -825,13 +877,32 @@ async function fillPrintApplicationPage(e) {
             }
         }
 
+        // Dismiss datepicker again after all fields are filled
+        hideAnyDatepicker();
+        setTimeout(hideAnyDatepicker, 100);
+        setTimeout(hideAnyDatepicker, 500);
+
         // 6. Auto-solve captcha
         await autoSolveAndFillCaptcha(true);
     } catch (err) {
         console.warn("IV Autofill: Error filling PrintApplication page:", err);
     }
 }
- function c(e) { for (let e = 1; e <= 6; e++)i(`radioName[${e}]`, "NO"); !function (e) { const t = document.getElementById(e); t && !t.checked && (console.log(`- Clicking Checkbox #${e}`), t.click()) }("verifyQuestions") } async function m(e) { if (e) { const mS = await chrome.storage.local.get(["defaultMissionCode"]); const defMsn = mS.defaultMissionCode || "BGDD"; if (!e.missioncode_id || e._type === "PASSPORT" || !e.bgd_no || (defMsn && defMsn !== "BGDD")) { e.missioncode_id = defMsn; } if (e._type === "PASSPORT" || !e.bgd_no) { const pS = await chrome.storage.local.get(["defaultPassportArrivalPort", "defaultPassportExitPort", "defaultOccupation", "defaultEmpName", "defaultEmpDesignation", "defaultEmpAddress", "defaultJourneyDateMode", "defaultJourneyDate", "defaultPlacesToVisit", "defaultPlacesToVisitCountry", "defaultEducation"]); const dA = pS.defaultPassportArrivalPort || "BY ROAD GEDE"; const dE = pS.defaultPassportExitPort || "BY ROAD GEDE"; if (!e.entrypoint || e.entrypoint === "BY AIR/ HARIDASPUR") e.entrypoint = dA; if (!e.exitpoint || e.exitpoint === "BY AIR/ HARIDASPUR") e.exitpoint = dE; const defOcc = pS.defaultOccupation !== undefined ? pS.defaultOccupation : "LABOUR"; const defEmpName = pS.defaultEmpName !== undefined ? pS.defaultEmpName : "AGRICULTURE"; const defEmpDes = pS.defaultEmpDesignation !== undefined ? pS.defaultEmpDesignation : ""; const defEmpAddr = pS.defaultEmpAddress !== undefined ? pS.defaultEmpAddress : "KUSHTIA"; if (!e.occupation || e.occupation === "PRIVATE SERVICE") e.occupation = defOcc; if (!e.empname || e.empname === "ARB PRIVATE LIMITED") e.empname = defEmpName; if (e.empdesignation === "OFFICER" || (!e.empdesignation && defEmpDes)) e.empdesignation = defEmpDes; if (!e.empaddress || e.empaddress === "DHAKA, BANGLADESH") e.empaddress = defEmpAddr; if (!e.education || e.education === "GRADUATE") e.education = pS.defaultEducation || "MATRICULATION"; const dM = String(pS?.defaultJourneyDateMode || ""); const dD = parseInt(dM, 10); let _calcJDate = ""; if (["15", "30", "45"].includes(dM) && !isNaN(dD) && dD > 0) { const d = new Date(); d.setDate(d.getDate() + dD); _calcJDate = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; } else if (pS?.defaultJourneyDate && pS.defaultJourneyDate.trim()) { _calcJDate = pS.defaultJourneyDate.trim(); } else if (!isNaN(dD) && dD > 0) { const d = new Date(); d.setDate(d.getDate() + dD); _calcJDate = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; } if (_calcJDate) e.jouryney_id = _calcJDate; if (!e.places_to_visit) e.places_to_visit = pS?.defaultPlacesToVisit || "KOLKATA"; if (!e.places_to_visit_country) e.places_to_visit_country = pS?.defaultPlacesToVisitCountry || "INDIA"; } if (!e.jouryney_id) { const _jS = await chrome.storage.local.get(["defaultJourneyDateMode", "defaultJourneyDate"]); const _m = String(_jS?.defaultJourneyDateMode || ""); const _d = parseInt(_m, 10); if (["15", "30", "45"].includes(_m) && !isNaN(_d) && _d > 0) { const _dt = new Date(); _dt.setDate(_dt.getDate() + _d); e.jouryney_id = `${String(_dt.getDate()).padStart(2, "0")}/${String(_dt.getMonth() + 1).padStart(2, "0")}/${_dt.getFullYear()}`; } else if (_jS?.defaultJourneyDate && _jS.defaultJourneyDate.trim()) { e.jouryney_id = _jS.defaultJourneyDate.trim(); } else if (!isNaN(_d) && _d > 0) { const _dt = new Date(); _dt.setDate(_dt.getDate() + _d); e.jouryney_id = `${String(_dt.getDate()).padStart(2, "0")}/${String(_dt.getMonth() + 1).padStart(2, "0")}/${_dt.getFullYear()}`; } } const defEduFetch = await chrome.storage.local.get(["defaultEducation"]); if (!e.education || e.education === "GRADUATE") e.education = defEduFetch.defaultEducation || "MATRICULATION"; if (!e.places_to_visit) e.places_to_visit = "KOLKATA"; if (!e.places_to_visit_country) e.places_to_visit_country = "INDIA"; } console.log("IV Autofill: Running the autofill router..."), (window.location.href.toLowerCase().includes("completepartially") || (document.body && document.body.innerText.includes("Complete Partially Filled"))) ? (async function (e) {
+ function c(e) { for (let e = 1; e <= 6; e++)i(`radioName[${e}]`, "NO"); !function (e) { const t = document.getElementById(e); t && !t.checked && (console.log(`- Clicking Checkbox #${e}`), t.click()) }("verifyQuestions") } async function m(e) { if (e) {
+    if (!e.pobCountry || e.pobCountry === "BANGLADESH") e.pobCountry = "BGD";
+    if (!e.pres_country || e.pres_country === "BANGLADESH") e.pres_country = "BGD";
+    if (!e.father_nationality || e.father_nationality === "BANGLADESH") e.father_nationality = "BGD";
+    if (!e.mother_nationality || e.mother_nationality === "BANGLADESH") e.mother_nationality = "BGD";
+    if (!e.nationality_by || e.nationality_by === "BANGLADESH" || e.nationality_by === "BGD") e.nationality_by = "BY BIRTH";
+    if (!e.nationality || e.nationality === "BANGLADESH" || e.nationality === "BGD") e.nationality = "BY BIRTH";
+    if (!e.duration) e.duration = "12";
+    else e.duration = String(e.duration).replace(/[^0-9]/g, "") || "12";
+    let mEntry = String(e.visa_entry_id || "2").toUpperCase();
+    if (mEntry.includes("SINGLE") || mEntry === "1") e.visa_entry_id = "1";
+    else if (mEntry.includes("TRIPLE") || mEntry === "4") e.visa_entry_id = "4";
+    else if (mEntry.includes("DOUBLE") || mEntry === "3") e.visa_entry_id = "3";
+    else e.visa_entry_id = "2";
+    const mS = await chrome.storage.local.get(["defaultMissionCode"]); const defMsn = mS.defaultMissionCode || "BGDD"; if (!e.missioncode_id || e._type === "PASSPORT" || !e.bgd_no || (defMsn && defMsn !== "BGDD")) { e.missioncode_id = defMsn; } if (e._type === "PASSPORT" || !e.bgd_no) { const pS = await chrome.storage.local.get(["defaultPassportArrivalPort", "defaultPassportExitPort", "defaultOccupation", "defaultEmpName", "defaultEmpDesignation", "defaultEmpAddress", "defaultJourneyDateMode", "defaultJourneyDate", "defaultPlacesToVisit", "defaultPlacesToVisitCountry", "defaultEducation"]); const dA = pS.defaultPassportArrivalPort || "BY ROAD GEDE"; const dE = pS.defaultPassportExitPort || "BY ROAD GEDE"; if (!e.entrypoint || e.entrypoint === "BY AIR/ HARIDASPUR") e.entrypoint = dA; if (!e.exitpoint || e.exitpoint === "BY AIR/ HARIDASPUR") e.exitpoint = dE; const defOcc = pS.defaultOccupation !== undefined ? pS.defaultOccupation : "LABOUR"; const defEmpName = pS.defaultEmpName !== undefined ? pS.defaultEmpName : "AGRICULTURE"; const defEmpDes = pS.defaultEmpDesignation !== undefined ? pS.defaultEmpDesignation : ""; const defEmpAddr = pS.defaultEmpAddress !== undefined ? pS.defaultEmpAddress : "KUSHTIA"; if (!e.occupation || e.occupation === "PRIVATE SERVICE") e.occupation = defOcc; if (!e.empname || e.empname === "ARB PRIVATE LIMITED") e.empname = defEmpName; if (e.empdesignation === "OFFICER" || (!e.empdesignation && defEmpDes)) e.empdesignation = defEmpDes; if (!e.empaddress || e.empaddress === "DHAKA, BANGLADESH") e.empaddress = defEmpAddr; if (!e.education || e.education === "GRADUATE") e.education = pS.defaultEducation || "MATRICULATION"; const dM = String(pS?.defaultJourneyDateMode || ""); const dD = parseInt(dM, 10); let _calcJDate = ""; if (["15", "30", "45"].includes(dM) && !isNaN(dD) && dD > 0) { const d = new Date(); d.setDate(d.getDate() + dD); _calcJDate = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; } else if (pS?.defaultJourneyDate && pS.defaultJourneyDate.trim()) { _calcJDate = pS.defaultJourneyDate.trim(); } else if (!isNaN(dD) && dD > 0) { const d = new Date(); d.setDate(d.getDate() + dD); _calcJDate = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; } if (_calcJDate) e.jouryney_id = _calcJDate; if (!e.places_to_visit) e.places_to_visit = pS?.defaultPlacesToVisit || "KOLKATA"; if (!e.places_to_visit_country) e.places_to_visit_country = pS?.defaultPlacesToVisitCountry || "INDIA"; } if (!e.jouryney_id) { const _jS = await chrome.storage.local.get(["defaultJourneyDateMode", "defaultJourneyDate"]); const _m = String(_jS?.defaultJourneyDateMode || ""); const _d = parseInt(_m, 10); if (["15", "30", "45"].includes(_m) && !isNaN(_d) && _d > 0) { const _dt = new Date(); _dt.setDate(_dt.getDate() + _d); e.jouryney_id = `${String(_dt.getDate()).padStart(2, "0")}/${String(_dt.getMonth() + 1).padStart(2, "0")}/${_dt.getFullYear()}`; } else if (_jS?.defaultJourneyDate && _jS.defaultJourneyDate.trim()) { e.jouryney_id = _jS.defaultJourneyDate.trim(); } else if (!isNaN(_d) && _d > 0) { const _dt = new Date(); _dt.setDate(_dt.getDate() + _d); e.jouryney_id = `${String(_dt.getDate()).padStart(2, "0")}/${String(_dt.getMonth() + 1).padStart(2, "0")}/${_dt.getFullYear()}`; } } const defEduFetch = await chrome.storage.local.get(["defaultEducation"]); if (!e.education || e.education === "GRADUATE") e.education = defEduFetch.defaultEducation || "MATRICULATION"; if (!e.places_to_visit) e.places_to_visit = "KOLKATA"; if (!e.places_to_visit_country) e.places_to_visit_country = "INDIA"; } console.log("IV Autofill: Running the autofill router..."), (window.location.href.toLowerCase().includes("completepartially") || (document.body && document.body.innerText.includes("Complete Partially Filled"))) ? (async function (e) {
     console.log("IV Autofill: Detected CompletePartially page in form router.");
     const tempInp = findTempAppIdInput();
     if (tempInp && (!tempInp.value || tempInp.value.trim() === "")) {
@@ -988,7 +1059,238 @@ async function fillPrintApplicationPage(e) {
         const n_oth = document.querySelector('input[name="othPassYN"][value="N"], input[name="othPassYN"][value="NO"], input[name="appl.oth_ppt"][value="NO"], input[name="appl.oth_ppt"][value="N"]');
         n_oth && (n_oth.checked = true, n_oth.click(), n_oth.dispatchEvent(new Event("change", { bubbles: true })));
     }
-})(), t("gender", e.gender), t("country_birth", e.pobCountry), t("religion", e.religion), t("education", e.education), n("education", e.education), t("nationality", e.nationality), t("nationality_by", e.nationality) }(e) : document.getElementById("pres_add1") ? function (e) { t("pres_add1", e.pres_add1), t("pres_add2", e.pres_add2), t("pres_country", e.pres_country), t("pres_add3", e.pres_add3), t("pincode", e.pincode), t("pres_phone", e.pres_phone.slice(-11)), t("isd_code1", e.isd_code1), t("mobile", e.pres_phone.slice(-10)), t("perm_address1", e.perm_address1), t("perm_address2", e.perm_address2), t("perm_address3", e.perm_address3), t("fthrname", e.fthrname), t("father_nationality", e.father_nationality), t("father_previous_nationality", e.father_nationality), t("father_country_of_birth", e.father_nationality), t("mother_name", e.mother_name), t("mother_nationality", e.father_nationality), t("mother_previous_nationality", e.father_nationality), t("mother_country_of_birth", e.father_nationality), t("father_place_of_birth", e.father_place_of_birth), t("mother_place_of_birth", e.mother_place_of_birth), n("marital_status", e.marital_status), "0" === e.marital_status && (t("spouse_name", e.spouse_name), n("spouse_nationality", e.father_nationality), n("spouse_previous_nationality", e.father_nationality), t("spouse_place_of_birth", e.spouse_place_of_birth), n("spouse_country_of_birth", e.father_nationality)), t("occupation", e.occupation), n("occupation", e.occupation), t("empname", e.empname), (e.empdesignation ? t("empdesignation", e.empdesignation) : (document.getElementById("empdesignation") && (document.getElementById("empdesignation").value = ""))), t("empaddress", e.empaddress), i("appl.grandparent_flag", "NO"), i("appl.prev_org", "NO") }(e) : document.getElementById("email_id") ? p(e) : document.getElementById("duration") ? function (e) { t("visa_serreq_id_129", e.hsptNameMsn), t("visa_serreq_id_130", e.hsptAddMsn), t("visa_serreq_id_131", e.docNameMsn), t("visa_serreq_id_132", e.phMsn), t("visa_serreq_id_134", e.emailMsn), t("visa_serreq_id_124", e.illness), t("visa_serreq_id_112", e.places_to_visit || "KOLKATA"), t("visa_serreq_id_334", e.places_to_visit_country || "INDIA"), (function () { try { const fVal = (el, val) => { if (el && val && !el.value) { el.value = val; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); el.dispatchEvent(new Event("blur", { bubbles: true })); } }; const p1 = document.getElementById("visa_serreq_id_112"); const p2 = document.getElementById("visa_serreq_id_334"); if (p1) fVal(p1, e.places_to_visit || "KOLKATA"); if (p2) fVal(p2, e.places_to_visit_country || "INDIA"); if (!p1 || !p2 || !p1.value || !p2.value) { document.querySelectorAll(".row, tr").forEach(r => { const txt = (r.textContent || "").trim(); if (txt.includes("Places to be Visited")) { const inp = r.querySelector('input[type="text"]'); if (inp) fVal(inp, e.places_to_visit || "KOLKATA"); } else if (txt.startsWith('""') || txt.includes('"" *') || txt.includes('""*')) { const inp = r.querySelector('input[type="text"]'); if (inp) fVal(inp, e.places_to_visit_country || "INDIA"); } }); const srvs = Array.from(document.querySelectorAll('input[name="service_req_form_values"], .service_req_form_val')); if (srvs.length >= 2) { fVal(srvs[0], e.places_to_visit || "KOLKATA"); fVal(srvs[1], e.places_to_visit_country || "INDIA"); } } } catch(err) { console.warn("Places to be visited fallback error:", err); } })(), t("duration", e.duration), t("visa_entry_id", e.visa_entry_id), t("entrypoint", e.entrypoint), t("exitpointprc", e.exitpoint), e.old_visa_no && "NILL" !== e.old_visa_no.toUpperCase() && "NOTHING SHOWN" !== e.old_visa_no.toUpperCase() && "" !== e.old_visa_no.trim() ? (i("appl.old_visa_flag", "YES"), t("prv_visit_add1", e.prv_visit_add1), t("visited_city", e.visited_city), t("old_visa_no", e.old_visa_no), n("old_visa_type_id", e.old_visa_type_id), t("oldvisaissueplace", e.oldvisaissueplace), t("oldvisaissuedate", e.oldvisaissuedateRaw)) : i("appl.old_visa_flag", "NO"), i("appl.refuse_flag", "NO"), i("appl.saarc_flag", "NO"); const o = document.querySelector('input[name="othPassYN"][value="N"]'); o && o.click(), t("country_visited", e.country_visited), t("nameofsponsor_msn", !e.spouse_name || ["NILL", "NA"].includes(e.spouse_name.trim().toUpperCase()) ? e.fthrname : e.spouse_name), t("add1ofsponsor_msn", e.pres_add1), t("add2ofsponsor_msn", e.pres_add2 + ", " + e.pres_add3), t("phoneofsponsor_msn", e.pres_phone.slice(-11)), u() }(e) : document.getElementById("question_yes_1") ? c() : document.getElementById("place_of_stay1") ? (console.log("IV Autofill: Detected Page 5. Showing Hotel Selector."), u()) : (console.log("IV Autofill: Unknown page."), sessionStorage.removeItem("autofillInProgress"), sessionStorage.removeItem("autofillData")) } async function u() { if (document.getElementById("iv-modal-backdrop")) return; const t = document.createElement("link"); t.rel = "stylesheet", t.href = chrome.runtime.getURL("modal.css"), document.head.appendChild(t); const n = (await chrome.storage.local.get(["iv_custom_hotels"])).iv_custom_hotels || [], i = document.createElement("div"); i.id = "iv-modal-backdrop"; let o = ""; Object.keys(e).forEach(e => { o += `<button class="btn-default" data-key="${e}">${e}</button>` }), n.length > 0 && (o += '<div style="margin: 15px 0 5px 0; border-top: 1px dashed #ccc; padding-top:10px; font-size:11px; color:#777; font-weight:bold; text-align:left;">MY SAVED LOCATIONS</div>', n.forEach((e, t) => { o += `\n                <div class="custom-hotel-wrapper">\n                    <button class="btn-custom" data-index="${t}">${g(e.name)}</button>\n                    <div class="btn-delete-custom" data-index="${t}" title="Delete">×</div>\n                </div>` })), o += '<button id="btn-add-new-hotel" class="btn-add-new">+ Add New Hotel/Embassy</button>', i.innerHTML = `\n        <div id="iv-modal-content">\n            <h3>Select Reference</h3>\n            <div class="iv-modal-options">\n                ${o}\n            </div>\n        </div>\n    `, document.body.appendChild(i), i.querySelectorAll(".btn-default").forEach(t => { t.addEventListener("click", () => v(e[t.dataset.key])) }), i.querySelectorAll(".btn-custom").forEach(e => { e.addEventListener("click", () => v(n[e.dataset.index])) }), i.querySelectorAll(".btn-delete-custom").forEach(e => { e.addEventListener("click", async t => { if (t.stopPropagation(), confirm("Delete this saved location permanently?")) { const t = parseInt(e.dataset.index); n.splice(t, 1), await chrome.storage.local.set({ iv_custom_hotels: n }), i.remove(), u() } }) }); const a = document.getElementById("btn-add-new-hotel"); a && a.addEventListener("click", () => { i.remove(), async function () { let e = []; try { const t = chrome.runtime.getURL("states-and-districts.json"), n = await fetch(t), i = await n.json(); e = i.states } catch (e) { return void alert("Error: states-and-districts.json missing in manifest.") } const t = document.createElement("div"); t.id = "iv-modal-backdrop", t.innerHTML = '\n        <div id="iv-modal-content" style="width: 450px;">\n            <h3>Add New Reference</h3>\n            <div class="iv-modal-form">\n                <div class="iv-input-group"><label>Reference Name*</label><input type="text" id="new-name" maxlength="50" placeholder="e.g. VISHAL HOTEL (Max 50 characters)"></div>\n                <div class="iv-input-group"><label>Address*</label><input type="text" id="new-addr" maxlength="50" placeholder="e.g. 1576 MAIN BAZAR (Max 50 characters)"></div>\n                <div class="iv-input-group"><label>Address box 2</label><input type="text" id="new-pin" maxlength="50" placeholder=""></div>\n                <div class="iv-input-group"><label>State*</label><select id="new-state"><option value="">Select State</option></select></div>\n                <div class="iv-input-group"><label>District*</label><select id="new-dist"><option value="">Select District</option></select></div>\n                <div class="iv-input-group"><label>Phone*</label><input type="text" id="new-phone" placeholder="e.g. 91956040328"></div>\n                <div class="iv-action-row">\n                    <button class="btn-cancel" id="btn-cancel-add">Cancel</button>\n                    <button class="btn-save" id="btn-save-hotel">Save & Select</button>\n                </div>\n            </div>\n        </div>\n    ', document.body.appendChild(t); const n = document.getElementById("new-state"), i = document.getElementById("new-dist"); e.forEach(e => { const t = document.createElement("option"); t.value = e.state, t.text = e.state.toUpperCase(), n.appendChild(t) }), n.addEventListener("change", () => { i.innerHTML = '<option value="">Select District</option>'; const t = e.find(e => e.state === n.value); t && t.districts.forEach(e => { const t = document.createElement("option"); t.value = e, t.text = e.toUpperCase(), i.appendChild(t) }) }), document.getElementById("btn-save-hotel").addEventListener("click", async () => { const e = { name: document.getElementById("new-name").value.toUpperCase(), add1: document.getElementById("new-addr").value.toUpperCase(), state: n.options[n.selectedIndex].text, district: document.getElementById("new-dist").value.toUpperCase(), phone: document.getElementById("new-phone").value, add2_pincode: document.getElementById("new-pin").value }; if (!e.name || !e.state || !e.district || "Select State" === e.state) return void alert("Please fill all required fields."); const i = (await chrome.storage.local.get(["iv_custom_hotels"])).iv_custom_hotels || []; i.push(e), await chrome.storage.local.set({ iv_custom_hotels: i }), t.remove(), v(e) }), document.getElementById("btn-cancel-add").addEventListener("click", () => { t.remove(), u() }) }() }), i.addEventListener("click", e => { e.target === i && i.remove() }) } async function v(e) { if (!e) return; const i = document.getElementById("iv-modal-backdrop"); i && i.remove(); try { document.getElementById("nameofsponsor_ind") ? (t("nameofsponsor_ind", e.name), t("add1ofsponsor_ind", e.add1), t("add2ofsponsor_ind", e.add2_pincode), t("phoneofsponsor_ind", e.phone), n("stateofsponsor_ind", e.state), await new Promise(e => setTimeout(e, 1e3)), await a("districtofsponsor_ind", e.district), n("districtofsponsor_ind", e.district)) : document.getElementById("place_of_stay1") && (t("place_of_stay1", e.name), t("pos_address1", e.add1), t("pos_phone1", e.phone), n("pos_state_id1", e.state), await new Promise(e => setTimeout(e, 1e3)), await a("pos_dist_id1", e.district), n("pos_dist_id1", e.district)) } catch (e) { console.error(e), alert("Could not select District automatically. Please check if State is correct.") } } function y(e, t) { try { chrome.runtime.sendMessage({ type: "EXECUTE_IN_MAIN_WORLD", id: e, value: t }) } catch (e) { console.warn("Could not send chosen update message:", e) } try { const n = document.getElementById(e); if (n) { let i = ""; for (const e of n.options) if (e.value === t) { i = e.text; break } if (i) { const t = document.getElementById(e + "_chosen"); if (t) { const e = t.querySelector(".chosen-single span"); e && (e.textContent = i.trim()) } } } } catch (e) { console.warn("Could not update Chosen visual DOM:", e) } } function g(e) { return e ? e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : e } async function f(e, t) { return true; } async function b(e) { 
+})(), t("gender", e.gender), n("gender", e.gender), t("country_birth", (e.pobCountry === "BANGLADESH" || !e.pobCountry) ? "BGD" : e.pobCountry), n("country_birth", e.pobCountry || "BGD"), t("religion", e.religion), n("religion", e.religion), t("education", e.education), n("education", e.education), (function() {
+    const fillNatBy = () => {
+        const sel = document.getElementById("nationality_by") || document.querySelector('select[name="appl.nationality_by"]');
+        if (sel) {
+            sel.value = "BY BIRTH";
+            for (let i = 0; i < sel.options.length; i++) {
+                const val = (sel.options[i].value || "").trim().toUpperCase();
+                const txt = (sel.options[i].text || sel.options[i].innerText || "").trim().toUpperCase();
+                if (val === "BY BIRTH" || txt.includes("BIRTH")) {
+                    sel.selectedIndex = i;
+                    sel.options[i].selected = true;
+                    sel.value = sel.options[i].value;
+                    break;
+                }
+            }
+            sel.dispatchEvent(new Event("input", { bubbles: true }));
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+            sel.dispatchEvent(new Event("blur", { bubbles: true }));
+            console.log("IV Autofill: Selected Nationality By ->", sel.value);
+        }
+    };
+    fillNatBy();
+    setTimeout(fillNatBy, 100);
+    setTimeout(fillNatBy, 300);
+    setTimeout(fillNatBy, 600);
+})() }(e) : document.getElementById("pres_add1") ? function (e) { t("pres_add1", e.pres_add1), t("pres_add2", e.pres_add2), t("pres_country", (e.pres_country === "BANGLADESH" || !e.pres_country) ? "BGD" : e.pres_country), n("pres_country", e.pres_country || "BGD"), t("pres_add3", e.pres_add3), t("pincode", e.pincode), t("pres_phone", e.pres_phone.slice(-11)), t("isd_code1", e.isd_code1), t("mobile", e.pres_phone.slice(-10)), t("perm_address1", e.perm_address1), t("perm_address2", e.perm_address2), t("perm_address3", e.perm_address3), t("fthrname", e.fthrname), t("father_nationality", (e.father_nationality === "BANGLADESH" || !e.father_nationality) ? "BGD" : e.father_nationality), n("father_nationality", e.father_nationality || "BGD"), t("father_previous_nationality", (e.father_nationality === "BANGLADESH" || !e.father_nationality) ? "BGD" : e.father_nationality), n("father_previous_nationality", e.father_nationality || "BGD"), t("father_country_of_birth", (e.father_nationality === "BANGLADESH" || !e.father_nationality) ? "BGD" : e.father_nationality), n("father_country_of_birth", e.father_nationality || "BGD"), t("mother_name", e.mother_name), t("mother_nationality", (e.mother_nationality === "BANGLADESH" || !e.mother_nationality) ? "BGD" : e.mother_nationality), n("mother_nationality", e.mother_nationality || e.father_nationality || "BGD"), t("mother_previous_nationality", (e.mother_nationality === "BANGLADESH" || !e.mother_nationality) ? "BGD" : e.mother_nationality), n("mother_previous_nationality", e.mother_nationality || e.father_nationality || "BGD"), t("mother_country_of_birth", (e.mother_nationality === "BANGLADESH" || !e.mother_nationality) ? "BGD" : e.mother_nationality), n("mother_country_of_birth", e.mother_nationality || e.father_nationality || "BGD"), t("father_place_of_birth", e.father_place_of_birth), t("mother_place_of_birth", e.mother_place_of_birth), n("marital_status", e.marital_status), "0" === e.marital_status && (t("spouse_name", e.spouse_name), t("spouse_nationality", (e.father_nationality === "BANGLADESH" || !e.father_nationality) ? "BGD" : e.father_nationality), n("spouse_nationality", e.father_nationality || "BGD"), t("spouse_previous_nationality", (e.father_nationality === "BANGLADESH" || !e.father_nationality) ? "BGD" : e.father_nationality), n("spouse_previous_nationality", e.father_nationality || "BGD"), t("spouse_place_of_birth", e.spouse_place_of_birth), t("spouse_country_of_birth", (e.father_nationality === "BANGLADESH" || !e.father_nationality) ? "BGD" : e.father_nationality), n("spouse_country_of_birth", e.father_nationality || "BGD")), t("occupation", e.occupation), n("occupation", e.occupation), t("empname", e.empname), (e.empdesignation ? t("empdesignation", e.empdesignation) : (document.getElementById("empdesignation") && (document.getElementById("empdesignation").value = ""))), t("empaddress", e.empaddress), i("appl.grandparent_flag", "NO"), i("appl.prev_org", "NO") }(e) : document.getElementById("email_id") ? p(e) : (document.getElementById("duration") || document.getElementById("visa_entry_id") || window.location.href.toLowerCase().includes("visadetails")) ? function (e) {
+    t("visa_serreq_id_129", e.hsptNameMsn);
+    t("visa_serreq_id_130", e.hsptAddMsn);
+    t("visa_serreq_id_131", e.docNameMsn);
+    t("visa_serreq_id_132", e.phMsn);
+    t("visa_serreq_id_134", e.emailMsn);
+    t("visa_serreq_id_124", e.illness);
+    const isMedicalAttendant = Boolean(
+        document.getElementById("visa_serreq_id_139") ||
+        (document.body && /MEDICAL\s+ATTENDANTS?/i.test(document.body.innerText)) ||
+        (document.body && /M-1\s+VISA/i.test(document.body.innerText))
+    );
+
+    if (isMedicalAttendant) {
+        console.log("IV Autofill: Detected Medical Attendant Visa form.");
+        // Clear any accidental values in Name or Date of Birth fields
+        document.querySelectorAll(".row, tr").forEach(r => {
+            const txt = (r.textContent || "").trim();
+            if (txt.includes("Name *") || txt.startsWith("Name") || txt.includes("Date of Birth")) {
+                const inp = r.querySelector('input[type="text"]');
+                if (inp && (inp.value === "KOLKATA" || inp.value === "INDIA")) {
+                    inp.value = "";
+                    inp.dispatchEvent(new Event("input", { bubbles: true }));
+                    inp.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            }
+        });
+
+        // Fill Medical Attendant Nationality to BANGLADESH (BGD)
+        const fillAttendantNat = () => {
+            let sel = document.getElementById("visa_serreq_id_139");
+            if (!sel) {
+                document.querySelectorAll(".row, tr").forEach(r => {
+                    const txt = (r.textContent || "").trim();
+                    if (txt.includes("Nationality")) {
+                        const s = r.querySelector("select");
+                        if (s) sel = s;
+                    }
+                });
+            }
+            if (!sel) {
+                document.querySelectorAll('select[name="service_req_form_values"], select.service_req_form_val').forEach(s => {
+                    if (Array.from(s.options).some(o => (o.value || "").trim().toUpperCase() === "BGD" || (o.text || "").toUpperCase().includes("BANGLADESH"))) {
+                        sel = s;
+                    }
+                });
+            }
+            if (sel) {
+                sel.value = "BGD";
+                for (let i = 0; i < sel.options.length; i++) {
+                    const ov = (sel.options[i].value || "").trim().toUpperCase();
+                    const ot = (sel.options[i].text || sel.options[i].innerText || "").trim().toUpperCase();
+                    if (ov === "BGD" || ot === "BANGLADESH" || ot.includes("BANGLADESH")) {
+                        sel.selectedIndex = i;
+                        sel.options[i].selected = true;
+                        sel.value = sel.options[i].value;
+                        break;
+                    }
+                }
+                sel.dispatchEvent(new Event("input", { bubbles: true }));
+                sel.dispatchEvent(new Event("change", { bubbles: true }));
+                sel.dispatchEvent(new Event("blur", { bubbles: true }));
+                try { if (window.jQuery) window.jQuery(sel).trigger("change"); } catch(err) {}
+                try { y(sel.id, sel.value); } catch(err) {}
+                console.log("IV Autofill: Selected Medical Attendant Nationality ->", sel.value);
+            }
+        };
+        fillAttendantNat();
+        setTimeout(fillAttendantNat, 100);
+        setTimeout(fillAttendantNat, 300);
+        setTimeout(fillAttendantNat, 600);
+    } else {
+        // Tourist & other visas: Fill Places to be Visited
+        t("visa_serreq_id_112", e.places_to_visit || "KOLKATA");
+        t("visa_serreq_id_334", e.places_to_visit_country || "INDIA");
+
+        (function () {
+            try {
+                const fVal = (el, val) => {
+                    if (el && val && !el.value) {
+                        el.value = val;
+                        el.dispatchEvent(new Event("input", { bubbles: true }));
+                        el.dispatchEvent(new Event("change", { bubbles: true }));
+                        el.dispatchEvent(new Event("blur", { bubbles: true }));
+                    }
+                };
+                const p1 = document.getElementById("visa_serreq_id_112");
+                const p2 = document.getElementById("visa_serreq_id_334");
+                if (p1) fVal(p1, e.places_to_visit || "KOLKATA");
+                if (p2) fVal(p2, e.places_to_visit_country || "INDIA");
+                if (!p1 || !p2 || !p1.value || !p2.value) {
+                    document.querySelectorAll(".row, tr").forEach(r => {
+                        const txt = (r.textContent || "").trim();
+                        if (txt.includes("Places to be Visited")) {
+                            const inp = r.querySelector('input[type="text"]');
+                            if (inp) fVal(inp, e.places_to_visit || "KOLKATA");
+                        } else if (txt.startsWith('""') || txt.includes('"" *') || txt.includes('""*')) {
+                            const inp = r.querySelector('input[type="text"]');
+                            if (inp) fVal(inp, e.places_to_visit_country || "INDIA");
+                        }
+                    });
+                }
+            } catch(err) {
+                console.warn("Places to be visited error:", err);
+            }
+        })();
+    }
+
+    // Fill Duration (In Month)
+    (function () {
+        const durVal = (e.duration ? String(e.duration).replace(/[^0-9]/g, "") : "") || "12";
+        t("duration", durVal);
+        const durEl = document.getElementById("duration") || document.querySelector('input[name="appl.duration"], input[name="duration"]');
+        if (durEl) {
+            durEl.value = durVal;
+            durEl.dispatchEvent(new Event("input", { bubbles: true }));
+            durEl.dispatchEvent(new Event("change", { bubbles: true }));
+            durEl.dispatchEvent(new Event("blur", { bubbles: true }));
+        }
+    })();
+
+    // Fill No. of Entries (visa_entry_id dropdown)
+    (function () {
+        let rawEntry = String(e.visa_entry_id || "2").trim().toUpperCase();
+        let targetCode = "2";
+        if (rawEntry.includes("SINGLE") || rawEntry === "1") targetCode = "1";
+        else if (rawEntry.includes("TRIPLE") || rawEntry === "4") targetCode = "4";
+        else if (rawEntry.includes("DOUBLE") || rawEntry === "3") targetCode = "3";
+        else targetCode = "2"; // MULTIPLE
+
+        const fillVisaEntry = () => {
+            const sel = document.getElementById("visa_entry_id") || document.querySelector('select[name="appl.visa_entry_id"], select[name="visa_entry_id"]');
+            if (sel) {
+                sel.value = targetCode;
+                for (let i = 0; i < sel.options.length; i++) {
+                    const opt = sel.options[i];
+                    const ov = (opt.value || "").trim();
+                    const ot = (opt.text || opt.innerText || "").trim().toUpperCase();
+                    if (ov === targetCode || 
+                        (targetCode === "2" && (ot.includes("MULTI") || ov === "2")) ||
+                        (targetCode === "1" && (ot.includes("SINGLE") || ov === "1")) ||
+                        (targetCode === "3" && (ot.includes("DOUBLE") || ov === "3")) ||
+                        (targetCode === "4" && (ot.includes("TRIPLE") || ov === "4"))) {
+                        sel.selectedIndex = i;
+                        opt.selected = true;
+                        sel.value = opt.value;
+                        break;
+                    }
+                }
+                sel.dispatchEvent(new Event("input", { bubbles: true }));
+                sel.dispatchEvent(new Event("change", { bubbles: true }));
+                sel.dispatchEvent(new Event("blur", { bubbles: true }));
+                try { if (window.jQuery) window.jQuery(sel).trigger("change"); } catch(err) {}
+                try { y(sel.id, sel.value); } catch(err) {}
+                console.log("IV Autofill: Selected visa_entry_id ->", sel.value);
+            }
+        };
+        fillVisaEntry();
+        setTimeout(fillVisaEntry, 100);
+        setTimeout(fillVisaEntry, 300);
+        setTimeout(fillVisaEntry, 600);
+    })();
+
+    // Fill Port of Arrival & Exit
+    (function () {
+        const fillPort = (id, val) => {
+            if (!val || val === "NILL") return;
+            const el = document.getElementById(id) || document.querySelector(`[name="${id}"], [name="appl.${id}"]`);
+            if (!el) return;
+            if (el.tagName === "SELECT") {
+                n(el.id || id, val);
+                try { y(el.id || id, el.value); } catch(err) {}
+            } else {
+                t(el.id || id, val);
+            }
+        };
+        fillPort("entrypoint", e.entrypoint || "BY ROAD GEDE");
+        fillPort("exitpointprc", e.exitpoint || "BY ROAD GEDE");
+        fillPort("exitpoint", e.exitpoint || "BY ROAD GEDE");
+    })();
+
+    e.old_visa_no && "NILL" !== e.old_visa_no.toUpperCase() && "NOTHING SHOWN" !== e.old_visa_no.toUpperCase() && "" !== e.old_visa_no.trim() ? (
+        i("appl.old_visa_flag", "YES"),
+        t("prv_visit_add1", e.prv_visit_add1),
+        t("visited_city", e.visited_city),
+        t("old_visa_no", e.old_visa_no),
+        n("old_visa_type_id", e.old_visa_type_id),
+        t("oldvisaissueplace", e.oldvisaissueplace),
+        t("oldvisaissuedate", e.oldvisaissuedateRaw)
+    ) : i("appl.old_visa_flag", "NO");
+
+    i("appl.refuse_flag", "NO");
+    i("appl.saarc_flag", "NO");
+
+    const o = document.querySelector('input[name="othPassYN"][value="N"]');
+    o && o.click();
+
+    t("country_visited", e.country_visited);
+    t("nameofsponsor_msn", !e.spouse_name || ["NILL", "NA"].includes(e.spouse_name.trim().toUpperCase()) ? e.fthrname : e.spouse_name);
+    t("add1ofsponsor_msn", e.pres_add1);
+    t("add2ofsponsor_msn", e.pres_add2 + ", " + e.pres_add3);
+    t("phoneofsponsor_msn", e.pres_phone.slice(-11));
+
+    if (document.getElementById("nameofsponsor_ind") || document.getElementById("place_of_stay1")) {
+        u();
+    }
+}(e) : document.getElementById("question_yes_1") ? c() : document.getElementById("place_of_stay1") ? (console.log("IV Autofill: Detected Page 5. Showing Hotel Selector."), u()) : (console.log("IV Autofill: Unknown page."), sessionStorage.removeItem("autofillInProgress"), sessionStorage.removeItem("autofillData")) } async function u() { if (document.getElementById("iv-modal-backdrop")) return; const t = document.createElement("link"); t.rel = "stylesheet", t.href = chrome.runtime.getURL("modal.css"), document.head.appendChild(t); const n = (await chrome.storage.local.get(["iv_custom_hotels"])).iv_custom_hotels || [], i = document.createElement("div"); i.id = "iv-modal-backdrop"; let o = ""; Object.keys(e).forEach(e => { o += `<button class="btn-default" data-key="${e}">${e}</button>` }), n.length > 0 && (o += '<div style="margin: 15px 0 5px 0; border-top: 1px dashed #ccc; padding-top:10px; font-size:11px; color:#777; font-weight:bold; text-align:left;">MY SAVED LOCATIONS</div>', n.forEach((e, t) => { o += `\n                <div class="custom-hotel-wrapper">\n                    <button class="btn-custom" data-index="${t}">${g(e.name)}</button>\n                    <div class="btn-delete-custom" data-index="${t}" title="Delete">×</div>\n                </div>` })), o += '<button id="btn-add-new-hotel" class="btn-add-new">+ Add New Hotel/Embassy</button>', i.innerHTML = `\n        <div id="iv-modal-content">\n            <h3>Select Reference</h3>\n            <div class="iv-modal-options">\n                ${o}\n            </div>\n        </div>\n    `, document.body.appendChild(i), i.querySelectorAll(".btn-default").forEach(t => { t.addEventListener("click", () => v(e[t.dataset.key])) }), i.querySelectorAll(".btn-custom").forEach(e => { e.addEventListener("click", () => v(n[e.dataset.index])) }), i.querySelectorAll(".btn-delete-custom").forEach(e => { e.addEventListener("click", async t => { if (t.stopPropagation(), confirm("Delete this saved location permanently?")) { const t = parseInt(e.dataset.index); n.splice(t, 1), await chrome.storage.local.set({ iv_custom_hotels: n }), i.remove(), u() } }) }); const a = document.getElementById("btn-add-new-hotel"); a && a.addEventListener("click", () => { i.remove(), async function () { let e = []; try { const t = chrome.runtime.getURL("states-and-districts.json"), n = await fetch(t), i = await n.json(); e = i.states } catch (e) { return void alert("Error: states-and-districts.json missing in manifest.") } const t = document.createElement("div"); t.id = "iv-modal-backdrop", t.innerHTML = '\n        <div id="iv-modal-content" style="width: 450px;">\n            <h3>Add New Reference</h3>\n            <div class="iv-modal-form">\n                <div class="iv-input-group"><label>Reference Name*</label><input type="text" id="new-name" maxlength="50" placeholder="e.g. VISHAL HOTEL (Max 50 characters)"></div>\n                <div class="iv-input-group"><label>Address*</label><input type="text" id="new-addr" maxlength="50" placeholder="e.g. 1576 MAIN BAZAR (Max 50 characters)"></div>\n                <div class="iv-input-group"><label>Address box 2</label><input type="text" id="new-pin" maxlength="50" placeholder=""></div>\n                <div class="iv-input-group"><label>State*</label><select id="new-state"><option value="">Select State</option></select></div>\n                <div class="iv-input-group"><label>District*</label><select id="new-dist"><option value="">Select District</option></select></div>\n                <div class="iv-input-group"><label>Phone*</label><input type="text" id="new-phone" placeholder="e.g. 91956040328"></div>\n                <div class="iv-action-row">\n                    <button class="btn-cancel" id="btn-cancel-add">Cancel</button>\n                    <button class="btn-save" id="btn-save-hotel">Save & Select</button>\n                </div>\n            </div>\n        </div>\n    ', document.body.appendChild(t); const n = document.getElementById("new-state"), i = document.getElementById("new-dist"); e.forEach(e => { const t = document.createElement("option"); t.value = e.state, t.text = e.state.toUpperCase(), n.appendChild(t) }), n.addEventListener("change", () => { i.innerHTML = '<option value="">Select District</option>'; const t = e.find(e => e.state === n.value); t && t.districts.forEach(e => { const t = document.createElement("option"); t.value = e, t.text = e.toUpperCase(), i.appendChild(t) }) }), document.getElementById("btn-save-hotel").addEventListener("click", async () => { const e = { name: document.getElementById("new-name").value.toUpperCase(), add1: document.getElementById("new-addr").value.toUpperCase(), state: n.options[n.selectedIndex].text, district: document.getElementById("new-dist").value.toUpperCase(), phone: document.getElementById("new-phone").value, add2_pincode: document.getElementById("new-pin").value }; if (!e.name || !e.state || !e.district || "Select State" === e.state) return void alert("Please fill all required fields."); const i = (await chrome.storage.local.get(["iv_custom_hotels"])).iv_custom_hotels || []; i.push(e), await chrome.storage.local.set({ iv_custom_hotels: i }), t.remove(), v(e) }), document.getElementById("btn-cancel-add").addEventListener("click", () => { t.remove(), u() }) }() }), i.addEventListener("click", e => { e.target === i && i.remove() }) } async function v(e) { if (!e) return; const i = document.getElementById("iv-modal-backdrop"); i && i.remove(); try { document.getElementById("nameofsponsor_ind") ? (t("nameofsponsor_ind", e.name), t("add1ofsponsor_ind", e.add1), t("add2ofsponsor_ind", e.add2_pincode), t("phoneofsponsor_ind", e.phone), n("stateofsponsor_ind", e.state), await new Promise(e => setTimeout(e, 1e3)), await a("districtofsponsor_ind", e.district), n("districtofsponsor_ind", e.district)) : document.getElementById("place_of_stay1") && (t("place_of_stay1", e.name), t("pos_address1", e.add1), t("pos_phone1", e.phone), n("pos_state_id1", e.state), await new Promise(e => setTimeout(e, 1e3)), await a("pos_dist_id1", e.district), n("pos_dist_id1", e.district)) } catch (e) { console.error(e), alert("Could not select District automatically. Please check if State is correct.") } } function y(e, t) { try { chrome.runtime.sendMessage({ type: "EXECUTE_IN_MAIN_WORLD", id: e, value: t }) } catch (e) { console.warn("Could not send chosen update message:", e) } try { const n = document.getElementById(e); if (n) { let i = ""; for (const e of n.options) if (e.value === t) { i = e.text; break } if (i) { const t = document.getElementById(e + "_chosen"); if (t) { const e = t.querySelector(".chosen-single span"); e && (e.textContent = i.trim()) } } } } catch (e) { console.warn("Could not update Chosen visual DOM:", e) } } function g(e) { return e ? e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : e } async function f(e, t) { return true; } async function b(e) { 
     if (document.getElementById('iv-float-widget-container')) return; 
     const i = document.createElement('link'); 
     i.rel = 'stylesheet', i.href = chrome.runtime.getURL('modal.css'), document.head.appendChild(i); 

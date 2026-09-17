@@ -21,6 +21,9 @@ LICENSE_FILE = os.path.join(APP_DATA_DIR, "license.dat")
 
 LOCAL_PAYMENTS_FILE = os.path.join(APP_DATA_DIR, "payments_local.json")
 _local_payments_lock = threading.Lock()
+_payment_dedup_lock = threading.Lock()
+_payment_dedup_cache = {}  # key -> {"id": payment_id, "time": float, "stage": stage, "status": status}
+
 
 def _load_local_payments() -> list:
     if not os.path.exists(LOCAL_PAYMENTS_FILE):
@@ -516,8 +519,9 @@ def get_masked_key(license_key: str) -> str:
         return '-'.join(masked)
     return license_key
 
-def record_payment(amount: float, status: str, stage: str, rocket_account: str, description: str, profile_id: str = 'default', profile_label: str = '', amount_1: float = 0, amount_2: float = 0, amount_3: float = 0):
-    """পেমেন্ট শুরু হলে বা সম্পন্ন হলে লোকাল স্টোরেজে এবং ক্লাউডে রেকর্ড তৈরি করে।"""
+def record_payment(amount: float, status: str, stage: str, rocket_account: str, description: str, profile_id: str = 'default', profile_label: str = '', amount_1: float = 0, amount_2: float = 0, amount_3: float = 0, payment_session_id: str = ''):
+    """পেমেন্ট শুরু হলে বা সম্পন্ন হলে লোকাল স্টোরেজে এবং ক্লাউডে রেকর্ড তৈরি করে।
+    সম্পূর্ণ Idempotent ও ডুপ্লিকেট-প্রুফ: মেমোরি উইন্ডো ও ডিটারমিনিস্টিক আইডির সাহায্যে একাধিক বার্স্ট কলেও ১টির বেশি রেকর্ড তৈরি হতে পারবে না।"""
     if not os.path.exists(LICENSE_FILE):
         return None
         
@@ -535,12 +539,52 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
         timestamp_ms = int(now.timestamp() * 1000)
         datetime_str = now.strftime("%Y-%m-%d %H:%M:%S")
         final_amount = float(amount_3 or amount or 0)
-        local_id = f"loc_{timestamp_ms}_{int(time.time() * 1000) % 100000}"
         
+        # --- ১. মেমোরি ডিডুপ্লিকেশন উইন্ডো (Sliding Window Dedup Check) ---
+        import re
+        clean_acc = re.sub(r'[^0-9]', '', str(rocket_account or ''))
+        prof_key = str(profile_id or 'default').replace(' ', '_')
+        now_sec = time.time()
+        
+        # ডিটারমিনিস্টিক পেমেন্ট আইডি তৈরি
+        if payment_session_id and len(payment_session_id.strip()) > 3:
+            clean_id = re.sub(r'[^a-zA-Z0-9_-]', '_', payment_session_id.strip())[:64]
+            dedup_key = clean_id
+        else:
+            time_bucket = int(timestamp_ms // 60000)  # ১ মিনিটের ইউনিক বাকেট
+            clean_id = f"pay_{prof_key[:10]}_{clean_acc[-6:] or 'def'}_{time_bucket}"
+            dedup_key = f"{prof_key}_{clean_acc}_{final_amount:.2f}"
+
+        with _payment_dedup_lock:
+            # ১২০ সেকেন্ডের বেশি পুরনো ক্যাশ আইটেম রিমুভ করো
+            expired_keys = [k for k, v in _payment_dedup_cache.items() if now_sec - v.get("time", 0) > 120]
+            for k in expired_keys:
+                _payment_dedup_cache.pop(k, None)
+
+            # গত ৬০ সেকেন্ডের মধ্যে একই পেমেন্ট থাকলে নতুন রেকর্ড না তৈরি করে রিটার্ন করো
+            if dedup_key in _payment_dedup_cache:
+                existing = _payment_dedup_cache[dedup_key]
+                if now_sec - existing.get("time", 0) < 60:
+                    existing_id = existing.get("id")
+                    print(f"[PaymentDedup] Duplicate hit for {dedup_key}. Reusing existing ID: {existing_id}")
+                    if (stage and stage != existing.get("stage")) or (status and status != existing.get("status")):
+                        update_payment_stage(existing_id, stage, status, final_amount)
+                        existing["stage"] = stage
+                        existing["status"] = status
+                    return existing_id
+
+            # নতুন পেমেন্ট মেমোরিতে রেজিস্টার করো
+            _payment_dedup_cache[dedup_key] = {
+                "id": clean_id,
+                "time": now_sec,
+                "stage": stage,
+                "status": status
+            }
+
         payment_record = {
-            "id": local_id,
-            "local_id": local_id,
-            "cloud_id": None,
+            "id": clean_id,
+            "local_id": clean_id,
+            "cloud_id": clean_id,
             "amount": final_amount,
             "amount_1": float(amount_1 or 0),
             "amount_2": float(amount_2 or 0),
@@ -558,17 +602,21 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
             "sync_error": None
         }
         
-        # ১. লোকাল স্টোরেজে অবিলম্বে সেভ করো (Failsafe: ফায়ারবেস কোটা শেষ বা অফলাইন থাকলেও ডাটা সুরক্ষিত)
+        # ২. লোকাল স্টোরেজে সেভ / আপডেট করো
         with _local_payments_lock:
             local_list = _load_local_payments()
-            local_list.insert(0, payment_record)
+            idx = next((i for i, r in enumerate(local_list) if r.get("id") == clean_id or r.get("local_id") == clean_id), -1)
+            if idx >= 0:
+                local_list[idx] = payment_record
+            else:
+                local_list.insert(0, payment_record)
             _save_local_payments(local_list)
             
-        # ২. Turso Database-এ সেভ করো (Dual-Cloud Failsafe: ফায়ারবেস ডাউন থাকলেও Turso সচল থাকবে)
+        # ৩. Turso Database-এ সেভ করো (Dual-Cloud Failsafe: id=clean_id হওয়ায় ১০০% গ্যারান্টি ১টি রো হবে)
         insert_turso_payment_async(payment_record)
             
-        # ৩. ক্লাউড ফায়ারবেসে পাঠানোর চেষ্টা করো
-        payments_url = f"{BASE_URL}/{license_key}/payments"
+        # ৪. ক্লাউড ফায়ারবেসে Idempotent PATCH পাঠানো (কোনো ডুপ্লিকেট ডকুমেন্ট হবে না)
+        payments_doc_url = f"{BASE_URL}/{license_key}/payments/{clean_id}"
         payload = {
             "fields": {
                 "amount": {"doubleValue": final_amount},
@@ -586,37 +634,44 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
             }
         }
         
-        payment_id = None
         try:
-            res = requests.post(f"{payments_url}?key={API_KEY}", json=payload, timeout=6)
-            if res.status_code == 200:
-                doc_data = res.json()
-                doc_name = doc_data.get("name")
-                payment_id = doc_name.split("/")[-1] if doc_name else None
-                payment_record["cloud_id"] = payment_id
+            # চেক করো এই ডকুমেন্ট ইতিমধ্যে ক্লাউডে আছে কি না (যাতে টোটাল কাউন্ট ডুপ্লিকেট না বাড়ে)
+            doc_already_exists = False
+            try:
+                check_res = requests.get(f"{payments_doc_url}?key={API_KEY}", timeout=4)
+                if check_res.status_code == 200:
+                    doc_already_exists = True
+            except Exception:
+                pass
+
+            res = requests.patch(f"{payments_doc_url}?key={API_KEY}", json=payload, timeout=6)
+            if res.status_code in [200, 201]:
+                payment_record["cloud_id"] = clean_id
                 payment_record["synced"] = True
                 payment_record["sync_error"] = None
                 
-                try:
-                    main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
-                    if main_res.status_code == 200:
-                        cloud_data = _parse_firestore_doc(main_res.json())
-                        current_count = cloud_data.get("payment_count", 0)
-                        current_total = cloud_data.get("total_amount", 0.0)
-                        
-                        update_payload = {
-                            "fields": {
-                                "payment_count": {"integerValue": current_count + 1},
-                                "total_amount": {"doubleValue": float(current_total + final_amount)}
+                # শুধুমাত্র নতুন ডকুমেন্টের জন্য মোট কাউন্ট ও মোট অ্যামাউন্ট বাড়াও
+                if not doc_already_exists:
+                    try:
+                        main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
+                        if main_res.status_code == 200:
+                            cloud_data = _parse_firestore_doc(main_res.json())
+                            current_count = cloud_data.get("payment_count", 0)
+                            current_total = cloud_data.get("total_amount", 0.0)
+                            
+                            update_payload = {
+                                "fields": {
+                                    "payment_count": {"integerValue": current_count + 1},
+                                    "total_amount": {"doubleValue": float(current_total + final_amount)}
+                                }
                             }
-                        }
-                        params = {
-                            "key": API_KEY,
-                            "updateMask.fieldPaths": ["payment_count", "total_amount"]
-                        }
-                        requests.patch(f"{BASE_URL}/{license_key}", json=update_payload, params=params, timeout=5)
-                except Exception as inner_e:
-                    print(f"Failed to update total count/amount: {inner_e}")
+                            params = {
+                                "key": API_KEY,
+                                "updateMask.fieldPaths": ["payment_count", "total_amount"]
+                            }
+                            requests.patch(f"{BASE_URL}/{license_key}", json=update_payload, params=params, timeout=5)
+                    except Exception as inner_e:
+                        print(f"Failed to update total count/amount: {inner_e}")
             else:
                 payment_record["sync_error"] = f"HTTP {res.status_code}: {res.text[:80]}"
                 print(f"[PaymentCloud] Firebase write failed (Quota/Network): {res.text[:80]}")
@@ -627,22 +682,21 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
         with _local_payments_lock:
             local_list = _load_local_payments()
             for r in local_list:
-                if r.get("local_id") == local_id:
+                if r.get("id") == clean_id:
                     r["cloud_id"] = payment_record.get("cloud_id")
                     r["synced"] = payment_record.get("synced", False)
                     r["sync_error"] = payment_record.get("sync_error")
                     break
             _save_local_payments(local_list)
             
-        # ক্লাউড আইডি না পেলেও লোকাল আইডি রিটার্ন করো যাতে এক্সটেনশন পরবর্তীতে স্টেজ আপডেট পাঠাতে পারে!
-        return payment_id or local_id
+        return clean_id
         
     except Exception as e:
         print(f"Payment tracking error: {e}")
         return None
 
 def update_payment_stage(payment_id: str, stage: str, status: str = None, amount: float = None):
-    """ইতিমধ্যে তৈরি করা একটি পেমেন্ট রেকর্ডের স্টেজ এবং স্ট্যাটাস লোকাল ও ক্লাউডে আপডেট করে।"""
+    """ইতিমধ্যে তৈরি করা একটি পেমেন্ট রেকর্ডের স্টেজ এবং স্ট্যাটাস লোকাল, ফায়ারবেস ও Turso ডাটাবেজে আপডেট করে।"""
     if not os.path.exists(LICENSE_FILE) or not payment_id:
         return False
         
@@ -667,11 +721,17 @@ def update_payment_stage(payment_id: str, stage: str, status: str = None, amount
                     if amount and amount > 0:
                         r["amount"] = float(amount)
                         r["amount_3"] = float(amount)
-                    cloud_target_id = r.get("cloud_id") or payment_id
+                    cloud_target_id = r.get("cloud_id") or r.get("id") or payment_id
                     break
             _save_local_payments(local_list)
+
+        # Turso Database-এও স্টেজ, স্ট্যাটাস ও অ্যামাউন্ট সিঙ্ক করো
+        try:
+            update_turso_payment_async(payment_id, stage, status, amount)
+        except Exception as turso_err:
+            print(f"[Turso Sync Error] {turso_err}")
             
-        if cloud_target_id and not str(cloud_target_id).startswith("loc_"):
+        if cloud_target_id:
             try:
                 payment_doc_url = f"{BASE_URL}/{license_key}/payments/{cloud_target_id}"
                 update_fields = {"stage": {"stringValue": stage}}
@@ -718,7 +778,7 @@ def _get_presence_client():
     with _presence_lock:
         if _presence_client is None:
             try:
-                import paho.mqtt.client as mqtt
+                import paho.mqtt.client as mqtt  # type: ignore
                 import uuid
                 client_id = f"pres_{uuid.uuid4().hex[:8]}"
                 _presence_client = mqtt.Client(client_id=client_id)
@@ -829,6 +889,56 @@ def _insert_turso_payment_worker(payment_data: dict):
 def insert_turso_payment_async(payment_data: dict):
     """Dispatches Turso payment insert to a non-blocking daemon thread"""
     threading.Thread(target=_insert_turso_payment_worker, args=(payment_data,), daemon=True).start()
+
+
+def _update_turso_payment_worker(payment_id: str, stage: str, status: str = None, amount: float = None):
+    """Background worker thread to update payment record stage/status in Turso Database"""
+    try:
+        sql = """
+            UPDATE payments 
+            SET stage = ?,
+                status = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE status END,
+                amount = CASE WHEN ? > 0 THEN ? ELSE amount END,
+                amount_3 = CASE WHEN ? > 0 THEN ? ELSE amount_3 END
+            WHERE id = ?
+        """
+        amt_val = float(amount or 0)
+        status_val = str(status) if status else ""
+        body = {
+            "requests": [
+                {
+                    "type": "execute",
+                    "stmt": {
+                        "sql": sql,
+                        "args": [
+                            {"type": "text", "value": str(stage or "")},
+                            {"type": "text", "value": status_val},
+                            {"type": "text", "value": status_val},
+                            {"type": "text", "value": status_val},
+                            {"type": "float", "value": amt_val},
+                            {"type": "float", "value": amt_val},
+                            {"type": "float", "value": amt_val},
+                            {"type": "float", "value": amt_val},
+                            {"type": "text", "value": str(payment_id)}
+                        ]
+                    }
+                },
+                {"type": "close"}
+            ]
+        }
+        headers = {
+            "Authorization": f"Bearer {TURSO_AUTH_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        requests.post(TURSO_DB_URL, json=body, headers=headers, timeout=5)
+    except Exception as e:
+        print(f"[Turso Payment Update Error] {e}")
+
+
+def update_turso_payment_async(payment_id: str, stage: str, status: str = None, amount: float = None):
+    """Dispatches Turso payment stage update to a non-blocking daemon thread"""
+    threading.Thread(target=_update_turso_payment_worker, args=(payment_id, stage, status, amount), daemon=True).start()
+
 
 
 def record_activity(event_type: str, profile_id: str = "default", profile_label: str = "Profile", title: str = "", details: str = "", amount: float = 0, status: str = "info", metadata: dict = None, off_source: str = "popup"):
@@ -985,21 +1095,20 @@ def _sync_pending_payments_loop():
                             "datetime": {"stringValue": str(record.get("datetime", ""))}
                         }
                     }
+                    doc_id = record.get("id") or record.get("local_id")
+                    payments_doc_url = f"{BASE_URL}/{license_key}/payments/{doc_id}"
                     try:
-                        res = requests.post(f"{payments_url}?key={API_KEY}", json=payload, timeout=6)
-                        if res.status_code == 200:
-                            doc_data = res.json()
-                            doc_name = doc_data.get("name")
-                            payment_id = doc_name.split("/")[-1] if doc_name else None
+                        res = requests.patch(f"{payments_doc_url}?key={API_KEY}", json=payload, timeout=6)
+                        if res.status_code in [200, 201]:
                             with _local_payments_lock:
                                 for r in local_list:
-                                    if r.get("local_id") == record.get("local_id"):
-                                        r["cloud_id"] = payment_id
+                                    if (r.get("id") and r.get("id") == doc_id) or (r.get("local_id") and r.get("local_id") == doc_id):
+                                        r["cloud_id"] = doc_id
                                         r["synced"] = True
                                         r["sync_error"] = None
                                         break
                                 _save_local_payments(local_list)
-                            print(f"[PaymentSync] Successfully synced pending payment {record.get('local_id')} -> {payment_id}")
+                            print(f"[PaymentSync] Successfully synced pending payment {doc_id}")
                             
                             try:
                                 main_res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)

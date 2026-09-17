@@ -178,12 +178,19 @@ function sendRecordPayment(paymentData, callback) {
     const amt2 = (paymentData && paymentData.amount_2) || parseFloat(sessionStorage.getItem('sess_amount_2')) || 0;
     const amt3 = (paymentData && (paymentData.amount_3 || paymentData.amount)) || 0;
     
+    // Deterministic 1-minute window payment session ID for absolute idempotency
+    const profId = (currentProfileId || 'prof_default').replace(/[^a-zA-Z0-9_]/g, '');
+    const cleanAcc = (((paymentData && paymentData.rocket_account) || '').replace(/[^0-9]/g, '')) || 'acc';
+    const timeBucket = Math.floor(Date.now() / 60000);
+    const defaultSessionId = `pay_${profId}_${cleanAcc}_${timeBucket}`;
+
     const payload = {
         profile_id: currentProfileId,
         profile_label: currentProfileLabel,
         amount_1: amt1,
         amount_2: amt2,
         amount_3: amt3,
+        payment_session_id: (paymentData && paymentData.payment_session_id) || defaultSessionId,
         ...(paymentData || {})
     };
     chrome.runtime.sendMessage({
@@ -2858,7 +2865,8 @@ function getResolvedPaymentAccount(res) {
                     dbblOtpAttempted = false;
                     dbblIsFetchingOtp = false;
 
-                    if (dbblTrackedStage !== 'account_submitted') {
+                    const isAlreadyTracked = sessionStorage.getItem('dbbl_tracked_init') === 'true' || dbblTrackedStage === 'rocket' || dbblTrackedStage === 'account_submitted' || window.__dbbl_init_tracked;
+                    if (!isAlreadyTracked) {
                         let amount = 0;
                         const amountMatch = pageText.match(/amount[\s:]*([\d,]+\.?\d*)/i);
                         if (amountMatch) {
@@ -2867,18 +2875,28 @@ function getResolvedPaymentAccount(res) {
                         
                         if (amount >= 0) {
                             dbblTrackedStage = 'rocket';
+                            window.__dbbl_init_tracked = true;
+                            sessionStorage.setItem('dbbl_tracked_init', 'true');
+
+                            const targetAccount = resolved.phone || candidatePhones[0] || '';
+                            const cleanAccount = targetAccount.replace(/[^0-9]/g, '');
+                            const timeBucket = Math.floor(Date.now() / 60000);
+                            const profId = (currentProfileId || 'prof_default').replace(/[^a-zA-Z0-9_]/g, '');
+                            const paymentSessionId = `pay_${profId}_${cleanAccount || 'acc'}_${timeBucket}`;
+
                             sendRecordPayment({
+                                payment_session_id: paymentSessionId,
                                 amount: amount,
                                 status: 'initiated',
                                 stage: 'rocket',
-                                rocket_account: resolved.phone || candidatePhones[0] || '',
+                                rocket_account: targetAccount,
                                 description: ''
                             }, (d) => {
                                 if (d && d.payment_id) {
                                     chrome.storage.local.set({ current_payment_id: d.payment_id });
                                 }
                             });
-                            console.log('[IVAC] DBBL Amount Extracted: ' + amount);
+                            console.log('[IVAC] DBBL Amount Extracted & Tracked: ' + amount + ' (Session ID: ' + paymentSessionId + ')');
                         }
                     }
                 }
@@ -2950,6 +2968,7 @@ function getResolvedPaymentAccount(res) {
                         });
                         
                         if (submitBtn) {
+                            dbblTrackedStage = 'account_submitted';
                             dbblSafeClick(submitBtn, 'submit');
                         }
                     }

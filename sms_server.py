@@ -8,9 +8,9 @@ import threading
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from flask import Flask, request, jsonify
-from flask_socketio import SocketIO
-from flask_cors import CORS
+from flask import Flask, request, jsonify  # type: ignore
+from flask_socketio import SocketIO  # type: ignore
+from flask_cors import CORS  # type: ignore
 
 import os
 from otp_parser import parse_otp_from_sms, digits_to_string, format_otp_display
@@ -784,7 +784,8 @@ def payment():
     if (not profile_label or profile_label == "Profile" or profile_label.startswith("Profile #")) and profile_id in profile_tracker:
         profile_label = profile_tracker[profile_id].get("label", profile_label)
         
-    payment_id = record_payment(amount, status, stage, rocket_account, description, profile_id, profile_label, amount_1, amount_2, amount_3)
+    payment_session_id = data.get("payment_session_id", "")
+    payment_id = record_payment(amount, status, stage, rocket_account, description, profile_id, profile_label, amount_1, amount_2, amount_3, payment_session_id=payment_session_id)
     return jsonify({"success": bool(payment_id), "payment_id": payment_id}), 200
 
 @app.route("/api/payment/update", methods=["POST"])
@@ -1330,7 +1331,7 @@ def handle_connect():
 
 # ===== CLOUD SMS SYNC (MQTT) =====
 try:
-    import paho.mqtt.client as mqtt
+    import paho.mqtt.client as mqtt  # type: ignore
     import hashlib
     from license_system.hwid import generate_hwid
     from license_system.crypto import decrypt_data

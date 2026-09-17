@@ -1,9 +1,9 @@
 import mqtt from 'mqtt';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Key, Plus, Trash2, ShieldBan, RefreshCw, CheckCircle2, Shield, Search, X, ChevronRight, ArrowLeft, ArrowRight, User, Phone, FileText, Clock, Calendar, CalendarPlus, Save, Edit3, Copy, Activity, Chrome, Power, CheckCircle, AlertCircle, AlertTriangle, ArrowUpRight, Filter, Smartphone, CreditCard, FileUp, LogIn, Layers, Radio, Sparkles, Database, HardDrive, Server, ExternalLink } from 'lucide-react';
+import { Key, Plus, Trash2, ShieldBan, RefreshCw, CheckCircle2, Shield, Search, X, ChevronRight, ArrowLeft, ArrowRight, User, Phone, FileText, Clock, Calendar, CalendarPlus, Save, Edit3, Copy, Activity, Chrome, Power, CheckCircle, AlertCircle, AlertTriangle, ArrowUpRight, Filter, Smartphone, CreditCard, FileUp, LogIn, Layers, Radio, Sparkles, Database, HardDrive, Server, ExternalLink , Archive, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc, getDocs, where } from 'firebase/firestore';
 
 interface IvacLicense {
   id: string;
@@ -19,6 +19,7 @@ interface IvacLicense {
   client_name?: string;
   client_phone?: string;
   client_description?: string;
+  archived_cutoffs?: Record<string, number>;
 }
 
 interface LicenseExpiryDetails {
@@ -201,29 +202,49 @@ function formatRelativeTime(timestamp: number) {
 }
 
 // Format date and time in 12-hour AM/PM format
-function formatDateTime12Hour(timestampOrStr?: number | string): { dateStr: string; timeStr: string } {
-  if (!timestampOrStr) return { dateStr: '-', timeStr: '-' };
+function formatDateTime12Hour(timestampOrStr?: number | string): { dateStr: string; timeStr: string; full12h: string } {
+  if (!timestampOrStr) return { dateStr: '-', timeStr: '-', full12h: '-' };
   
-  let date: Date;
-  if (typeof timestampOrStr === 'number') {
-    date = new Date(timestampOrStr);
-  } else if (typeof timestampOrStr === 'string') {
-    date = new Date(timestampOrStr.replace(' ', 'T'));
+  let date: Date | null = null;
+  const strVal = String(timestampOrStr).trim();
+  
+  // 1. If it's a numeric timestamp (either number or string of digits e.g. "1789671305264")
+  if (/^\d{9,16}$/.test(strVal) || (!isNaN(Number(strVal)) && !strVal.includes('-') && !strVal.includes(':'))) {
+    const num = Number(strVal);
+    date = new Date(num < 1e11 ? num * 1000 : num);
+  } else if (strVal.includes('-') || strVal.includes(':') || strVal.includes('T')) {
+    // 2. If it's a date string like "2026-09-18 00:55:05"
+    const parts = strVal.split(' ');
+    if (parts.length === 2 && parts[0].includes('-') && parts[1].includes(':')) {
+      const [dPart, tPart] = parts;
+      const [y, m, d] = dPart.split('-').map(Number);
+      const [hh, mm, ss] = tPart.split(':').map(Number);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d) && !isNaN(hh) && !isNaN(mm)) {
+        date = new Date(y, m - 1, d, hh, mm, ss || 0);
+      }
+    }
+    if (!date || isNaN(date.getTime())) {
+      date = new Date(strVal.replace(' ', 'T'));
+    }
     if (isNaN(date.getTime())) {
-      date = new Date(timestampOrStr);
+      date = new Date(strVal);
     }
   } else {
-    date = new Date();
+    date = new Date(strVal);
   }
   
-  if (isNaN(date.getTime())) {
-    return { dateStr: String(timestampOrStr), timeStr: '' };
+  if (!date || isNaN(date.getTime())) {
+    return { dateStr: strVal, timeStr: '', full12h: strVal };
   }
   
-  const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const dateStr = `${y}-${m}-${d}`;
+  const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+  const full12h = `${dateStr} ${timeStr}`;
   
-  return { dateStr, timeStr };
+  return { dateStr, timeStr, full12h };
 }
 
 // Keep-alive threshold: 3 minutes buffer (prevents background Chrome power throttling from flickering profiles)
@@ -296,6 +317,80 @@ const getEventVisual = (act: ActivityRecord) => {
 };
 
 // ===== TURSO DATABASE CLOUD VAULT VIEW =====
+
+// ===== REUSABLE PERMANENT DELETE LICENSE WARNING MODAL =====
+function DeleteLicenseModal({
+  item,
+  deleting,
+  onCancel,
+  onConfirm
+}: {
+  item: { key: string; clientName?: string };
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: (key: string) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/75 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-rose-200 dark:border-rose-900/60 max-w-md w-full p-6 space-y-4">
+        <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+          <div className="p-3 bg-rose-100 dark:bg-rose-950/60 rounded-xl border border-rose-200 dark:border-rose-800">
+            <AlertTriangle className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              স্থায়ীভাবে মুছে ফেলার সতর্কতা
+            </h3>
+            <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+              Permanent Delete Warning
+            </p>
+          </div>
+        </div>
+
+        <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1.5 font-mono">
+          <div><span className="text-slate-500">License Key:</span> <strong className="text-slate-800 dark:text-slate-100">{item.key}</strong></div>
+          {item.clientName && (
+            <div><span className="text-slate-500">Client:</span> <strong className="text-slate-800 dark:text-slate-100">{item.clientName}</strong></div>
+          )}
+        </div>
+
+        <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-rose-50/60 dark:bg-rose-950/20 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30">
+          🚨 <strong>সাবধান:</strong> এই লাইসেন্সটি মুছে ফেললে <strong>Firebase</strong> এবং <strong>Turso</strong> ডাটাবেজ উভয় স্থান থেকেই এই কী-এর সমস্ত ডাটা (লাইসেন্স রেকর্ড, সমস্ত পেমেন্ট হিস্ট্রি এবং লাইভ অ্যাক্টিভিটি লগ) <strong>স্থায়ীভাবে সম্পূর্ণ মুছে যাবে</strong>। এটি আর কখনোই ফিরিয়ে আনা সম্ভব হবে না।
+        </div>
+
+        <div className="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onCancel}
+            className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+          >
+            বাতিল
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={() => onConfirm(item.key)}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm transition-all cursor-pointer disabled:opacity-50"
+          >
+            {deleting ? (
+              <>
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                <span>মুছে ফেলা হচ্ছে...</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>হ্যাঁ, সম্পূর্ণ ডিলিট করুন</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TursoVaultView({ license, onBack }: {
   license: IvacLicense;
   onBack: () => void;
@@ -310,8 +405,66 @@ function TursoVaultView({ license, onBack }: {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string>('');
 
-  const tursoUrl = 'https://ivac-master-pro-ivacmasterpro.aws-ap-south-1.turso.io/v2/pipeline';
-  const tursoToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk1NjkwNTMsImlkIjoiMDFhMGFhYTAtOTAwMS03M2QwLWEwY2YtMDU1YTA1MjIzMTEyIiwia2lkIjoiSks1VmYtT1BqX0lRVFBOd3R3QlhfNXkzMk43YVRwdXhsX0RIRmtrNHRzdyIsInJpZCI6ImNlOGUzYzk1LTI0ZjAtNDY3ZC1iNjkzLWI4MDVkZWY4ZWIzZiJ9.RA6Gd_8XSSFesSdqB8E_SqbWQTrqgbbl_0Q2vExxUE3H0USdkscTa0Dfs7NWaYcT0-S9WhPREpmdmbQKbilgAg';
+  // Safe Archive / Hide State (ডাটাবেজ অক্ষত রেখে ডিসপ্লে ফিল্টারিং)
+  const [showHidden, setShowHidden] = useState(false);
+  const [archiveConfirmProfile, setArchiveConfirmProfile] = useState<{ profileId: string; profileLabel: string } | null>(null);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [archivedCutoffs, setArchivedCutoffs] = useState<Record<string, number>>(() => {
+    try {
+      const fromLic = (license as any)?.archived_cutoffs;
+      if (fromLic && typeof fromLic === 'object') return fromLic;
+      const local = localStorage.getItem(`ivac_archived_${license.key}`);
+      return local ? JSON.parse(local) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const handleConfirmArchive = async (profileId: string) => {
+    setIsArchiving(true);
+    const now = Date.now();
+    let updated: Record<string, number>;
+    if (profileId === 'all') {
+      updated = { all: now };
+    } else {
+      updated = { ...archivedCutoffs, [profileId]: now };
+    }
+    setArchivedCutoffs(updated);
+    try {
+      localStorage.setItem(`ivac_archived_${license.key}`, JSON.stringify(updated));
+      await updateDoc(doc(db, 'ivac_licenses', license.key), {
+        archived_cutoffs: updated
+      });
+    } catch (e) {
+      console.error('[Archive Error]', e);
+    } finally {
+      setIsArchiving(false);
+      setArchiveConfirmProfile(null);
+    }
+  };
+
+  const handleRestoreProfile = async (profileId: string) => {
+    const updated = { ...archivedCutoffs };
+    delete updated[profileId];
+    if (profileId === 'all') {
+      Object.keys(updated).forEach(k => delete updated[k]);
+    }
+    setArchivedCutoffs(updated);
+    try {
+      localStorage.setItem(`ivac_archived_${license.key}`, JSON.stringify(updated));
+      await updateDoc(doc(db, 'ivac_licenses', license.key), {
+        archived_cutoffs: updated
+      });
+    } catch (e) {
+      console.error('[Restore Error]', e);
+    }
+  };
+
+  const isItemArchived = (profileId: string, timestamp: any) => {
+    const cutoff = Math.max(archivedCutoffs[profileId] || 0, archivedCutoffs['all'] || 0);
+    const ts = Number(timestamp || 0);
+    return cutoff > 0 && ts > 0 && ts <= cutoff;
+  };
 
   const fetchTursoData = async () => {
     setIsRefreshing(true);
@@ -346,14 +499,14 @@ function TursoVaultView({ license, onBack }: {
       };
 
       const [actRes, payRes] = await Promise.all([
-        fetch(tursoUrl, {
+        fetch('/api/turso-vault', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${tursoToken}`, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(actBody)
         }),
-        fetch(tursoUrl, {
+        fetch('/api/turso-vault', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${tursoToken}`, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payBody)
         })
       ]);
@@ -389,7 +542,7 @@ function TursoVaultView({ license, onBack }: {
           setPayments(records);
         }
       }
-      setLastRefreshedAt(new Date().toLocaleTimeString());
+      setLastRefreshedAt(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
     } catch (err) {
       console.error('[Turso Vault Fetch Error]', err);
     } finally {
@@ -432,21 +585,10 @@ function TursoVaultView({ license, onBack }: {
     };
   }, [license.key]);
 
-  // Distinct profiles for profile-wise selector
-  const distinctProfiles = useMemo(() => {
-    const map = new Map<string, string>();
-    activities.forEach((a: ActivityRecord) => {
-      if (a.profile_id) map.set(a.profile_id, a.profile_label || `Profile ${a.profile_id}`);
-    });
-    payments.forEach((p: PaymentRecord) => {
-      if (p.profile_id) map.set(p.profile_id, p.profile_label || `Profile ${p.profile_id}`);
-    });
-    return Array.from(map.entries());
-  }, [activities, payments]);
-
-  // Filtered Activities
+  // Filtered Activities (Respecting Archive/Hide Cutoff)
   const filteredActivities = activities.filter((act: ActivityRecord) => {
     if (selectedProfile !== 'all' && act.profile_id !== selectedProfile) return false;
+    if (!showHidden && isItemArchived(act.profile_id, act.timestamp)) return false;
     if (selectedCategory === 'all') return true;
     if (selectedCategory === 'status') return act.event_type.includes('ext_') || act.event_type.includes('status') || act.event_type.includes('off');
     if (selectedCategory === 'payment') return act.event_type.includes('payment') || act.event_type.includes('pay');
@@ -455,11 +597,44 @@ function TursoVaultView({ license, onBack }: {
     return true;
   });
 
-  // Filtered Payments
+  // Filtered Payments (Respecting Archive/Hide Cutoff)
   const filteredPayments = payments.filter((p: PaymentRecord) => {
     if (selectedProfile !== 'all' && p.profile_id !== selectedProfile) return false;
+    if (!showHidden && isItemArchived(p.profile_id, Number(p.timestamp || 0))) return false;
     return true;
   });
+
+  // Distinct profiles for profile-wise selector:
+  // Shows only profiles that have visible/active records (timestamp > cutoff) UNLESS showHidden is true.
+  // When a hidden profile gets a new activity, it automatically reappears!
+  const distinctProfiles = useMemo(() => {
+    const map = new Map<string, string>();
+    const actList = showHidden ? activities : activities.filter(a => !isItemArchived(a.profile_id, a.timestamp));
+    const payList = showHidden ? payments : payments.filter(p => !isItemArchived(p.profile_id, Number(p.timestamp || 0)));
+
+    actList.forEach((a: ActivityRecord) => {
+      if (a.profile_id) map.set(a.profile_id, a.profile_label || `Profile ${a.profile_id}`);
+    });
+    payList.forEach((p: PaymentRecord) => {
+      if (p.profile_id) map.set(p.profile_id, p.profile_label || `Profile ${p.profile_id}`);
+    });
+    return Array.from(map.entries());
+  }, [activities, payments, archivedCutoffs, showHidden]);
+
+  // Auto-reset selectedProfile if that profile is now archived/hidden
+  useEffect(() => {
+    if (selectedProfile !== 'all' && !showHidden) {
+      const exists = distinctProfiles.some(([id]) => id === selectedProfile);
+      if (!exists) {
+        setSelectedProfile('all');
+      }
+    }
+  }, [distinctProfiles, selectedProfile, showHidden]);
+
+  const hiddenActivitiesCount = activities.filter(a => (selectedProfile === 'all' || a.profile_id === selectedProfile) && isItemArchived(a.profile_id, a.timestamp)).length;
+  const hiddenPaymentsCount = payments.filter(p => (selectedProfile === 'all' || p.profile_id === selectedProfile) && isItemArchived(p.profile_id, Number(p.timestamp || 0))).length;
+  const totalHiddenCount = activeTab === 'activities' ? hiddenActivitiesCount : hiddenPaymentsCount;
+  const isProfileArchived = Boolean(archivedCutoffs[selectedProfile] || (selectedProfile === 'all' && Object.keys(archivedCutoffs).length > 0));
 
   const totalPaymentsAmount = filteredPayments.reduce((sum: number, p: PaymentRecord) => p.status === 'success' ? sum + (p.amount || 0) : sum, 0);
 
@@ -517,7 +692,14 @@ function TursoVaultView({ license, onBack }: {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">অ্যাক্টিভিটি রেকর্ড (Turso)</p>
-              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">{activities.length}</h3>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">
+                {showHidden ? activities.length : filteredActivities.length}
+                {hiddenActivitiesCount > 0 && !showHidden && (
+                  <span className="text-xs font-normal text-amber-600 dark:text-amber-400 ml-1.5">
+                    ({hiddenActivitiesCount} লুকানো)
+                  </span>
+                )}
+              </h3>
               <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">ম্যানুয়াল অফ ও টাইমলাইন</p>
             </div>
             <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
@@ -530,7 +712,14 @@ function TursoVaultView({ license, onBack }: {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">পেমেন্ট রেকর্ড (Turso)</p>
-              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">{payments.length}</h3>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">
+                {showHidden ? payments.length : filteredPayments.length}
+                {hiddenPaymentsCount > 0 && !showHidden && (
+                  <span className="text-xs font-normal text-amber-600 dark:text-amber-400 ml-1.5">
+                    ({hiddenPaymentsCount} লুকানো)
+                  </span>
+                )}
+              </h3>
               <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5 font-medium">Dual-Cloud Backup</p>
             </div>
             <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400">
@@ -586,7 +775,7 @@ function TursoVaultView({ license, onBack }: {
                 }`}
               >
                 <Activity className="h-3.5 w-3.5" />
-                লাইভ অ্যাক্টিভিটি ও অফ লগ ({activities.length})
+                লাইভ অ্যাক্টিভিটি ও অফ লগ ({showHidden ? activities.length : filteredActivities.length})
               </button>
               <button
                 onClick={() => setActiveTab('payments')}
@@ -597,7 +786,7 @@ function TursoVaultView({ license, onBack }: {
                 }`}
               >
                 <CreditCard className="h-3.5 w-3.5" />
-                পেমেন্ট হিস্ট্রি - Turso Backup ({payments.length})
+                পেমেন্ট হিস্ট্রি - Turso Backup ({showHidden ? payments.length : filteredPayments.length})
               </button>
             </div>
 
@@ -656,7 +845,7 @@ function TursoVaultView({ license, onBack }: {
           </div>
 
           {/* Profile Quick Pill Filter Bar (প্রোফাইল ক্লিক বার) */}
-          {distinctProfiles.length > 0 && (
+          {distinctProfiles.length > 0 ? (
             <div className="flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-0.5 no-scrollbar">
               <button
                 onClick={() => setSelectedProfile('all')}
@@ -687,7 +876,74 @@ function TursoVaultView({ license, onBack }: {
                 );
               })}
             </div>
+          ) : (
+            !showHidden && (hiddenActivitiesCount > 0 || hiddenPaymentsCount > 0) && (
+              <div className="flex items-center justify-between gap-2 py-2 px-3 mt-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 text-xs text-amber-800 dark:text-amber-300">
+                <div className="flex items-center gap-2">
+                  <Archive className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                  <span>পূর্বের সব প্রোফাইল ও ডাটা লুকানো রয়েছে। কোনো প্রোফাইলে নতুন অ্যাক্টিভিটি হলে তা স্বয়ংক্রিয়ভাবে এখানে শো হবে।</span>
+                </div>
+                <button
+                  onClick={() => setShowHidden(true)}
+                  className="px-2.5 py-1 rounded-lg bg-amber-200/80 dark:bg-amber-900/60 hover:bg-amber-300 text-amber-900 dark:text-amber-100 font-bold whitespace-nowrap cursor-pointer transition-colors"
+                >
+                  লুকানো প্রোফাইল দেখুন
+                </button>
+              </div>
+            )
           )}
+
+          {/* Archive / Hide Bar & Controls (স্পষ্ট দৃশ্যমান হাইড ও রিস্টোর বাটন বার) */}
+          <div className="flex items-center justify-between flex-wrap gap-2 pt-3 mt-2 border-t border-slate-200/80 dark:border-slate-700/80">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => {
+                  const label = selectedProfile === 'all'
+                    ? 'সব প্রোফাইল (All Profiles)'
+                    : (distinctProfiles.find(([id]: [string, string]) => id === selectedProfile)?.[1] || `Profile (${selectedProfile})`);
+                  setArchiveConfirmProfile({ profileId: selectedProfile, profileLabel: label });
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700/80 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                title="এই প্রোফাইলের পুরানো তথ্য স্ক্রিন থেকে হাইড করুন (ডাটাবেজ নিরাপদ থাকবে)"
+              >
+                <Archive className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <span>{selectedProfile === 'all' ? '🧹 সব পুরানো ডাটা লুকান (Hide All)' : '🧹 এই প্রোফাইলের ডাটা লুকান'}</span>
+              </button>
+
+              {isProfileArchived && (
+                <button
+                  onClick={() => handleRestoreProfile(selectedProfile)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  title="লুকানো তথ্য পুনরায় আনহাইড/রিস্টোর করুন"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>রিস্টোর / আনহাইড করুন</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowHidden(!showHidden)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-xs transition-all cursor-pointer ${
+                  showHidden
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-600'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+                title="লুকানো/আর্কাইভ ডাটা দেখানো বা বন্ধ করার সুইচ"
+              >
+                {showHidden ? <EyeOff className="h-3.5 w-3.5 text-indigo-600" /> : <Eye className="h-3.5 w-3.5 text-slate-400" />}
+                <span>{showHidden ? 'লুকানো ডাটা বন্ধ' : 'লুকানো ডাটা দেখান'}</span>
+                {totalHiddenCount > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    showHidden ? 'bg-indigo-200 text-indigo-900 dark:bg-indigo-800 dark:text-indigo-100' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                  }`}>
+                    {totalHiddenCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent className="p-0">
@@ -697,7 +953,7 @@ function TursoVaultView({ license, onBack }: {
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
-                    <th className="px-4 py-3">Time</th>
+                    <th className="px-4 py-3">Date & Time</th>
                     <th className="px-4 py-3">Chrome Profile</th>
                     <th className="px-4 py-3">Step / Event</th>
                     <th className="px-4 py-3">Details</th>
@@ -730,8 +986,8 @@ function TursoVaultView({ license, onBack }: {
                         >
                           {/* Time */}
                           <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="font-mono text-xs text-slate-700 dark:text-slate-300">
-                              {act.time_formatted || (act.datetime ? act.datetime.split(' ')[1] : new Date(act.timestamp).toLocaleTimeString())}
+                            <div className="font-mono text-xs text-slate-700 dark:text-slate-300 font-medium">
+                              {formatDateTime12Hour(act.datetime || act.timestamp).full12h}
                             </div>
                             <div className="text-[10px] text-slate-400">
                               {formatRelativeTime(act.timestamp)}
@@ -833,8 +1089,15 @@ function TursoVaultView({ license, onBack }: {
                           className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
                         >
                           <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="font-mono text-xs text-slate-700 dark:text-slate-300">
-                              {pay.datetime}
+                            <div className="flex items-center gap-1.5">
+                              <div className="font-mono text-xs text-slate-700 dark:text-slate-300 font-medium">
+                                {formatDateTime12Hour(pay.datetime || pay.timestamp).full12h}
+                              </div>
+                              {isItemArchived(pay.profile_id, Number(pay.timestamp || 0)) && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                  আর্কাইভ
+                                </span>
+                              )}
                             </div>
                             <div className="text-[10px] text-slate-400">
                               {formatRelativeTime(pay.timestamp)}
@@ -885,6 +1148,73 @@ function TursoVaultView({ license, onBack }: {
           )}
         </CardContent>
       </Card>
+
+      {/* ===== ARCHIVE CONFIRMATION MODAL ===== */}
+      {archiveConfirmProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-amber-200 dark:border-amber-900/60 max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+              <div className="p-3 bg-amber-100 dark:bg-amber-950/60 rounded-xl border border-amber-200 dark:border-amber-800">
+                <AlertCircle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  সাবধান / সতর্কতা: তথ্য লুকানো (Archive)
+                </h3>
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                  Hide / Archive Old Records
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-mono">
+              <span className="text-slate-500">টার্গেট প্রোফাইল:</span>{' '}
+              <strong className="text-slate-800 dark:text-slate-100">{archiveConfirmProfile.profileLabel}</strong>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                <Shield className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>ডাটাবেজ শতভাগ নিরাপদ:</strong> ডাটাবেজ (Turso বা Firebase) থেকে কোনো ডাটা মুছে যাবে না। সমস্ত হিস্ট্রি নিরাপদে সংরক্ষিত থাকবে।
+                </span>
+              </div>
+              <p>
+                এই প্রোফাইলের বর্তমান সব পেমেন্ট এবং লাইভ অ্যাক্টিভিটি স্ক্রিন থেকে সাময়িক হাইড করা হবে। আপনি যেকোনো সময় <strong>'লুকানো ডাটা দেখান'</strong> অপশন চালু করে পুনরায় দেখতে পারবেন অথবা <strong>'রিস্টোর'</strong> বাটনে ক্লিক করে ফিরিয়ে আনতে পারবেন।
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isArchiving}
+                onClick={() => setArchiveConfirmProfile(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+              >
+                বাতিল
+              </button>
+              <button
+                type="button"
+                disabled={isArchiving}
+                onClick={() => handleConfirmArchive(archiveConfirmProfile.profileId)}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isArchiving ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span>হাইড করা হচ্ছে...</span>
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-3.5 w-3.5" />
+                    <span>হ্যাঁ, হাইড / আর্কাইভ করুন</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -918,14 +1248,52 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
   // Copy key feedback
   const [copied, setCopied] = useState(false);
 
-  // 1. Payments Listener
+  // 1. Payments Listener (With Smart Auto-Deduplication & Ghost Burst Cleanup)
   useEffect(() => {
     const q = query(collection(db, `ivac_licenses/${license.key}/payments`));
     const unsubscribe = onSnapshot(q, (snapshot: any) => {
-      const data: PaymentRecord[] = [];
-      snapshot.forEach((doc: any) => data.push({ id: doc.id, ...doc.data() } as PaymentRecord));
-      data.sort((a, b) => b.timestamp - a.timestamp);
-      setPayments(data);
+      const rawData: any[] = [];
+      snapshot.forEach((docSnap: any) => rawData.push({ id: docSnap.id, ref: docSnap.ref, ...docSnap.data() }));
+      rawData.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      const uniqueData: PaymentRecord[] = [];
+      const seenSignatures = new Set<string>();
+      const duplicatesToDelete: any[] = [];
+
+      for (const item of rawData) {
+        const timeBucket15s = Math.floor((item.timestamp || 0) / 15000);
+        const sig = `${item.profile_id || ''}_${(item.rocket_account || '').replace(/[^0-9]/g, '')}_${item.amount || 0}_${timeBucket15s}`;
+
+        if (seenSignatures.has(sig)) {
+          duplicatesToDelete.push(item);
+        } else {
+          seenSignatures.add(sig);
+          uniqueData.push(item as PaymentRecord);
+        }
+      }
+
+      if (duplicatesToDelete.length > 0) {
+        duplicatesToDelete.forEach(async (dup) => {
+          try {
+            await deleteDoc(dup.ref);
+            console.log(`[IVAC Auto-Cleanup] Purged duplicate Firestore payment doc: ${dup.id}`);
+          } catch (e) {
+            console.warn('Failed to purge duplicate doc:', e);
+          }
+        });
+
+        try {
+          const extraCount = duplicatesToDelete.length;
+          const extraAmount = duplicatesToDelete.reduce((sum, d) => sum + (d.amount || 0), 0);
+          const licenseRef = doc(db, 'ivac_licenses', license.key);
+          updateDoc(licenseRef, {
+            payment_count: Math.max(1, (license.payment_count || 1) - extraCount),
+            total_amount: Math.max(0, (license.total_amount || 0) - extraAmount)
+          }).catch(() => {});
+        } catch (e) {}
+      }
+
+      setPayments(uniqueData);
       setLoadingPayments(false);
     });
     return () => unsubscribe();
@@ -1021,8 +1389,77 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     }
   }, [license, isEditing]);
 
-  const totalAmount = payments.reduce((sum: number, p: PaymentRecord) => p.status === 'success' ? sum + (p.amount || 0) : sum, 0);
-  const successCount = payments.filter((p: PaymentRecord) => p.status === 'success').length;
+  // Safe Archive / Hide State for Firebase Data (ডাটাবেজ অক্ষত রেখে ডিসপ্লে ফিল্টারিং)
+  const [showHidden, setShowHidden] = useState(false);
+  const [isHideConfirmOpen, setIsHideConfirmOpen] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [archivedCutoffs, setArchivedCutoffs] = useState<Record<string, number>>(() => {
+    try {
+      const fromLic = (license as any)?.archived_cutoffs;
+      if (fromLic && typeof fromLic === 'object') return fromLic;
+      const local = localStorage.getItem(`ivac_archived_${license.key}`);
+      return local ? JSON.parse(local) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Keep archivedCutoffs in sync if license updates
+  useEffect(() => {
+    try {
+      const fromLic = (license as any)?.archived_cutoffs;
+      if (fromLic && typeof fromLic === 'object') {
+        setArchivedCutoffs(fromLic);
+      }
+    } catch (e) {}
+  }, [license]);
+
+  const isPaymentArchived = (profileId: string, timestamp: number) => {
+    const cutoff = archivedCutoffs[profileId] || (archivedCutoffs['all'] || 0);
+    return cutoff > 0 && timestamp <= cutoff;
+  };
+
+  const handleConfirmArchiveAll = async () => {
+    setIsArchiving(true);
+    const now = Date.now();
+    const updated = { ...archivedCutoffs, all: now };
+    setArchivedCutoffs(updated);
+    try {
+      localStorage.setItem(`ivac_archived_${license.key}`, JSON.stringify(updated));
+      await updateDoc(doc(db, 'ivac_licenses', license.key), {
+        archived_cutoffs: updated
+      });
+    } catch (e) {
+      console.error('[Archive Error]', e);
+    } finally {
+      setIsArchiving(false);
+      setIsHideConfirmOpen(false);
+    }
+  };
+
+  const handleRestoreAll = async () => {
+    setArchivedCutoffs({});
+    try {
+      localStorage.removeItem(`ivac_archived_${license.key}`);
+      await updateDoc(doc(db, 'ivac_licenses', license.key), {
+        archived_cutoffs: {}
+      });
+    } catch (e) {
+      console.error('[Restore Error]', e);
+    }
+  };
+
+  const isArchived = Boolean(archivedCutoffs['all'] || Object.keys(archivedCutoffs).length > 0);
+
+  const filteredPayments = payments.filter((p: PaymentRecord) => {
+    if (!showHidden && isPaymentArchived(p.profile_id || 'default', Number(p.timestamp || 0))) return false;
+    return true;
+  });
+
+  const hiddenPaymentsCount = payments.filter((p: PaymentRecord) => isPaymentArchived(p.profile_id || 'default', Number(p.timestamp || 0))).length;
+
+  const totalAmount = filteredPayments.reduce((sum: number, p: PaymentRecord) => p.status === 'success' ? sum + (p.amount || 0) : sum, 0);
+  const successCount = filteredPayments.filter((p: PaymentRecord) => p.status === 'success').length;
 
   const handleSaveProfile = async () => {
     setSaving(true);
@@ -1246,7 +1683,14 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
         </Card>
         <Card className="bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-900/20 dark:to-slate-900">
           <CardContent className="p-5">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Payments</p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Payments</p>
+              {hiddenPaymentsCount > 0 && !showHidden && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                  {hiddenPaymentsCount} লুকানো
+                </span>
+              )}
+            </div>
             <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{successCount}</p>
           </CardContent>
         </Card>
@@ -1332,10 +1776,32 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
               </button>
             )}
 
+            {/* Safe Archive / Hide Data Button */}
+            <button
+              onClick={() => setIsHideConfirmOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors font-medium text-sm border border-amber-200 dark:border-amber-800 cursor-pointer"
+              title="বর্তমান সব পুরানো তথ্য হাইড / আর্কাইভ করুন"
+            >
+              <Archive className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <span>ডাটা লুকান / আর্কাইভ</span>
+            </button>
+
+            {/* Restore Button */}
+            {isArchived && (
+              <button
+                onClick={handleRestoreAll}
+                className="flex items-center gap-2 px-4 py-2.5 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 rounded-lg hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors font-medium text-sm border border-teal-200 dark:border-teal-800 cursor-pointer"
+                title="লুকানো তথ্য পুনরায় আনহাইড/রিস্টোর করুন"
+              >
+                <RotateCcw className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                <span>রিস্টোর / আনহাইড</span>
+              </button>
+            )}
+
             {/* Delete */}
             <button
               onClick={() => onDeleteKey(license.key)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors font-medium text-sm border border-slate-200 dark:border-slate-700"
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors font-medium text-sm border border-slate-200 dark:border-slate-700 cursor-pointer"
             >
               <Trash2 className="h-4 w-4" /> Delete
             </button>
@@ -1385,20 +1851,29 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                {activeProfiles.filter(p => p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).length} Online
+                {activeProfiles.filter(p => {
+                  if (!showHidden && (archivedCutoffs['all'] || 0) > 0 && (p.last_seen || 0) <= (archivedCutoffs['all'] || 0)) return false;
+                  return p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS);
+                }).length} Online
               </span>
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-4">
-          {activeProfiles.filter(p => p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).length === 0 ? (
+          {activeProfiles.filter(p => {
+            if (!showHidden && (archivedCutoffs['all'] || 0) > 0 && (p.last_seen || 0) <= (archivedCutoffs['all'] || 0)) return false;
+            return p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS);
+          }).length === 0 ? (
             <div className="text-center py-6 text-slate-400 text-sm">
               <Chrome className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              বর্তমানে কোনো Chrome Profile চালু নেই। গ্রাহক ব্রাউজারে এক্সটেনশন চালু করলে এখানে লাইভ ভেসে উঠবে (বন্ধ হলে মুছে যাবে)।
+              বর্তমানে কোনো সক্রিয় Chrome Profile নেই। গ্রাহক ব্রাউজারে এক্সটেনশন চালু করলে এখানে লাইভ ভেসে উঠবে (লুকানো থাকলে নতুন অ্যাক্টিভিটিতে আবার দেখাবে)।
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {activeProfiles.filter(p => p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS)).map(prof => {
+              {activeProfiles.filter(p => {
+                if (!showHidden && (archivedCutoffs['all'] || 0) > 0 && (p.last_seen || 0) <= (archivedCutoffs['all'] || 0)) return false;
+                return p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS);
+              }).map(prof => {
                 const color = getProfileColor(prof.profile_id);
                 const isRecent = (Date.now() - prof.last_seen) < 90000;
                 return (
@@ -1483,12 +1958,62 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
       {/* ===== PAYMENT HISTORY ===== */}
       <Card>
         <CardHeader className="border-b dark:border-slate-800">
-          <CardTitle className="text-lg flex items-center justify-between">
-            <span>Payment History</span>
-            <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-              সর্বমোট {payments.length} টি পেমেন্ট রেকর্ড
-            </span>
-          </CardTitle>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <span>Payment History</span>
+                <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                  {filteredPayments.length} / {payments.length} টি
+                </span>
+              </CardTitle>
+              <p className="text-xs text-slate-400 mt-0.5">
+                ফায়ারবেস লাইভ পেমেন্ট ডাটা {hiddenPaymentsCount > 0 && !showHidden && `(${hiddenPaymentsCount} টি ডাটা সাময়িক লুকানো)`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Hide All Button */}
+              <button
+                type="button"
+                onClick={() => setIsHideConfirmOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800/80 bg-amber-50/80 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                title="বর্তমান সব পুরনো পেমেন্ট ডাটা স্ক্রিন থেকে লুকান"
+              >
+                <Archive className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                <span>সব ডাটা লুকান</span>
+              </button>
+
+              {/* Restore Button */}
+              {isArchived && (
+                <button
+                  type="button"
+                  onClick={handleRestoreAll}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-teal-200 dark:border-teal-800/80 bg-teal-50/80 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/50 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  title="লুকানো তথ্য পুনরায় ফিরিয়ে আনুন"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
+                  <span>রিস্টোর</span>
+                </button>
+              )}
+
+              {/* Show/Hide Toggle Button */}
+              {hiddenPaymentsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowHidden(!showHidden)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold shadow-xs transition-all cursor-pointer ${
+                    showHidden
+                      ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:border-indigo-700 dark:text-indigo-300'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
+                  }`}
+                  title="লুকানো/আর্কাইভ ডাটা দেখানো বা বন্ধ করার সুইচ"
+                >
+                  {showHidden ? <EyeOff className="h-3.5 w-3.5 text-indigo-500" /> : <Eye className="h-3.5 w-3.5 text-slate-500" />}
+                  <span>{showHidden ? 'লুকানো ডাটা বন্ধ' : `লুকানো ডাটা দেখান (${hiddenPaymentsCount})`}</span>
+                </button>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -1510,14 +2035,38 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                       Loading payments...
                     </td>
                   </tr>
-                ) : payments.length === 0 ? (
+                ) : filteredPayments.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-slate-500">
-                      No payment records found.
+                    <td colSpan={5} className="text-center py-10 text-slate-500">
+                      <div className="max-w-sm mx-auto space-y-2">
+                        <Archive className="h-8 w-8 mx-auto text-amber-500/70" />
+                        <p className="font-medium text-slate-700 dark:text-slate-300">
+                          {hiddenPaymentsCount > 0 
+                            ? 'সব পুরানো পেমেন্ট ডাটা লুকানো রয়েছে।' 
+                            : 'কোনো পেমেন্ট রেকর্ড পাওয়া যায়নি।'}
+                        </p>
+                        {hiddenPaymentsCount > 0 && (
+                          <div className="flex items-center justify-center gap-2 pt-2">
+                            <button
+                              onClick={() => setShowHidden(true)}
+                              className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors cursor-pointer"
+                            >
+                              লুকানো {hiddenPaymentsCount} টি ডাটা দেখান
+                            </button>
+                            <button
+                              onClick={handleRestoreAll}
+                              className="px-3 py-1.5 bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 rounded-lg text-xs font-semibold hover:bg-teal-100 transition-colors cursor-pointer"
+                            >
+                              সম্পূর্ণ রিস্টোর করুন
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  payments.map((p: PaymentRecord) => {
+                  filteredPayments.map((p: PaymentRecord) => {
+                    const isArchivedRow = isPaymentArchived(p.profile_id || 'default', Number(p.timestamp || 0));
                     const matchedKnown = (p.profile_id && p.profile_id !== 'default')
                       ? activeProfiles.find((ap: ActiveProfile) => ap.profile_id === p.profile_id)?.profile_label
                       : null;
@@ -1540,14 +2089,21 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                     const profId = p.profile_id || (matchedKnown ? activeProfiles.find(ap => ap.profile_label === matchedKnown)?.profile_id || 'prof_default' : 'prof_default');
                     const profColor = getProfileColor(profId);
                     return (
-                      <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                      <tr key={p.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${isArchivedRow ? 'bg-amber-50/20 dark:bg-amber-950/10' : ''}`}>
                         <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap">
                           {(() => {
                             const formatted = formatDateTime12Hour(p.timestamp || p.datetime);
                             return (
                               <div>
-                                <div className="font-semibold text-xs text-slate-800 dark:text-slate-200">
-                                  {formatted.timeStr}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
+                                    {formatted.timeStr}
+                                  </span>
+                                  {isArchivedRow && (
+                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                      আর্কাইভ
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[10px] text-slate-400 font-mono">
                                   {formatted.dateStr}
@@ -1650,6 +2206,73 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
           </div>
         </CardContent>
       </Card>
+
+      {/* ===== SAFE ARCHIVE CONFIRMATION MODAL (PROFILE VIEW) ===== */}
+      {isHideConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-amber-200 dark:border-amber-900/60 max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+              <div className="p-3 bg-amber-100 dark:bg-amber-950/60 rounded-xl border border-amber-200 dark:border-amber-800">
+                <AlertCircle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  সাবধান / সতর্কতা: তথ্য লুকানো (Archive)
+                </h3>
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                  Hide / Archive Old Records
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-mono">
+              <span className="text-slate-500">টার্গেট ক্লায়েন্ট:</span>{' '}
+              <strong className="text-slate-800 dark:text-slate-100">{license.client_name || license.key}</strong>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                <Shield className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>ডাটাবেজ শতভাগ নিরাপদ:</strong> ডাটাবেজ (Firebase বা Turso) থেকে কোনো ডাটা মুছে যাবে না। সমস্ত পেমেন্ট হিস্ট্রি ডাটাবেজে নিরাপদে সংরক্ষিত থাকবে।
+                </span>
+              </div>
+              <p>
+                বর্তমান সব পুরানো পেমেন্ট রেকর্ড স্ক্রিন থেকে সাময়িক হাইড করা হবে। আপনি যেকোনো সময় <strong>'লুকানো ডাটা দেখান'</strong> অপশন চালু করে পুনরায় দেখতে পারবেন অথবা <strong>'রিস্টোর'</strong> বাটনে ক্লিক করে ফিরিয়ে আনতে পারবেন।
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isArchiving}
+                onClick={() => setIsHideConfirmOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+              >
+                বাতিল
+              </button>
+              <button
+                type="button"
+                disabled={isArchiving}
+                onClick={handleConfirmArchiveAll}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isArchiving ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span>হাইড করা হচ্ছে...</span>
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-3.5 w-3.5" />
+                    <span>হ্যাঁ, হাইড / আর্কাইভ করুন</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1773,28 +2396,109 @@ export default function IvacLicenseManager() {
     }
   };
 
-  const deleteKey = async (key: string) => {
-    if (!window.confirm("Are you sure you want to permanently delete this key?")) return;
+  // Delete Confirmation Modal State
+  const [keyToDelete, setKeyToDelete] = useState<{ key: string; clientName?: string } | null>(null);
+  const [deletingKey, setDeletingKey] = useState(false);
+
+  const requestDeleteKey = (key: string, clientName?: string) => {
+    setKeyToDelete({ key, clientName });
+  };
+
+  // Permanent Delete: Purges from Firebase Firestore AND Turso Database
+  const handlePermanentDeleteLicense = async (key: string) => {
+    setDeletingKey(true);
     try {
+      // 1. MQTT Kill-Switch: Send instant kill signal to lock any running app
       publishLicenseKillSwitch(key, 'blocked');
+
+      // 2. Turso Database Purge: Delete activities and payments for this license_key
+      try {
+        const purgeBody = {
+          requests: [
+            {
+              type: 'execute',
+              stmt: {
+                sql: 'DELETE FROM activities WHERE license_key = ?',
+                args: [{ type: 'text', value: key }]
+              }
+            },
+            {
+              type: 'execute',
+              stmt: {
+                sql: 'DELETE FROM payments WHERE license_key = ?',
+                args: [{ type: 'text', value: key }]
+              }
+            },
+            { type: 'close' }
+          ]
+        };
+
+        await fetch('/api/turso-vault', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(purgeBody)
+        });
+        console.log(`[Turso Purge] Purged activities and payments for key: ${key}`);
+      } catch (tursoErr) {
+        console.error('[Turso Purge Error]', tursoErr);
+      }
+
+      // 3. Firestore Subcollection Payments Purge
+      try {
+        const subPayQuery = query(collection(db, `ivac_licenses/${key}/payments`));
+        const subSnap = await getDocs(subPayQuery);
+        await Promise.all(subSnap.docs.map(d => deleteDoc(d.ref)));
+        console.log(`[Firestore Purge] Purged ${subSnap.docs.length} subcollection payments for key: ${key}`);
+      } catch (subErr) {
+        console.error('[Firestore Sub-Payments Purge Error]', subErr);
+      }
+
+      // 4. Firestore Root Payments Purge (if any)
+      try {
+        const payQuery = query(collection(db, 'payments'), where('license_key', '==', key));
+        const snap = await getDocs(payQuery);
+        await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+        console.log(`[Firestore Purge] Purged ${snap.docs.length} root payments for key: ${key}`);
+      } catch (payErr) {
+        console.error('[Firestore Payments Purge Error]', payErr);
+      }
+
+      // 5. Firestore License Document Purge
       await deleteDoc(doc(db, 'ivac_licenses', key));
+
       if (selectedLicense?.key === key) {
         setSelectedLicense(null);
       }
-    } catch (error) {
-      console.error("Error deleting key:", error);
+      setKeyToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting license:", error);
+      alert("লাইসেন্স মুছে ফেলতে সমস্যা হয়েছে: " + error?.message);
+    } finally {
+      setDeletingKey(false);
     }
   };
 
   // ===== PROFILE VIEW =====
   if (selectedLicense) {
     return (
-      <ProfileView
-        license={selectedLicense}
-        onBack={() => setSelectedLicense(null)}
-        onBlockKey={blockKey}
-        onDeleteKey={(key) => { deleteKey(key); setSelectedLicense(null); }}
-      />
+      <>
+        <ProfileView
+          license={selectedLicense}
+          onBack={() => setSelectedLicense(null)}
+          onBlockKey={blockKey}
+          onDeleteKey={(key) => requestDeleteKey(key, selectedLicense?.client_name)}
+        />
+        {keyToDelete && (
+          <DeleteLicenseModal
+            item={keyToDelete}
+            deleting={deletingKey}
+            onCancel={() => setKeyToDelete(null)}
+            onConfirm={handlePermanentDeleteLicense}
+          />
+        )}
+      </>
     );
   }
 
@@ -2079,7 +2783,7 @@ export default function IvacLicenseManager() {
                                 <ShieldBan className="h-4 w-4" />
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); deleteKey(lic.key); }}
+                                onClick={(e) => { e.stopPropagation(); requestDeleteKey(lic.key, lic.client_name); }}
                                 title="Delete Key"
                                 className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors cursor-pointer"
                               >
@@ -2097,6 +2801,15 @@ export default function IvacLicenseManager() {
           </Card>
         </div>
       </div>
+
+      {keyToDelete && (
+        <DeleteLicenseModal
+          item={keyToDelete}
+          deleting={deletingKey}
+          onCancel={() => setKeyToDelete(null)}
+          onConfirm={handlePermanentDeleteLicense}
+        />
+      )}
     </div>
   );
 }

@@ -357,11 +357,11 @@ Extract all form fields into a JSON object with these keys:
 - gender: "M" or "F"
 - dob: Date of birth (DD/MM/YYYY)
 - pobTown: Place of birth town/district (uppercase)
-- pobCountry: Place of birth country (uppercase, default "BANGLADESH")
+- pobCountry: Place of birth country code (uppercase, default "BGD")
 - citizenId: Citizenship / National ID No
 - religion: Religion (e.g. ISLAM, HINDU, etc.)
 - education: Educational Qualification (e.g. GRADUATE, MATRICULATION, HIGHER SECONDARY, etc.)
-- nationality: Nationality (default "BANGLADESH")
+- nationality: Acquisition of nationality (default "BY BIRTH")
 - passNo: Passport number
 - passPlace: Place of issue
 - passDate: Passport Issue date (DD/MM/YYYY)
@@ -462,6 +462,25 @@ Return ONLY valid JSON. No markdown formatting.`;
 
         if (!parsed.refuse_flag2) parsed.refuse_flag2 = "NILL";
         if (parsed.old_visa_no && !parsed.country_visited) parsed.country_visited = "INDIA";
+
+        if (!parsed.duration) {
+            parsed.duration = "12";
+        } else {
+            parsed.duration = String(parsed.duration).replace(/[^0-9]/g, "") || "12";
+        }
+
+        let entryVal = String(parsed.visa_entry_id || "2").toUpperCase();
+        if (entryVal.includes("SINGLE") || entryVal === "1") parsed.visa_entry_id = "1";
+        else if (entryVal.includes("TRIPLE") || entryVal === "4") parsed.visa_entry_id = "4";
+        else if (entryVal.includes("DOUBLE") || entryVal === "3") parsed.visa_entry_id = "3";
+        else parsed.visa_entry_id = "2";
+
+        if (!parsed.pobCountry || parsed.pobCountry === "BANGLADESH") parsed.pobCountry = "BGD";
+        if (!parsed.pres_country || parsed.pres_country === "BANGLADESH") parsed.pres_country = "BGD";
+        if (!parsed.father_nationality || parsed.father_nationality === "BANGLADESH") parsed.father_nationality = "BGD";
+        if (!parsed.mother_nationality || parsed.mother_nationality === "BANGLADESH") parsed.mother_nationality = "BGD";
+        if (!parsed.nationality || parsed.nationality === "BANGLADESH" || parsed.nationality === "BGD") parsed.nationality = "BY BIRTH";
+        if (!parsed.nationality_by) parsed.nationality_by = "BY BIRTH";
 
         return parsed;
 }
@@ -934,12 +953,25 @@ async function d(t) {
             if (!data.places_to_visit) data.places_to_visit = appSettings.defaultPlacesToVisit || "KOLKATA";
             if (!data.places_to_visit_country) data.places_to_visit_country = appSettings.defaultPlacesToVisitCountry || "INDIA";
             if (!data.duration) data.duration = "12";
-            if (!data.visa_entry_id) data.visa_entry_id = "2";
+            else data.duration = String(data.duration).replace(/[^0-9]/g, "") || "12";
+
+            let ev = String(data.visa_entry_id || "2").toUpperCase();
+            if (ev.includes("SINGLE") || ev === "1") data.visa_entry_id = "1";
+            else if (ev.includes("TRIPLE") || ev === "4") data.visa_entry_id = "4";
+            else if (ev.includes("DOUBLE") || ev === "3") data.visa_entry_id = "3";
+            else data.visa_entry_id = "2";
 
             const calcJourneyDate = getCalculatedJourneyDate(appSettings);
             if (!data.jouryney_id && calcJourneyDate) {
                 data.jouryney_id = calcJourneyDate;
             }
+
+            if (!data.pobCountry || data.pobCountry === "BANGLADESH") data.pobCountry = "BGD";
+            if (!data.pres_country || data.pres_country === "BANGLADESH") data.pres_country = "BGD";
+            if (!data.father_nationality || data.father_nationality === "BANGLADESH") data.father_nationality = "BGD";
+            if (!data.mother_nationality || data.mother_nationality === "BANGLADESH") data.mother_nationality = "BGD";
+            if (!data.nationality || data.nationality === "BANGLADESH" || data.nationality === "BGD") data.nationality = "BY BIRTH";
+            if (!data.nationality_by) data.nationality_by = "BY BIRTH";
         }
 
         if (t === "PASSPORT") {
