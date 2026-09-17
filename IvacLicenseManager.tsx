@@ -1059,7 +1059,7 @@ function TursoVaultView({ license, onBack }: {
                   <tr className="bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                     <th className="px-4 py-3">Date & Time</th>
                     <th className="px-4 py-3">Chrome Profile</th>
-                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Amounts</th>
                     <th className="px-4 py-3">Stage / Gateway</th>
                     <th className="px-4 py-3">Account No.</th>
                     <th className="px-4 py-3 text-right">Status</th>
@@ -1111,10 +1111,27 @@ function TursoVaultView({ license, onBack }: {
                             </span>
                           </td>
 
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className="font-mono font-bold text-sm text-slate-800 dark:text-slate-100">
-                              {'৳'}{(pay.amount || pay.amount_3 || 0).toLocaleString()}
-                            </span>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs">
+                            <div className="flex flex-col gap-1 py-0.5">
+                              <div className="flex items-center justify-between gap-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">
+                                <span className="text-[10px] font-bold text-slate-400">Amount 1:</span>
+                                <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                                  {pay.amount_1 && pay.amount_1 > 0 ? `৳${pay.amount_1.toLocaleString()}` : '-'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">
+                                <span className="text-[10px] font-bold text-slate-400">Amount 2:</span>
+                                <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                                  {pay.amount_2 && pay.amount_2 > 0 ? `৳${pay.amount_2.toLocaleString()}` : '-'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-800/50">
+                                <span className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400">Amount 3:</span>
+                                <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">
+                                  {(pay.amount_3 && pay.amount_3 > 0 ? pay.amount_3 : pay.amount) ? `৳${((pay.amount_3 && pay.amount_3 > 0) ? pay.amount_3 : pay.amount || 0).toLocaleString()}` : '-'}
+                                </span>
+                              </div>
+                            </div>
                           </td>
 
                           <td className="px-4 py-3 whitespace-nowrap">
