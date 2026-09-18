@@ -34,6 +34,36 @@ interface IvacLicense {
   client_phone?: string;
   client_description?: string;
   archived_cutoffs?: Record<string, number>;
+  archived_payment_count?: number;
+  archived_total_amount?: number;
+}
+
+export function getVisiblePaymentInfo(lic: IvacLicense) {
+  const rawCount = lic.payment_count || 0;
+  const rawAmount = lic.total_amount || 0;
+  const hasAllArchived = Boolean(lic.archived_cutoffs && lic.archived_cutoffs['all']);
+  
+  if (!hasAllArchived) {
+    return { count: rawCount, amount: rawAmount, isArchived: false, hiddenCount: 0 };
+  }
+
+  if (lic.archived_payment_count !== undefined) {
+    const visibleCount = Math.max(0, rawCount - lic.archived_payment_count);
+    const visibleAmount = Math.max(0, rawAmount - (lic.archived_total_amount || 0));
+    return {
+      count: visibleCount,
+      amount: visibleAmount,
+      isArchived: true,
+      hiddenCount: lic.archived_payment_count
+    };
+  }
+
+  return {
+    count: 0,
+    amount: 0,
+    isArchived: true,
+    hiddenCount: rawCount
+  };
 }
 
 interface LicenseExpiryDetails {
@@ -446,9 +476,12 @@ function TursoVaultView({ license, onBack }: {
     setArchivedCutoffs(updated);
     try {
       localStorage.setItem(`ivac_archived_${license.key}`, JSON.stringify(updated));
-      await updateDoc(doc(db, 'ivac_licenses', license.key), {
-        archived_cutoffs: updated
-      });
+      const payload: any = { archived_cutoffs: updated };
+      if (profileId === 'all') {
+        payload.archived_payment_count = license.payment_count || 0;
+        payload.archived_total_amount = license.total_amount || 0;
+      }
+      await updateDoc(doc(db, 'ivac_licenses', license.key), payload);
     } catch (e) {
       console.error('[Archive Error]', e);
     } finally {
@@ -466,9 +499,12 @@ function TursoVaultView({ license, onBack }: {
     setArchivedCutoffs(updated);
     try {
       localStorage.setItem(`ivac_archived_${license.key}`, JSON.stringify(updated));
-      await updateDoc(doc(db, 'ivac_licenses', license.key), {
-        archived_cutoffs: updated
-      });
+      const payload: any = { archived_cutoffs: updated };
+      if (profileId === 'all') {
+        payload.archived_payment_count = 0;
+        payload.archived_total_amount = 0;
+      }
+      await updateDoc(doc(db, 'ivac_licenses', license.key), payload);
     } catch (e) {
       console.error('[Restore Error]', e);
     }
@@ -1464,7 +1500,9 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     try {
       localStorage.setItem(`ivac_archived_${license.key}`, JSON.stringify(updated));
       await updateDoc(doc(db, 'ivac_licenses', license.key), {
-        archived_cutoffs: updated
+        archived_cutoffs: updated,
+        archived_payment_count: license.payment_count || 0,
+        archived_total_amount: license.total_amount || 0
       });
     } catch (e) {
       console.error('[Archive Error]', e);
@@ -1479,7 +1517,9 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
     try {
       localStorage.removeItem(`ivac_archived_${license.key}`);
       await updateDoc(doc(db, 'ivac_licenses', license.key), {
-        archived_cutoffs: {}
+        archived_cutoffs: {},
+        archived_payment_count: 0,
+        archived_total_amount: 0
       });
     } catch (e) {
       console.error('[Restore Error]', e);
@@ -2584,8 +2624,8 @@ export default function IvacLicenseManager() {
   // Stats
   const totalKeys = licenses.length;
   const activeKeys = licenses.filter(l => l.status === 'active' && l.hwid !== null).length;
-  const totalPayments = licenses.reduce((sum, l) => sum + (l.payment_count || 0), 0);
-  const totalRevenue = licenses.reduce((sum, l) => sum + (l.total_amount || 0), 0);
+  const totalPayments = licenses.reduce((sum, l) => sum + getVisiblePaymentInfo(l).count, 0);
+  const totalRevenue = licenses.reduce((sum, l) => sum + getVisiblePaymentInfo(l).amount, 0);
 
   const filteredLicenses = licenses.filter(l =>
     l.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -2855,14 +2895,30 @@ export default function IvacLicenseManager() {
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex flex-col items-start justify-center">
-                              <span className="font-bold text-lg text-indigo-600 dark:text-indigo-400">
-                                {lic.payment_count || 0}
-                              </span>
-                              <span className="text-xs font-medium text-slate-500">
-                                {'\u09F3'}{(lic.total_amount || 0).toLocaleString()}
-                              </span>
-                            </div>
+                            {(() => {
+                              const payInfo = getVisiblePaymentInfo(lic);
+                              return (
+                                <div className="flex flex-col items-start justify-center">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-lg text-indigo-600 dark:text-indigo-400">
+                                      {payInfo.count}
+                                    </span>
+                                    {payInfo.isArchived && payInfo.hiddenCount > 0 && (
+                                      <span
+                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                                        title={`${payInfo.hiddenCount}টি পুরানো পেমেন্ট লুকানো আছে`}
+                                      >
+                                        <Archive className="h-2.5 w-2.5 mr-0.5" />
+                                        {payInfo.hiddenCount}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs font-medium text-slate-500">
+                                    {'৳'}{payInfo.amount.toLocaleString()}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
