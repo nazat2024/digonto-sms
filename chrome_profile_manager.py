@@ -19,6 +19,7 @@ import tempfile
 import subprocess
 import shutil
 from pathlib import Path
+from typing import Any, Optional, Dict, List, Tuple, Union
 
 DEFAULT_IVAC_SIGNIN_URL = "https://appointment.ivacbd.com/signin"
 
@@ -148,7 +149,7 @@ def calculate_pref_mac(path: str, value) -> str:
     dgst = hmac.new(key=_CHROME_SEED, msg=msg, digestmod=hashlib.sha256)
     return dgst.hexdigest().upper()
 
-def calculate_super_mac(macs_dict: dict) -> str:
+def calculate_super_mac(macs_dict: Any) -> str:
     """Calculates Chrome super_mac for the protection.macs dictionary."""
     return calculate_pref_mac("", macs_dict)
 
@@ -224,7 +225,7 @@ def create_unpacked_extension_entry(extension_path: str) -> dict:
         "withholding_permissions": False
     }
 
-def build_fresh_sp_template(extension_path: str = None, ext_id: str = None) -> dict:
+def build_fresh_sp_template(extension_path: str | None = None, ext_id: str | None = None) -> dict:
     """Generates a genuine Secure Preferences structure signed with the current machine's HMAC."""
     if not extension_path:
         extension_path = get_safe_extension_dir()
@@ -262,7 +263,7 @@ def build_fresh_sp_template(extension_path: str = None, ext_id: str = None) -> d
         }
     }
 
-def get_clean_sp_template(user_data_dir: str = None, extension_path: str = None, ext_id: str = None) -> dict:
+def get_clean_sp_template(user_data_dir: str | None = None, extension_path: str | None = None, ext_id: str | None = None) -> dict:
     """Returns a 100% verified, clean Secure Preferences template containing only the extension with genuine machine HMAC."""
     if not extension_path:
         extension_path = get_safe_extension_dir()
@@ -369,7 +370,7 @@ def compute_extension_id(manifest_dir_or_file: str) -> str:
 
 _CACHED_SAFE_EXT_DIR = None
 
-def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> str:
+def get_safe_extension_dir(base_dir: str | None = None, force_sync: bool = False) -> str:
     """Returns safe, dedicated directory for the Chrome extension and keeps it synced (cached for maximum speed)."""
     global _CACHED_SAFE_EXT_DIR
     if _CACHED_SAFE_EXT_DIR and not force_sync and os.path.exists(_CACHED_SAFE_EXT_DIR):
@@ -474,7 +475,7 @@ def get_safe_extension_dir(base_dir: str = None, force_sync: bool = False) -> st
     _CACHED_SAFE_EXT_DIR = final_dir
     return final_dir
 
-def get_default_extension_path(base_dir: str = None) -> str:
+def get_default_extension_path(base_dir: str | None = None) -> str:
     """Finds best default extension path (always uses safe AppData directory)."""
     return get_safe_extension_dir(base_dir)
 
@@ -665,7 +666,7 @@ def get_profiles_extension_status(force_refresh: bool = False) -> list:
         
     return results
 
-def update_extension_in_all_profiles(base_dir: str = None) -> dict:
+def update_extension_in_all_profiles(base_dir: str | None = None) -> dict:
     """Updates Digonto QuickFill extension across all existing Chrome profiles with machine-signed HMAC."""
     user_data_dir = get_chrome_user_data_dir()
     if not os.path.exists(user_data_dir):
@@ -701,7 +702,7 @@ def update_extension_in_all_profiles(base_dir: str = None) -> dict:
             if not os.path.exists(p_path):
                 os.makedirs(p_path, exist_ok=True)
                 
-            sp = {}
+            sp: dict[str, Any] = {}
             if os.path.isfile(sp_path):
                 with open(sp_path, "r", encoding="utf-8") as f:
                     sp = json.load(f)
@@ -752,7 +753,7 @@ def update_extension_in_all_profiles(base_dir: str = None) -> dict:
             with open(sp_path, "w", encoding="utf-8") as f:
                 json.dump(sp, f, indent=2)
                 
-            pref = {}
+            pref: dict[str, Any] = {}
             if os.path.exists(pref_path):
                 try:
                     with open(pref_path, "r", encoding="utf-8") as f:
@@ -887,7 +888,7 @@ def find_developer_mode_template(user_data_dir: str) -> dict:
                 pass
     return {}
 
-def find_extension_template(user_data_dir: str, ext_id: str = None, target_ext_path: str = None) -> tuple:
+def find_extension_template(user_data_dir: str, ext_id: str | None = None, target_ext_path: str | None = None) -> tuple:
     """
     Intelligently searches existing profiles to find verified Secure Preferences entry, HMAC signature, and encrypted hash.
     Skips Guest Profile and System Profile. Prefers entries with verified MAC and encrypted hash.
@@ -1016,7 +1017,7 @@ def find_extension_template(user_data_dir: str, ext_id: str = None, target_ext_p
 
     return None, None, None, None, None, None, None
 
-def bootstrap_extension_template(safe_ext: str, chrome_exe: str = None) -> dict:
+def bootstrap_extension_template(safe_ext: str, chrome_exe: str | None = None) -> dict:
     """Uses a lightweight headless Chrome instance via CDP Extensions.loadUnpacked to generate 100% genuine local DPAPI hash and MAC for a brand-new PC."""
     if not chrome_exe:
         chrome_exe = get_chrome_exe_path()
@@ -1202,7 +1203,7 @@ def bootstrap_extension_template(safe_ext: str, chrome_exe: str = None) -> dict:
 
 _CACHED_VERIFIED_TEMPLATE = None
 
-def get_verified_extension_template(user_data_dir: str = None, safe_ext: str = None, ext_id: str = None) -> dict:
+def get_verified_extension_template(user_data_dir: str | None = None, safe_ext: str | None = None, ext_id: str | None = None) -> dict:
     """Returns verified extension template (entry, mac, hash, dev_mode) with caching, local profile scanning, and CDP bootstrap fallback."""
     global _CACHED_VERIFIED_TEMPLATE
     if _CACHED_VERIFIED_TEMPLATE:
@@ -1305,8 +1306,8 @@ def create_desktop_shortcut(shortcut_path: str, target_exe: str, arguments: str)
 
 def create_chrome_profile(
     profile_name: str,
-    custom_bookmarks: list = None,
-    extension_path: str = None,
+    custom_bookmarks: list | None = None,
+    extension_path: str | None = None,
     launch_now: bool = True,
     restart_if_running: bool = False
 ) -> dict:
@@ -1526,7 +1527,7 @@ def create_chrome_profile(
         "extension_id": ext_id
     }
 
-def launch_profile(profile_dir: str, extension_path: str = None) -> bool:
+def launch_profile(profile_dir: str, extension_path: str | None = None) -> bool:
     """Launches Chrome with the specified profile and directly opens IVAC."""
     chrome_exe = get_chrome_exe_path()
     if not chrome_exe:
@@ -1607,7 +1608,7 @@ def list_existing_profiles() -> list:
     profiles.sort(key=lambda x: x.get("active_time", 0), reverse=True)
     return profiles
 
-def fix_missing_avatars(user_data_dir: str = None) -> int:
+def fix_missing_avatars(user_data_dir: str | None = None) -> int:
     """Disabled: Do not touch existing profiles' avatars. Only newly created profiles get avatars."""
     return 0
 
@@ -1657,7 +1658,7 @@ def apply_auto_allow_permissions(pref_dict: dict) -> dict:
     return pref_dict
 
 
-def apply_auto_allow_to_all_existing_profiles(user_data_dir: str = None) -> int:
+def apply_auto_allow_to_all_existing_profiles(user_data_dir: str | None = None) -> int:
     """Applies auto-allow permissions to ALL existing Chrome profiles in User Data."""
     if not user_data_dir:
         user_data_dir = get_chrome_user_data_dir()
