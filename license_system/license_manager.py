@@ -951,12 +951,12 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
     is_active = (event_type != "ext_disabled" and event_type != "ext_off" and event_type != "manual_off")
     update_profile_heartbeat(profile_id, profile_label, is_active=is_active, last_step=title or details)
 
-    # 3. We ONLY record genuine MANUAL OFF events (or payments/milestones) to Turso Database!
-    is_manual_off = (event_type in ["ext_disabled", "manual_off", "ext_uninstalled"] and off_source in ["popup", "manage_extensions_page", "uninstalled"])
+    # 3. We record genuine MANUAL ON/OFF toggle events (and payments/milestones) to Turso Database!
+    is_manual_toggle = (event_type in ["ext_disabled", "ext_enabled", "manual_off", "ext_uninstalled"] and off_source in ["popup", "manage_extensions_page", "uninstalled"])
     is_payment = (event_type in ["payment_recorded", "payment_success"])
 
-    # If it's not a manual off and not a payment milestone, skip database insertion completely
-    if not (is_manual_off or is_payment):
+    # If it's not a manual on/off toggle and not a payment milestone, skip database insertion completely
+    if not (is_manual_toggle or is_payment):
         return True
 
     license_key = get_active_license_key_fast()

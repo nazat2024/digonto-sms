@@ -585,8 +585,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
                     off_source: 'popup',
                     profile_id: _cachedProfileId,
                     profile_label: _cachedProfileLabel,
-                    title: isEnabled ? 'Extension চালু (Active)' : 'Extension বন্ধ (Popup)',
-                    details: isEnabled ? 'গ্রাহক এক্সটেনশন অন করেছেন' : 'গ্রাহক এক্সটেনশন পপআপ থেকে অফ করেছেন',
+                    title: isEnabled ? 'Extension চালু (Popup)' : 'Extension বন্ধ (Popup)',
+                    details: isEnabled ? 'গ্রাহক এক্সটেনশন পপআপ থেকে অন করেছেন' : 'গ্রাহক এক্সটেনশন পপআপ থেকে অফ করেছেন',
                     amount: 0,
                     status: isEnabled ? 'success' : 'warning',
                     metadata: { phone: _cachedPhone }

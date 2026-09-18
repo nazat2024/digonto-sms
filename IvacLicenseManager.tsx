@@ -1012,15 +1012,21 @@ function TursoVaultView({ license, onBack }: {
                                 <div className="font-semibold text-slate-800 dark:text-slate-200">
                                   {act.title}
                                 </div>
-                                {act.off_source && (
-                                  <span className="inline-block mt-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded border bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800">
-                                    {act.off_source === 'popup'
-                                      ? 'পপআপ থেকে অফ (Popup)'
-                                      : act.off_source === 'manage_extensions_page'
-                                      ? 'chrome://extensions থেকে অফ'
-                                      : act.off_source === 'uninstalled'
-                                      ? 'এক্সটেনশন আনইনস্টল/রিমুভ'
-                                      : act.off_source}
+                                                                {act.off_source && (
+                                  <span className={`inline-block mt-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                                    act.event_type === 'ext_enabled'
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800'
+                                  }`}>
+                                    {act.event_type === 'ext_enabled'
+                                      ? (act.off_source === 'popup' ? 'পপআপ থেকে অন (Popup)' : 'chrome://extensions থেকে অন')
+                                      : (act.off_source === 'popup'
+                                          ? 'পপআপ থেকে অফ (Popup)'
+                                          : act.off_source === 'manage_extensions_page'
+                                          ? 'chrome://extensions থেকে অফ'
+                                          : act.off_source === 'uninstalled'
+                                          ? 'এক্সটেনশন আনইনস্টল/রিমুভ'
+                                          : act.off_source)}
                                   </span>
                                 )}
                               </div>
