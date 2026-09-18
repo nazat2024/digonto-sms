@@ -2,6 +2,12 @@
 IVAC SMS Server — ফোন থেকে SMS গ্রহণ করে এবং OTP প্রসেস করে
 """
 
+import os
+import sys
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 import json
 import time
 import threading
@@ -12,7 +18,6 @@ from flask import Flask, request, jsonify  # type: ignore
 from flask_socketio import SocketIO  # type: ignore
 from flask_cors import CORS  # type: ignore
 
-import os
 from otp_parser import parse_otp_from_sms, digits_to_string, format_otp_display
 
 app = Flask(__name__, static_folder="dashboard", static_url_path="/dashboard")
