@@ -10,6 +10,7 @@ import time
 import requests
 from datetime import datetime
 import uuid
+import re
 
 from license_system.hwid import generate_hwid, get_legacy_hwid, get_all_candidate_legacy_hwids
 from license_system.crypto import encrypt_data, decrypt_data
@@ -798,7 +799,7 @@ def _insert_turso_worker(record: dict):
     """Background worker thread to insert activity records into Turso Database (zero impact on main thread)"""
     try:
         sql = """
-            INSERT INTO activities 
+            INSERT OR IGNORE INTO activities 
             (id, license_key, profile_id, profile_label, event_type, off_source, title, details, amount, status, timestamp, datetime, time_formatted)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
@@ -961,15 +962,40 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
     if not (is_manual_toggle or is_payment):
         return True
 
-    # 4. Strict Deduplication Guard:
-    # Discards duplicate/identical toggle events for the same profile within 4.0 seconds
+    # 4. Strict Cross-Process & In-Memory Deduplication Guard:
     if is_manual_toggle:
         now_ts = time.time()
         dedup_key = f"{profile_id}_{event_type}"
+        
+        # Check in-memory cache
         last_ts = _activity_dedup_cache.get(dedup_key, 0)
-        if (now_ts - last_ts) < 4.0:
+        if (now_ts - last_ts) < 6.0:
             return True
         _activity_dedup_cache[dedup_key] = now_ts
+
+        # Check cross-process shared file in APP_DATA_DIR
+        app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+        try:
+            os.makedirs(app_data_dir, exist_ok=True)
+            dedup_file = os.path.join(app_data_dir, "activity_dedup.json")
+            disk_dedup = {}
+            if os.path.exists(dedup_file):
+                try:
+                    with open(dedup_file, 'r', encoding='utf-8') as df:
+                        disk_dedup = json.load(df)
+                except Exception:
+                    disk_dedup = {}
+            disk_last_ts = disk_dedup.get(dedup_key, 0)
+            if (now_ts - disk_last_ts) < 6.0:
+                return True
+            disk_dedup[dedup_key] = now_ts
+            disk_dedup = {k: v for k, v in disk_dedup.items() if now_ts - v < 60}
+            tmp_file = dedup_file + ".tmp"
+            with open(tmp_file, 'w', encoding='utf-8') as df:
+                json.dump(disk_dedup, df)
+            os.replace(tmp_file, dedup_file)
+        except Exception:
+            pass
 
     license_key = get_active_license_key_fast()
     if not license_key:
@@ -979,7 +1005,14 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
     timestamp_ms = int(now.timestamp() * 1000)
     datetime_str = now.strftime("%Y-%m-%d %H:%M:%S")
     time_str = now.strftime("%I:%M:%S %p")
-    record_id = f"act_{uuid.uuid4().hex[:12]}"
+
+    # Deterministic 6-second bucket ID for manual toggles prevents any Turso primary-key duplicates!
+    if is_manual_toggle:
+        time_bucket = int(now.timestamp() // 6)
+        clean_prof = re.sub(r'[^a-zA-Z0-9_]', '_', str(profile_id or "default"))
+        record_id = f"act_{clean_prof}_{event_type}_{time_bucket}"
+    else:
+        record_id = f"act_{uuid.uuid4().hex[:12]}"
 
     record_data = {
         "id": record_id,

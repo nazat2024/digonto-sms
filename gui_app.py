@@ -3054,20 +3054,24 @@ class IVACApp(ctk.CTk):
             # Fail-safe background thread check
             def ensure_server():
                 import time, requests, threading
-                time.sleep(1.5)
-                try:
-                    r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.5)
-                    if not r.ok:
-                        raise Exception("Server not responding")
-                except Exception:
+                for _ in range(12):  # Poll up to 6 seconds (12 x 0.5s) for subprocess to become healthy
+                    time.sleep(0.5)
                     try:
-                        from sms_server import socketio, app
-                        threading.Thread(
-                            target=lambda: socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True, log_output=False),
-                            daemon=True
-                        ).start()
-                    except Exception as ex:
-                        print(f"Fallback thread failed: {ex}")
+                        r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.5)
+                        if r.ok:
+                            return  # Subprocess is healthy and responding! Do NOT start fallback!
+                    except Exception:
+                        pass
+
+                # If still not responding after 6s, start in-process fallback
+                try:
+                    from sms_server import socketio, app
+                    threading.Thread(
+                        target=lambda: socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True, log_output=False),
+                        daemon=True
+                    ).start()
+                except Exception as ex:
+                    print(f"Fallback thread failed: {ex}")
 
             threading.Thread(target=ensure_server, daemon=True).start()
 

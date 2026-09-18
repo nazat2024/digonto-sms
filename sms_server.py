@@ -959,8 +959,36 @@ def _resolve_profile_identity_from_disk(folder_path, item):
     label = exact_label or (f"Profile ({phone})" if phone else (f"Profile #{prof_id[-4:]}" if prof_id else item))
     return prof_id, label
 
+_watchdog_mutex_handle = None
+
+def _acquire_watchdog_mutex():
+    """Ensures exactly ONE process across the entire Windows OS runs the Chrome watchdog thread"""
+    global _watchdog_mutex_handle
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        mutex_name = "Local\\IVAC_Chrome_Ext_Watchdog_Mutex"
+        handle = kernel32.CreateMutexW(None, True, mutex_name)
+        last_error = kernel32.GetLastError()
+        ERROR_ALREADY_EXISTS = 183
+        if last_error == ERROR_ALREADY_EXISTS:
+            if handle:
+                kernel32.CloseHandle(handle)
+            return False
+        _watchdog_mutex_handle = handle
+        return True
+    except Exception as e:
+        print(f"[Watchdog Mutex] Warning: {e}")
+        return True
+
 def _chrome_extension_watchdog_loop():
     global _chrome_ext_first_run
+    
+    # Strictly ensure ONLY ONE process across the entire operating system executes this watchdog!
+    if not _acquire_watchdog_mutex():
+        print("[Watchdog] Another IVAC process is already running extension watchdog loop. Skipping duplicate thread.")
+        return
+
     ext_id = 'elnikoiioimfbmlgojokgndgeilnambi'
     user_data = os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\User Data')
     
@@ -1032,7 +1060,7 @@ def _chrome_extension_watchdog_loop():
                         # Debounce watchdog per prof_id to prevent multi-folder duplicate triggers
                         dedup_watchdog_key = f"{prof_id}_{is_disabled}"
                         now_w = time.time()
-                        if (now_w - _watchdog_last_toggle.get(dedup_watchdog_key, 0)) < 4.0:
+                        if (now_w - _watchdog_last_toggle.get(dedup_watchdog_key, 0)) < 5.0:
                             continue
                         _watchdog_last_toggle[dedup_watchdog_key] = now_w
                         
