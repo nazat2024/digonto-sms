@@ -60,10 +60,10 @@ def get_local_payments_summary():
             "records": records
         }
 
-# Firebase Configuration
-PROJECT_ID = "ai-studio-applet-webapp-52a95"
-DATABASE_ID = "ai-studio-90a5ddab-0968-4040-b54a-4863a2afafab"
-API_KEY = "AIzaSyBR4sK1U3N_jwvO5Hr45lIv-0R_DM1kbMo"
+# Firebase Configuration (Dedicated IVAC Cloud)
+PROJECT_ID = "ivac-master-pro"
+DATABASE_ID = "(default)"
+API_KEY = "AIzaSyCxtWF47hS8xRWCdaD7MYLgjwp-jdgxP48"
 
 BASE_URL = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/{DATABASE_ID}/documents/ivac_licenses"
 

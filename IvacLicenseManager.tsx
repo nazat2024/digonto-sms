@@ -2,8 +2,22 @@ import mqtt from 'mqtt';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Key, Plus, Trash2, ShieldBan, RefreshCw, CheckCircle2, Shield, Search, X, ChevronRight, ArrowLeft, ArrowRight, User, Phone, FileText, Clock, Calendar, CalendarPlus, Save, Edit3, Copy, Activity, Chrome, Power, CheckCircle, AlertCircle, AlertTriangle, ArrowUpRight, Filter, Smartphone, CreditCard, FileUp, LogIn, Layers, Radio, Sparkles, Database, HardDrive, Server, ExternalLink , Archive, Eye, EyeOff, RotateCcw } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc, getDocs, where } from 'firebase/firestore';
+import { initializeApp, getApps } from 'firebase/app';
+import { db as oldDb } from '../lib/firebase';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc, getDocs, where, getFirestore } from 'firebase/firestore';
+
+// Dedicated IVAC Master Pro Firebase Configuration
+const ivacFirebaseConfig = {
+  apiKey: "AIzaSyCxtWF47hS8xRWCdaD7MYLgjwp-jdgxP48",
+  authDomain: "ivac-master-pro.firebaseapp.com",
+  projectId: "ivac-master-pro",
+  storageBucket: "ivac-master-pro.firebasestorage.app",
+  messagingSenderId: "569432912971",
+  appId: "1:569432912971:web:59823945d245f2998f49ce"
+};
+
+const ivacApp = getApps().find(a => a.name === 'ivac-master-pro-app') || initializeApp(ivacFirebaseConfig, 'ivac-master-pro-app');
+const db = getFirestore(ivacApp);
 
 interface IvacLicense {
   id: string;
@@ -2339,6 +2353,48 @@ export default function IvacLicenseManager() {
   const [customDays, setCustomDays] = useState<string>('30');
   const [clientNameInput, setClientNameInput] = useState('');
   const [selectedLicense, setSelectedLicense] = useState<IvacLicense | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState<string | null>(null);
+
+  const migrateFromOldFirebase = async () => {
+    if (!window.confirm("আপনি কি পূর্বের Firebase থেকে সমস্ত লাইসেন্স ও ডেটা নতুন ডেডিকেটেড Firebase (ivac-master-pro)-এ ট্রান্সফার করতে চান?")) return;
+    setIsMigrating(true);
+    setMigrationStatus("আগের Firebase থেকে ডেটা লোড করা হচ্ছে...");
+    try {
+      const oldSnap = await getDocs(collection(oldDb, 'ivac_licenses'));
+      if (oldSnap.empty) {
+        alert("আগের Firebase-এ কোনো লাইসেন্স পাওয়া যায়নি!");
+        setIsMigrating(false);
+        setMigrationStatus(null);
+        return;
+      }
+      let count = 0;
+      let paymentCount = 0;
+      setMigrationStatus(`আগের Firebase-এ ${oldSnap.size}টি লাইসেন্স পাওয়া গেছে। নতুন ডেটাবেজে ট্রান্সফার হচ্ছে...`);
+      for (const licDoc of oldSnap.docs) {
+        const licData = licDoc.data();
+        await setDoc(doc(db, 'ivac_licenses', licDoc.id), licData);
+        count++;
+        try {
+          const paymentsSnap = await getDocs(collection(oldDb, `ivac_licenses/${licDoc.id}/payments`));
+          for (const pDoc of paymentsSnap.docs) {
+            await setDoc(doc(db, `ivac_licenses/${licDoc.id}/payments`, pDoc.id), pDoc.data());
+            paymentCount++;
+          }
+        } catch (subErr) {
+          console.error("Payment copy err:", subErr);
+        }
+      }
+      setMigrationStatus(`✓ সফলভাবে ${count}টি লাইসেন্স ও ${paymentCount}টি পেমেন্ট নতুন Firebase-এ মাইগ্রেট সম্পন্ন হয়েছে!`);
+      alert(`🎉 সফলভাবে ${count}টি লাইসেন্স ও ${paymentCount}টি পেমেন্ট নতুন Firebase-এ কপি সম্পন্ন হয়েছে!`);
+    } catch (err: any) {
+      console.error("Migration error:", err);
+      setMigrationStatus(`❌ মাইগ্রেশন ব্যর্থ: ${err.message || err}`);
+      alert("মাইগ্রেশন ব্যর্থ: " + (err.message || err));
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   useEffect(() => {
     // Listen to ivac_licenses in real-time
@@ -2540,11 +2596,34 @@ export default function IvacLicenseManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
-          <Key className="h-7 w-7 text-indigo-500" /> IVAC License Manager
-        </h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
+            <Key className="h-7 w-7 text-indigo-500" /> IVAC License Manager
+          </h2>
+          <span className="text-xs px-2.5 py-1 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 rounded-full font-semibold flex items-center gap-1.5 border border-emerald-300 dark:border-emerald-700 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            ivac-master-pro
+          </span>
+        </div>
+
+        <button
+          onClick={migrateFromOldFirebase}
+          disabled={isMigrating}
+          className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all disabled:opacity-50"
+          title="পূর্বের Firebase থেকে সমস্ত লাইসেন্স ও ডেটা নতুন ডেটাবেজে ট্রান্সফার করুন"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isMigrating ? 'animate-spin' : ''}`} />
+          {isMigrating ? 'মাইগ্রেশন হচ্ছে...' : '🔄 পূর্বের Firebase থেকে ডেটা মাইগ্রেট করুন'}
+        </button>
       </div>
+
+      {migrationStatus && (
+        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-medium text-indigo-800 dark:text-indigo-200 flex items-center justify-between shadow-sm">
+          <span>{migrationStatus}</span>
+          <button onClick={() => setMigrationStatus(null)} className="text-indigo-500 hover:text-indigo-700 font-bold ml-2">✕</button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
