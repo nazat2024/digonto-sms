@@ -67,13 +67,13 @@ if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             f.write("{}")
 
-# Theme System: 3 Distinct, Polished UI Templates (Cyber Navy, Modern Light, Obsidian Minimal)
+# Theme System: 3 Distinct, Polished UI Templates (Cyber Navy, Royal Light, Obsidian Studio)
 THEMES = {
     "cyber_navy": {
         "id": "cyber_navy",
         "name": "🌌 সাইবার নেভি (Cyber Navy)",
-        "tag": "Classic Dark",
-        "desc": "ক্লাসিক ডিপ ব্লু ও এমারেল্ড ডার্ক থিম (বর্তমান ডিফল্ট লুক)",
+        "tag": "Classic Pro Dark",
+        "desc": "ক্লাসিক ডিপ ব্লু ও এমারেল্ড ডার্ক লুক (মূল ডিফল্ট UI)",
         "appearance_mode": "dark",
         "bg_main": "#0a192f",
         "bg_card": "#112240",
@@ -84,6 +84,8 @@ THEMES = {
         "tab_bg": "#1a1a2e",
         "tab_selected": "#059669",
         "tab_unselected": "#233554",
+        "tab_text_selected": "#ffffff",
+        "tab_text_unselected": "#ccd6f6",
         "text_primary": "#ccd6f6",
         "text_secondary": "#8892b0",
         "text_muted": "#495670",
@@ -94,76 +96,101 @@ THEMES = {
         "border_color": "#233554",
         "entry_bg": "#0f172a",
         "entry_border": "#233554",
+        "entry_text": "#ccd6f6",
         "badge_bg": "#1e293b",
+        "badge_text": "#38bdf8",
+        "badge_active_bg": "#064e3b",
+        "badge_active_fg": "#34d399",
         "btn_secondary": "#233554",
         "btn_secondary_hover": "#334155",
+        "btn_secondary_text": "#ccd6f6",
+        "btn_edit_bg": "#1e3a8a",
+        "btn_edit_hover": "#2563eb",
         "danger": "#e11d48",
         "danger_hover": "#be123c",
         "swatch": ["#0a192f", "#112240", "#059669", "#64ffda"]
     },
     "modern_light": {
         "id": "modern_light",
-        "name": "☀️ মডার্ন লাইট (Modern Light)",
-        "tag": "Clean Corporate",
-        "desc": "অত্যন্ত ফ্রেশ, ক্লিন, প্রফেশনাল ও এলিগ্যান্ট কর্পোরেট লাইট লুক",
+        "name": "☀️ রয়্যাল লাইট (Royal Enterprise Light)",
+        "tag": "Polished & Clean",
+        "desc": "অত্যন্ত ফ্রেশ, পলিশড, ক্রিস্প ও সুন্দর কর্পোরেট লাইট লুক",
         "appearance_mode": "light",
-        "bg_main": "#f8fafc",          # Slate 50
+        "bg_main": "#f1f5f9",          # Soft slate-100 background
         "bg_card": "#ffffff",          # Pure white crisp card
-        "bg_row": "#f1f5f9",           # Slate 100
-        "bg_subcard": "#f8fafc",       # Slate 50
+        "bg_row": "#f8fafc",           # Slate-50 crisp row
+        "bg_subcard": "#f1f5f9",       # Slate-100 inner container
         "header_bg": "#ffffff",        # Clean white header
-        "footer_bg": "#e2e8f0",        # Slate 200 footer
-        "tab_bg": "#e2e8f0",           # Slate 200
-        "tab_selected": "#059669",     # Vibrant emerald
-        "tab_unselected": "#cbd5e1",   # Slate 300
-        "text_primary": "#0f172a",     # Slate 900
-        "text_secondary": "#334155",   # Slate 700
-        "text_muted": "#64748b",       # Slate 500
-        "text_accent": "#0284c7",      # Sky 600
+        "footer_bg": "#f8fafc",        # Soft light footer
+        "tab_bg": "#e2e8f0",           # Clean track
+        "tab_selected": "#2563eb",     # Royal Tech Blue
+        "tab_unselected": "#e2e8f0",   # Soft background
+        "tab_text_selected": "#ffffff",
+        "tab_text_unselected": "#1e293b", # Dark legible text
+        "text_primary": "#0f172a",     # Slate-900 (ultra crisp, dark)
+        "text_secondary": "#475569",   # Slate-600 (clean body)
+        "text_muted": "#64748b",       # Slate-500
+        "text_accent": "#2563eb",      # Royal Blue accent (sharp on white!)
         "accent_emerald": "#059669",   # Emerald 600
         "accent_hover": "#047857",     # Emerald 700
         "accent_blue": "#2563eb",      # Blue 600
-        "border_color": "#e2e8f0",     # Slate 200
-        "entry_bg": "#ffffff",         # White
-        "entry_border": "#cbd5e1",     # Slate 300
-        "badge_bg": "#e2e8f0",
-        "btn_secondary": "#e2e8f0",
-        "btn_secondary_hover": "#cbd5e1",
-        "danger": "#e11d48",
-        "danger_hover": "#be123c",
-        "swatch": ["#f8fafc", "#ffffff", "#059669", "#0284c7"]
+        "border_color": "#cbd5e1",     # Crisp 1px card border
+        "entry_bg": "#ffffff",         # Pure white entry
+        "entry_border": "#94a3b8",     # Defined input border
+        "entry_text": "#0f172a",
+        "badge_bg": "#e0f2fe",         # Soft light blue
+        "badge_text": "#0369a1",       # Deep blue
+        "badge_active_bg": "#d1fae5",  # Soft emerald
+        "badge_active_fg": "#047857",  # Dark emerald
+        "btn_secondary": "#f1f5f9",
+        "btn_secondary_hover": "#e2e8f0",
+        "btn_secondary_text": "#0f172a",
+        "btn_edit_bg": "#2563eb",
+        "btn_edit_hover": "#1d4ed8",
+        "danger": "#ef4444",
+        "danger_hover": "#dc2626",
+        "swatch": ["#f1f5f9", "#ffffff", "#2563eb", "#059669"]
     },
     "obsidian_minimal": {
         "id": "obsidian_minimal",
-        "name": "🌑 অবসিডিয়ান মিনিমাল (Obsidian Minimal)",
-        "tag": "Sleek Ultra Dark",
-        "desc": "ম্যাট চারকোল ডার্ক ও আধুনিক ইন্ডিগো/ভায়োলেট অ্যাকসেন্ট থিম",
+        "name": "🌑 অবসিডিয়ান স্টুডিও (Obsidian Studio Dark)",
+        "tag": "Sleek Carbon Dark",
+        "desc": "ম্যাট চারকোল ডার্ক ও ভাইব্র্যান্ট ইন্ডিগো অ্যাকসেন্ট (Linear / Vercel লুক)",
         "appearance_mode": "dark",
-        "bg_main": "#121214",          # Deep Obsidian
-        "bg_card": "#18181b",          # Zinc 900
-        "bg_row": "#27272a",           # Zinc 800
-        "bg_subcard": "#202024",       # Dark slate
-        "header_bg": "#121214",        # Header
-        "footer_bg": "#121214",        # Footer
-        "tab_bg": "#202024",           # Tab background
-        "tab_selected": "#6366f1",     # Indigo 500
-        "tab_unselected": "#2e2e35",   # Muted button
-        "text_primary": "#f4f4f5",     # Zinc 100
-        "text_secondary": "#a1a1aa",   # Zinc 400
-        "text_muted": "#71717a",       # Zinc 500
-        "text_accent": "#38bdf8",      # Sky 400
-        "accent_emerald": "#10b981",   # Emerald 500
-        "accent_hover": "#059669",     # Emerald 600
+        "bg_main": "#09090b",          # Deep neutral carbon
+        "bg_card": "#18181b",          # Zinc-900 elevated card
+        "bg_row": "#27272a",           # Zinc-800 row
+        "bg_subcard": "#121215",       # Inset carbon
+        "header_bg": "#09090b",
+        "footer_bg": "#09090b",
+        "tab_bg": "#18181b",
+        "tab_selected": "#6366f1",     # Indigo-500
+        "tab_unselected": "#27272a",
+        "tab_text_selected": "#ffffff",
+        "tab_text_unselected": "#a1a1aa",
+        "text_primary": "#fafafa",     # Crisp bright text
+        "text_secondary": "#a1a1aa",   # Zinc-400
+        "text_muted": "#71717a",       # Zinc-500
+        "text_accent": "#818cf8",      # Indigo-400
+        "accent_emerald": "#10b981",   # Emerald-500
+        "accent_hover": "#059669",     # Emerald-600
         "accent_blue": "#6366f1",      # Indigo
-        "border_color": "#3f3f46",     # Zinc 700
-        "entry_bg": "#18181b",         # Zinc 900
-        "entry_border": "#3f3f46",     # Zinc 700
+        "border_color": "#27272a",     # Zinc-800 border
+        "entry_bg": "#121215",         # Inset entry
+        "entry_border": "#3f3f46",     # Zinc-700
+        "entry_text": "#fafafa",
         "badge_bg": "#27272a",
+        "badge_text": "#a1a1aa",
+        "badge_active_bg": "#064e3b",
+        "badge_active_fg": "#34d399",
         "btn_secondary": "#27272a",
         "btn_secondary_hover": "#3f3f46",
+        "btn_secondary_text": "#f4f4f5",
+        "btn_edit_bg": "#4338ca",
+        "btn_edit_hover": "#4f46e5",
         "danger": "#ef4444",
         "danger_hover": "#dc2626",
-        "swatch": ["#121214", "#18181b", "#6366f1", "#38bdf8"]
+        "swatch": ["#09090b", "#18181b", "#6366f1", "#818cf8"]
     }
 }
 
@@ -1314,12 +1341,12 @@ class IVACApp(ctk.CTk):
         group_container.pack(fill="x", pady=2)
         
         # Main latest row
-        main_row = ctk.CTkFrame(group_container, fg_color="#1a1a2e", corner_radius=6, height=44)
+        main_row = ctk.CTkFrame(group_container, fg_color=THEME["bg_row"], corner_radius=6, height=44)
         main_row.pack(fill="x")
         main_row.pack_propagate(False)
         
         status_text = "Used" if used else "Unused"
-        status_color = "#64748b" if used else "#10b981"
+        status_color = THEME["text_muted"] if used else THEME["accent_emerald"]
         icon = "🔒" if used else "⚡"
         
         # Left frame
@@ -1340,8 +1367,9 @@ class IVACApp(ctk.CTk):
             toggle_btn = ctk.CTkButton(
                 left_frame, text=f"{arrow_icon} ({hist_count})", width=48, height=22,
                 font=ctk.CTkFont(size=10, weight="bold"),
-                fg_color="#2563eb" if is_expanded else "#0f172a",
-                hover_color="#1d4ed8" if is_expanded else "#1e293b",
+                fg_color=THEME["accent_blue"] if is_expanded else THEME["btn_secondary"],
+                hover_color=THEME["accent_hover"] if is_expanded else THEME["btn_secondary_hover"],
+                text_color="white" if is_expanded else THEME["text_primary"],
                 command=toggle_dropdown
             )
             toggle_btn.pack(side="left", padx=(0, 6))
@@ -1354,7 +1382,7 @@ class IVACApp(ctk.CTk):
         ctk.CTkLabel(
             left_frame, text=f"{icon}  📱 {phone}",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(side="left")
         
         ctk.CTkLabel(
@@ -1367,7 +1395,7 @@ class IVACApp(ctk.CTk):
             ctk.CTkLabel(
                 left_frame, text=f" • {timestamp}",
                 font=ctk.CTkFont(size=9),
-                text_color="#64748b"
+                text_color=THEME["text_muted"]
             ).pack(side="left", padx=(4, 0))
         
         # Right frame
@@ -1377,19 +1405,20 @@ class IVACApp(ctk.CTk):
         copy_btn = ctk.CTkButton(
             right_frame, text="📋 Copy", width=62, height=26,
             font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color="#334155", hover_color="#475569"
+            fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["btn_secondary_text"]
         )
         
         def do_copy(text_to_copy=otp_str, btn=copy_btn):
             self.clipboard_clear()
             self.clipboard_append(text_to_copy)
-            btn.configure(text="✓ Copied", fg_color="#059669")
-            self.after(1200, lambda: btn.configure(text="📋 Copy", fg_color="#334155"))
+            btn.configure(text="✓ Copied", fg_color=THEME["accent_emerald"], text_color="white")
+            self.after(1200, lambda: btn.configure(text="📋 Copy", fg_color=THEME["btn_secondary"], text_color=THEME["btn_secondary_text"]))
             
         copy_btn.configure(command=do_copy)
         copy_btn.pack(side="right", padx=(6, 0))
         
-        color = "#64ffda" if not used else "#94a3b8"
+        color = THEME["text_accent"] if not used else THEME["text_muted"]
         ctk.CTkLabel(
             right_frame, text=f" {display} ",
             font=ctk.CTkFont(size=13, weight="bold", family="Consolas"),
@@ -1398,7 +1427,7 @@ class IVACApp(ctk.CTk):
         
         # Expandable History Box
         if has_history and is_expanded:
-            hist_box = ctk.CTkFrame(group_container, fg_color="#0b1329", corner_radius=6, border_width=1, border_color="#1e293b")
+            hist_box = ctk.CTkFrame(group_container, fg_color=THEME["bg_subcard"], corner_radius=6, border_width=1, border_color=THEME["border_color"])
             hist_box.pack(fill="x", padx=12, pady=(2, 4))
             
             hdr = ctk.CTkFrame(hist_box, fg_color="transparent")
@@ -1406,11 +1435,11 @@ class IVACApp(ctk.CTk):
             ctk.CTkLabel(
                 hdr, text=f"📜 এই নম্বরের পূর্বের SMS / OTP ইতিহাস ({len(history)} টি):",
                 font=ctk.CTkFont(size=10, weight="bold"),
-                text_color="#94a3b8"
+                text_color=THEME["text_muted"]
             ).pack(side="left")
             
             for item in history:
-                h_row = ctk.CTkFrame(hist_box, fg_color="#111c38", corner_radius=4, height=32)
+                h_row = ctk.CTkFrame(hist_box, fg_color=THEME["bg_row"], corner_radius=4, height=32)
                 h_row.pack(fill="x", padx=8, pady=2)
                 h_row.pack_propagate(False)
                 
@@ -1420,7 +1449,7 @@ class IVACApp(ctk.CTk):
                 h_otp_str = item.get("otp_string", "")
                 h_raw = item.get("raw_sms", "")
                 h_status = "Used" if h_used else "Unused"
-                h_color = "#64748b" if h_used else "#10b981"
+                h_color = THEME["text_muted"] if h_used else THEME["accent_emerald"]
                 
                 h_left = ctk.CTkFrame(h_row, fg_color="transparent")
                 h_left.pack(side="left", padx=8)
@@ -1428,7 +1457,7 @@ class IVACApp(ctk.CTk):
                 ctk.CTkLabel(
                     h_left, text=f"⏱️ {h_time}",
                     font=ctk.CTkFont(size=10),
-                    text_color="#64748b"
+                    text_color=THEME["text_muted"]
                 ).pack(side="left")
                 
                 ctk.CTkLabel(
@@ -1442,7 +1471,7 @@ class IVACApp(ctk.CTk):
                     ctk.CTkLabel(
                         h_left, text=f'"{snippet}"',
                         font=ctk.CTkFont(size=9),
-                        text_color="#475569"
+                        text_color=THEME["text_secondary"]
                     ).pack(side="left", padx=6)
                 
                 h_right = ctk.CTkFrame(h_row, fg_color="transparent")
@@ -1451,7 +1480,8 @@ class IVACApp(ctk.CTk):
                 h_copy_btn = ctk.CTkButton(
                     h_right, text="📋 Copy", width=52, height=22,
                     font=ctk.CTkFont(size=9, weight="bold"),
-                    fg_color="#1e293b", hover_color="#334155"
+                    fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
+                    text_color=THEME["btn_secondary_text"]
                 )
                 
                 def make_copy_handler(s=h_otp_str, b=h_copy_btn):
@@ -1463,7 +1493,7 @@ class IVACApp(ctk.CTk):
                 ctk.CTkLabel(
                     h_right, text=f" {h_disp} ",
                     font=ctk.CTkFont(size=11, weight="bold", family="Consolas"),
-                    text_color="#94a3b8" if h_used else "#64ffda"
+                    text_color=THEME["text_muted"] if h_used else THEME["text_accent"]
                 ).pack(side="right")
 
     def _toggle_device_status(self, dev_id, is_active):
@@ -1493,7 +1523,7 @@ class IVACApp(ctk.CTk):
             threading.Thread(target=update_task, daemon=True).start()
 
     def _add_device_row_incremental(self, dev_data, dev_id, display_text, color, sim_text, is_active, dev_name):
-        row = ctk.CTkFrame(self.device_list_frame, fg_color="#1a1a2e", corner_radius=6, height=30)
+        row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=30)
         row.pack(fill="x", pady=2)
         row.pack_propagate(False)
         
@@ -1514,14 +1544,15 @@ class IVACApp(ctk.CTk):
         
         ctk.CTkButton(
             row, text="✏️ Edit Name", width=50, height=22,
-            font=ctk.CTkFont(size=10), fg_color="#233554", hover_color="#2a4365",
+            font=ctk.CTkFont(size=10), fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["btn_secondary_text"],
             command=lambda: self._rename_device(dev_id)
         ).pack(side="right", padx=5)
         
         sim_label = ctk.CTkLabel(
             row, text=f"SIMs: {sim_text}  ",
             font=ctk.CTkFont(size=10),
-            text_color="#8892b0"
+            text_color=THEME["text_secondary"]
         )
         sim_label.pack(side="right", padx=10)
         
@@ -1560,36 +1591,36 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Header Container
-        header_container = tk.Frame(tab, bg="#0a192f")
+        header_container = tk.Frame(tab, bg=THEME["bg_main"])
         header_container.pack(fill="x", padx=10, pady=(6, 4))
         
         # Left: Title & Count Badge
-        title_frame = tk.Frame(header_container, bg="#0a192f")
+        title_frame = tk.Frame(header_container, bg=THEME["bg_main"])
         title_frame.pack(side="left")
         
         tk.Label(
             title_frame, text="🧩 Chrome Profiles",
             font=("Segoe UI", 13, "bold"),
-            fg="#64ffda", bg="#0a192f"
+            fg=THEME["text_primary"], bg=THEME["bg_main"]
         ).pack(side="left")
         
         self.lbl_profile_count = tk.Label(
             title_frame, text="0 টি প্রোফাইল",
             font=("Segoe UI", 9, "bold"),
-            fg="#38bdf8", bg="#1e293b",
+            fg=THEME["badge_text"], bg=THEME["badge_bg"],
             padx=8, pady=2
         )
         self.lbl_profile_count.pack(side="left", padx=10)
         
         # Right: Action Buttons
-        btn_box = tk.Frame(header_container, bg="#0a192f")
+        btn_box = tk.Frame(header_container, bg=THEME["bg_main"])
         btn_box.pack(side="right")
         
-        def _make_hdr_btn(parent, text, bg, hover, cmd):
+        def _make_hdr_btn(parent, text, bg, hover, cmd, fg="white"):
             btn = tk.Label(
                 parent, text=text,
                 font=("Segoe UI", 9, "bold"),
-                bg=bg, fg="white",
+                bg=bg, fg=fg,
                 padx=12, pady=5,
                 cursor="hand2", relief="flat"
             )
@@ -1599,24 +1630,24 @@ class IVACApp(ctk.CTk):
             btn.bind("<Button-1>", lambda e: cmd())
             return btn
             
-        _make_hdr_btn(btn_box, "🔄 রিলোড", "#334155", "#475569", self._refresh_profiles_tab)
-        _make_hdr_btn(btn_box, "➕ নতুন প্রোফাইল", "#2563eb", "#1d4ed8", self._open_add_profile_dialog)
-        _make_hdr_btn(btn_box, "🚀 সব ওপেন করুন", "#059669", "#047857", self._launch_all_profiles)
+        _make_hdr_btn(btn_box, "🔄 রিলোড", THEME["btn_secondary"], THEME["btn_secondary_hover"], self._refresh_profiles_tab, fg=THEME["btn_secondary_text"])
+        _make_hdr_btn(btn_box, "➕ নতুন প্রোফাইল", THEME["accent_blue"], "#1d4ed8", self._open_add_profile_dialog)
+        _make_hdr_btn(btn_box, "🚀 সব ওপেন করুন", THEME["accent_emerald"], THEME["accent_hover"], self._launch_all_profiles)
         
         # Sub Bar: Search Bar + Select All
-        sub_bar = tk.Frame(tab, bg="#0a192f")
+        sub_bar = tk.Frame(tab, bg=THEME["bg_main"])
         sub_bar.pack(fill="x", padx=10, pady=(2, 6))
         
-        search_wrap = tk.Frame(sub_bar, bg="#112240", highlightbackground="#233554", highlightthickness=1)
+        search_wrap = tk.Frame(sub_bar, bg=THEME["bg_card"], highlightbackground=THEME["border_color"], highlightthickness=1)
         search_wrap.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
-        tk.Label(search_wrap, text="🔍", font=("Segoe UI", 10), fg="#8892b0", bg="#112240").pack(side="left", padx=(8, 4))
+        tk.Label(search_wrap, text="🔍", font=("Segoe UI", 10), fg=THEME["text_secondary"], bg=THEME["bg_card"]).pack(side="left", padx=(8, 4))
         
         self.search_entry = tk.Entry(
             search_wrap,
             font=("Segoe UI", 10),
-            bg="#112240", fg="#f8fafc",
-            insertbackground="#64ffda",
+            bg=THEME["bg_card"], fg=THEME["entry_text"],
+            insertbackground=THEME["text_accent"],
             relief="flat", bd=0
         )
         self.search_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
@@ -1627,27 +1658,27 @@ class IVACApp(ctk.CTk):
             sub_bar,
             text="☑️ সব আনসিলেক্ট",
             font=("Segoe UI", 9, "bold"),
-            bg="#1e293b", fg="#ffffff",
+            bg=THEME["btn_secondary"], fg=THEME["btn_secondary_text"],
             padx=14, pady=5,
             cursor="hand2", relief="flat"
         )
         self.btn_select_all.pack(side="right")
-        self.btn_select_all.bind("<Enter>", lambda e: self.btn_select_all.configure(bg="#334155"))
-        self.btn_select_all.bind("<Leave>", lambda e: self.btn_select_all.configure(bg="#1e293b"))
+        self.btn_select_all.bind("<Enter>", lambda e: self.btn_select_all.configure(bg=THEME["btn_secondary_hover"]))
+        self.btn_select_all.bind("<Leave>", lambda e: self.btn_select_all.configure(bg=THEME["btn_secondary"]))
         self.btn_select_all.bind("<Button-1>", lambda e: self._toggle_select_all_profiles())
         
         # Native High-Speed Scroll Container for Profiles Tab (Zero-lag, perfectly mapped)
-        scroll_wrap = tk.Frame(tab, bg="#0a192f", highlightbackground="#233554", highlightthickness=1)
+        scroll_wrap = tk.Frame(tab, bg=THEME["bg_main"], highlightbackground=THEME["border_color"], highlightthickness=1)
         scroll_wrap.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         
-        self._profiles_canvas = tk.Canvas(scroll_wrap, bg="#0a192f", highlightthickness=0)
+        self._profiles_canvas = tk.Canvas(scroll_wrap, bg=THEME["bg_main"], highlightthickness=0)
         self._profiles_scrollbar = tk.Scrollbar(scroll_wrap, orient="vertical", command=self._profiles_canvas.yview)
         self._profiles_canvas.configure(yscrollcommand=self._profiles_scrollbar.set)
         
         self._profiles_scrollbar.pack(side="right", fill="y")
         self._profiles_canvas.pack(side="left", fill="both", expand=True)
         
-        self._profiles_container = tk.Frame(self._profiles_canvas, bg="#0a192f")
+        self._profiles_container = tk.Frame(self._profiles_canvas, bg=THEME["bg_main"])
         self._profiles_canvas_win = self._profiles_canvas.create_window((0, 0), window=self._profiles_container, anchor="nw")
         
         def _on_profiles_configure(event=None):
@@ -1725,14 +1756,14 @@ class IVACApp(ctk.CTk):
             self.lbl_profile_count.configure(text=f"{len(all_profiles)} টি প্রোফাইল")
             
         if not all_profiles:
-            empty_card = tk.Frame(self._profiles_container, bg="#112240", padx=20, pady=30)
+            empty_card = tk.Frame(self._profiles_container, bg=THEME["bg_card"], padx=20, pady=30, highlightbackground=THEME["border_color"], highlightthickness=1)
             empty_card.pack(fill="x", padx=15, pady=20)
             tk.Label(
                 empty_card,
                 text="🧩 কোনো প্রোফাইল যুক্ত করা হয়নি\n\nউপরে 'নতুন প্রোফাইল' বাটনে ক্লিক করে প্রোফাইল যুক্ত করুন",
                 font=("Segoe UI", 11),
-                fg="#94a3b8",
-                bg="#112240",
+                fg=THEME["text_muted"],
+                bg=THEME["bg_card"],
                 justify="center"
             ).pack()
             if hasattr(self, "_on_profiles_configure"):
@@ -1758,20 +1789,20 @@ class IVACApp(ctk.CTk):
         password = str(p.get("password", "") or "").strip()
         enabled = p.get("enabled", True)
         
-        row = tk.Frame(parent, bg="#112240", height=48)
-        row.pack(fill="x", pady=2, padx=4)
+        row = tk.Frame(parent, bg=THEME["bg_card"], highlightbackground=THEME["border_color"], highlightthickness=1, height=48)
+        row.pack(fill="x", pady=3, padx=4)
         row.pack_propagate(False)
         
         # Left Accent Status Indicator Bar
-        accent = tk.Frame(row, bg="#10b981" if enabled else "#334155", width=4)
+        accent = tk.Frame(row, bg="#10b981" if enabled else THEME["border_color"], width=4)
         accent.pack(side="left", fill="y", padx=(0, 8))
         
         # Checkbox with instant status update
         cb = tk.Label(
             row, text="✓" if enabled else "",
             font=("Segoe UI Symbol", 10, "bold"),
-            bg="#059669" if enabled else "#1e293b",
-            fg="white", width=2, height=1,
+            bg="#059669" if enabled else THEME["btn_secondary"],
+            fg="white" if enabled else THEME["text_muted"], width=2, height=1,
             cursor="hand2", relief="flat"
         )
         cb.pack(side="left", padx=(0, 8))
@@ -1781,9 +1812,10 @@ class IVACApp(ctk.CTk):
             p["enabled"] = new_val
             cb.configure(
                 text="✓" if new_val else "",
-                bg="#059669" if new_val else "#1e293b"
+                bg="#059669" if new_val else THEME["btn_secondary"],
+                fg="white" if new_val else THEME["text_muted"]
             )
-            accent.configure(bg="#10b981" if new_val else "#334155")
+            accent.configure(bg="#10b981" if new_val else THEME["border_color"])
             self._save_config()
             
         cb.bind("<Button-1>", toggle_cb)
@@ -1803,15 +1835,15 @@ class IVACApp(ctk.CTk):
             lbl.bind("<Button-1>", lambda e: cmd())
             return lbl
             
-        btn_hide = make_btn(row, "Hide", "#dc2626", "#b91c1c", lambda: self._delete_profile(index))
-        btn_open = make_btn(row, "Open", "#059669", "#047857", lambda: self._launch_profile(p))
-        btn_edit = make_btn(row, "Edit", "#1e3a8a", "#2563eb", lambda: self._open_edit_profile_dialog(p, index))
+        btn_hide = make_btn(row, "Hide", THEME["danger"], THEME["danger_hover"], lambda: self._delete_profile(index))
+        btn_open = make_btn(row, "Open", THEME["accent_emerald"], THEME["accent_hover"], lambda: self._launch_profile(p))
+        btn_edit = make_btn(row, "Edit", THEME["btn_edit_bg"], THEME["btn_edit_hover"], lambda: self._open_edit_profile_dialog(p, index))
         
         # Center Info Column
-        info = tk.Frame(row, bg="#112240")
+        info = tk.Frame(row, bg=THEME["bg_card"])
         info.pack(side="left", fill="x", expand=True, padx=4)
         
-        l1 = tk.Label(info, text=name, font=("Segoe UI", 10, "bold"), fg="#f8fafc", bg="#112240", anchor="w")
+        l1 = tk.Label(info, text=name, font=("Segoe UI", 10, "bold"), fg=THEME["text_primary"], bg=THEME["bg_card"], anchor="w")
         l1.pack(anchor="w")
         
         details_parts = [f"📁 {chrome_profile}"]
@@ -1819,7 +1851,7 @@ class IVACApp(ctk.CTk):
         if password: details_parts.append(f"🔑 {password}")
         details_str = "   •   ".join(details_parts)
         
-        l2 = tk.Label(info, text=details_str, font=("Segoe UI", 8), fg="#8892b0", bg="#112240", anchor="w")
+        l2 = tk.Label(info, text=details_str, font=("Segoe UI", 8), fg=THEME["text_secondary"], bg=THEME["bg_card"], anchor="w")
         l2.pack(anchor="w")
         
         if hasattr(self, "_bind_profiles_wheel"):
@@ -2259,7 +2291,7 @@ class IVACApp(ctk.CTk):
         if acc.get('rocket_extra'):
             display_num += f"-{acc['rocket_extra']}"
             
-        lbl = ctk.CTkLabel(row, text=f"{display_num} (R: *** | B: *** | N: ***)", text_color="#ccd6f6")
+        lbl = ctk.CTkLabel(row, text=f"{display_num} (R: *** | B: *** | N: ***)", text_color=THEME["text_primary"])
         lbl.pack(side="left", padx=5)
         
         is_hidden = [True]
@@ -2279,13 +2311,13 @@ class IVACApp(ctk.CTk):
                 
         eye_btn = ctk.CTkButton(
             row, text="👁️", width=30, height=24,
-            fg_color="transparent", text_color="#8892b0", hover_color="#112240",
+            fg_color="transparent", text_color=THEME["text_secondary"], hover_color=THEME["btn_secondary_hover"],
             command=toggle_vis
         )
         eye_btn.pack(side="left", padx=5)
         
         ctk.CTkButton(
-            row, text="Delete", width=50, fg_color="#ef4444", hover_color="#dc2626", height=24,
+            row, text="Delete", width=50, fg_color=THEME["danger"], hover_color=THEME["danger_hover"], height=24,
             command=lambda aid=acc['id']: self._delete_rocket_account(aid)
         ).pack(side="right", padx=5)
         
@@ -2295,7 +2327,7 @@ class IVACApp(ctk.CTk):
         
         accounts = self.config.get("rocket_accounts", [])
         if not accounts:
-            ctk.CTkLabel(self.rocket_list_frame, text="No accounts added yet", text_color="#495670").pack(pady=10)
+            ctk.CTkLabel(self.rocket_list_frame, text="No accounts added yet", text_color=THEME["text_muted"]).pack(pady=10)
             return
             
         for acc in accounts:
@@ -2588,7 +2620,7 @@ class IVACApp(ctk.CTk):
                     corner_radius=3,
                     fg_color=color_hex,
                     border_width=1,
-                    border_color="#475569"
+                    border_color=THEME["border_color"]
                 ).pack(side="left", padx=2)
 
             # Right side: Status / Apply Button
@@ -2600,8 +2632,8 @@ class IVACApp(ctk.CTk):
                     right_col,
                     text="✓ সক্রিয় আছে (Active)",
                     font=ctk.CTkFont(size=11, weight="bold"),
-                    text_color="#10b981",
-                    fg_color=THEME["bg_subcard"],
+                    text_color=THEME["badge_active_fg"],
+                    fg_color=THEME["badge_active_bg"],
                     corner_radius=6,
                     padx=12, pady=6
                 ).pack()
@@ -2708,11 +2740,36 @@ class IVACApp(ctk.CTk):
         except Exception as e:
             print(f"Configure theme widgets error: {e}")
             
-        # Re-build settings tab immediately so active theme indicator updates
+        # Re-build settings tab immediately so active theme cards/indicators update
         self._build_settings_tab()
         
-        # Invalidate tab cache for all other tabs so when user clicks them they render with new theme
+        # Invalidate tab cache and cleanly destroy children of other tabs
+        # so they will be fresh, perfectly themed builds upon switching
+        tabs_to_clean = [
+            getattr(self, "tab_home", None),
+            getattr(self, "tab_otps", None),
+            getattr(self, "tab_profiles", None),
+            getattr(self, "tab_extension", None),
+            getattr(self, "tab_payment", None),
+            getattr(self, "tab_license", None)
+        ]
+        for t in tabs_to_clean:
+            if t and t.winfo_exists():
+                for ch in t.winfo_children():
+                    try:
+                        ch.destroy()
+                    except Exception:
+                        pass
+
         self._loaded_tabs = {"⚙️ Settings"}
+        self._last_otp_state_key = None
+        self._last_profiles_hash = None
+        self._device_rows = {}
+        self._profiles_tab_dirty = True
+        self._ext_profiles_dirty = True
+        self._ext_no_search_box = None
+        self._ext_profile_row_items = []
+        self._ext_profile_row_widgets = {}
 
     def _reset_settings_to_default(self):
         self._set_font_scale(1.0)
@@ -2903,7 +2960,7 @@ class IVACApp(ctk.CTk):
         ctk.CTkLabel(
             update_card,
             text="সফটওয়্যারের সর্বশেষ IVAC Master Pro এক্সটেনশনটি এক ক্লিকেই আপনার কম্পিউটারের সকল Chrome Profile-এ আপডেট, সক্রিয় এবং পিন করে নিন।",
-            font=ctk.CTkFont(size=11), text_color="#8892b0", justify="left"
+            font=ctk.CTkFont(size=11), text_color=THEME["text_secondary"], justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 10))
         
         btn_update_row = ctk.CTkFrame(update_card, fg_color="transparent")
@@ -2912,14 +2969,14 @@ class IVACApp(ctk.CTk):
         self.btn_bulk_update_ext = ctk.CTkButton(
             btn_update_row, text="🔄 সব প্রোফাইলে এক্সটেনশন আপডেট করুন",
             font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color="#0284c7", hover_color="#0369a1", height=38,
+            fg_color=THEME["accent_blue"], hover_color=THEME["accent_hover"], height=38,
             command=self._update_all_profiles_extension
         )
         self.btn_bulk_update_ext.pack(side="left")
         
         self.lbl_bulk_update_status = ctk.CTkLabel(
             update_card, text="", font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#10b981"
+            text_color=THEME["accent_emerald"]
         )
         self.lbl_bulk_update_status.pack(anchor="w", padx=15, pady=(0, 8))
 
@@ -2930,53 +2987,54 @@ class IVACApp(ctk.CTk):
         self.lbl_ext_profiles_count = ctk.CTkLabel(
             p_list_header, text="👥 Chrome Profiles:",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         )
         self.lbl_ext_profiles_count.pack(side="left")
         
         ctk.CTkButton(
             p_list_header, text="🔄 তালিকা রিফ্রেশ",
             font=ctk.CTkFont(size=11),
-            fg_color="#1e293b", hover_color="#334155", height=26, width=100,
+            fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["btn_secondary_text"], height=26, width=100,
             command=lambda: (cpm.invalidate_profiles_status_cache() if hasattr(cpm, "invalidate_profiles_status_cache") else None, self._refresh_extension_profiles_list())
         ).pack(side="right")
         
         self.btn_add_all_profiles = ctk.CTkButton(
             p_list_header, text="➕ সব Profiles-এ যুক্ত করুন",
             font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color="#0369a1", hover_color="#0284c7", height=26,
+            fg_color=THEME["accent_blue"], hover_color=THEME["accent_hover"], height=26,
             command=self._add_all_unadded_profiles_to_tab
         )
         self.btn_add_all_profiles.pack(side="right", padx=(0, 8))
         
         # Search Bar for Extension Tab (Matches Profiles Tab Style)
         import tkinter as tk
-        ext_search_wrap = tk.Frame(update_card, bg="#112240", highlightbackground="#233554", highlightthickness=1)
+        ext_search_wrap = tk.Frame(update_card, bg=THEME["entry_bg"], highlightbackground=THEME["entry_border"], highlightthickness=1)
         ext_search_wrap.pack(fill="x", padx=15, pady=(0, 8))
         
-        tk.Label(ext_search_wrap, text="🔍", font=("Segoe UI", 10), fg="#8892b0", bg="#112240").pack(side="left", padx=(8, 4))
+        tk.Label(ext_search_wrap, text="🔍", font=("Segoe UI", 10), fg=THEME["text_muted"], bg=THEME["entry_bg"]).pack(side="left", padx=(8, 4))
         
         self.ext_search_entry = tk.Entry(
             ext_search_wrap,
             font=("Segoe UI", 10),
-            bg="#112240", fg="#f8fafc",
-            insertbackground="#64ffda",
+            bg=THEME["entry_bg"], fg=THEME["entry_text"],
+            insertbackground=THEME["text_accent"],
             relief="flat", bd=0
         )
         self.ext_search_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
         self.ext_search_entry.bind("<KeyRelease>", lambda *_: self._filter_extension_profiles_search())
         
         # Native High-Speed Scroll Container for Chrome Profiles (Zero-lag, 0.4ms init)
-        scroll_wrap = tk.Frame(update_card, bg="#0a192f", highlightbackground="#233554", highlightthickness=1)
+        scroll_wrap = tk.Frame(update_card, bg=THEME["bg_subcard"], highlightbackground=THEME["border_color"], highlightthickness=1)
         scroll_wrap.pack(fill="x", padx=15, pady=(0, 15))
         
-        self._ext_canvas = tk.Canvas(scroll_wrap, bg="#0a192f", highlightthickness=0, height=120)
+        self._ext_canvas = tk.Canvas(scroll_wrap, bg=THEME["bg_subcard"], highlightthickness=0, height=120)
         self._ext_scrollbar = tk.Scrollbar(scroll_wrap, orient="vertical", command=self._ext_canvas.yview)
         self._ext_canvas.configure(yscrollcommand=self._ext_scrollbar.set)
         
         self._ext_canvas.pack(side="left", fill="both", expand=True)
         
-        self._ext_profiles_container = tk.Frame(self._ext_canvas, bg="#0a192f")
+        self._ext_profiles_container = tk.Frame(self._ext_canvas, bg=THEME["bg_subcard"])
         self._ext_canvas_window = self._ext_canvas.create_window((0, 0), window=self._ext_profiles_container, anchor="nw")
         
         MAX_CANVAS_HEIGHT = 380
@@ -3101,21 +3159,21 @@ class IVACApp(ctk.CTk):
                     self.btn_add_all_profiles.configure(
                         state="normal",
                         text=f"➕ বাকি {unadded_count}টি Profiles-এ যুক্ত করুন",
-                        fg_color="#0369a1"
+                        fg_color=THEME["accent_blue"]
                     )
                 else:
                     self.btn_add_all_profiles.configure(
                         state="disabled",
                         text="✓ সব Profiles-এ যুক্ত",
-                        fg_color="#1e293b"
+                        fg_color=THEME["btn_secondary"]
                     )
             
             if not statuses:
-                empty_box = tk.Frame(self._ext_profiles_container, bg="#112240", padx=15, pady=15)
+                empty_box = tk.Frame(self._ext_profiles_container, bg=THEME["bg_card"], padx=15, pady=15)
                 empty_box.pack(fill="x", padx=5, pady=10)
                 empty_lbl = tk.Label(
                     empty_box, text="কোনো Chrome প্রোফাইল পাওয়া যায়নি।",
-                    font=("Segoe UI", 10), fg="#64748b", bg="#112240"
+                    font=("Segoe UI", 10), fg=THEME["text_muted"], bg=THEME["bg_card"]
                 )
                 empty_lbl.pack()
                 if hasattr(self, "_on_ext_configure"):
@@ -3128,32 +3186,32 @@ class IVACApp(ctk.CTk):
                 p_dir = s.get("dir", "")
                 is_added = p_dir in added_dirs
                 
-                row = tk.Frame(self._ext_profiles_container, bg="#112240", height=38)
+                row = tk.Frame(self._ext_profiles_container, bg=THEME["bg_card"], height=38, highlightbackground=THEME["border_color"], highlightthickness=1)
                 row.pack(fill="x", pady=2, padx=4)
                 row.pack_propagate(False)
                 
                 # Left accent indicator
-                accent = tk.Frame(row, bg="#10b981" if has_ext else "#334155", width=3)
+                accent = tk.Frame(row, bg=THEME["accent_emerald"] if has_ext else THEME["border_color"], width=3)
                 accent.pack(side="left", fill="y", padx=(0, 8))
                 
                 # Left text info directly inside row for maximum performance
                 lbl_title = tk.Label(
                     row, text=name,
                     font=("Segoe UI", 9, "bold"),
-                    fg="#f8fafc", bg="#112240", anchor="w"
+                    fg=THEME["text_primary"], bg=THEME["bg_card"], anchor="w"
                 )
                 lbl_title.pack(side="left")
                 
                 lbl_dir = tk.Label(
                     row, text=f"({p_dir})",
                     font=("Segoe UI", 8),
-                    fg="#64ffda" if has_ext else "#8892b0", bg="#112240", anchor="w"
+                    fg=THEME["text_accent"] if has_ext else THEME["text_muted"], bg=THEME["bg_card"], anchor="w"
                 )
                 lbl_dir.pack(side="left", padx=(6, 0))
                 
                 # Status badge (packed side="right" first)
-                badge_bg = "#064e3b" if has_ext else "#1e293b"
-                badge_fg = "#34d399" if has_ext else "#94a3b8"
+                badge_bg = THEME["badge_active_bg"] if has_ext else THEME["badge_bg"]
+                badge_fg = THEME["badge_active_fg"] if has_ext else THEME["badge_text"]
                 badge_txt = "Active" if has_ext else "Not Added"
                 badge = tk.Label(
                     row, text=badge_txt,
@@ -3168,20 +3226,20 @@ class IVACApp(ctk.CTk):
                     btn_tab = tk.Label(
                         row, text="✓ Profiles-এ যুক্ত",
                         font=("Segoe UI", 8),
-                        bg="#1e293b", fg="#64748b",
+                        bg=THEME["badge_bg"], fg=THEME["badge_text"],
                         padx=8, pady=2, relief="flat"
                     )
                 else:
                     btn_tab = tk.Label(
                         row, text="+ Profiles-এ যুক্ত করুন",
                         font=("Segoe UI", 8, "bold"),
-                        bg="#0284c7", fg="#ffffff",
+                        bg=THEME["accent_blue"], fg="#ffffff",
                         padx=8, pady=2, relief="flat",
                         cursor="hand2"
                     )
                     def _bind_btn_events(widget, p_d=p_dir, p_n=name):
-                        widget.bind("<Enter>", lambda e: widget.configure(bg="#0369a1") if str(widget.cget("cursor")) == "hand2" else None)
-                        widget.bind("<Leave>", lambda e: widget.configure(bg="#0284c7") if str(widget.cget("cursor")) == "hand2" else None)
+                        widget.bind("<Enter>", lambda e: widget.configure(bg=THEME["accent_hover"]) if str(widget.cget("cursor")) == "hand2" else None)
+                        widget.bind("<Leave>", lambda e: widget.configure(bg=THEME["accent_blue"]) if str(widget.cget("cursor")) == "hand2" else None)
                         widget.bind("<Button-1>", lambda e: self._add_existing_chrome_profile_to_tab(p_d, p_n, widget))
                     _bind_btn_events(btn_tab)
                     
@@ -3241,10 +3299,10 @@ class IVACApp(ctk.CTk):
                 
         if not hasattr(self, "_ext_no_search_box") or not self._ext_no_search_box.winfo_exists():
             import tkinter as tk
-            self._ext_no_search_box = tk.Frame(self._ext_profiles_container, bg="#112240", padx=15, pady=15)
+            self._ext_no_search_box = tk.Frame(self._ext_profiles_container, bg=THEME["bg_card"], padx=15, pady=15)
             self._ext_no_search_lbl = tk.Label(
                 self._ext_no_search_box, text="🔍 মিল রয়েছে এমন কোনো Chrome প্রোফাইল পাওয়া যায়নি।",
-                font=("Segoe UI", 10), fg="#64748b", bg="#112240"
+                font=("Segoe UI", 10), fg=THEME["text_muted"], bg=THEME["bg_card"]
             )
             self._ext_no_search_lbl.pack()
             if hasattr(self, "_bind_ext_wheel"):
@@ -3278,8 +3336,8 @@ class IVACApp(ctk.CTk):
         if btn_widget and btn_widget.winfo_exists():
             btn_widget.configure(
                 text="✓ Profiles-এ যুক্ত",
-                bg="#1e293b",
-                fg="#34d399",
+                bg=THEME["badge_bg"],
+                fg=THEME["badge_active_fg"],
                 cursor="arrow"
             )
             btn_widget.unbind("<Button-1>")
@@ -3328,8 +3386,8 @@ class IVACApp(ctk.CTk):
                 if btn_widget and btn_widget.winfo_exists() and str(btn_widget.cget("cursor")) == "hand2":
                     btn_widget.configure(
                         text="✓ Profiles-এ যুক্ত",
-                        bg="#1e293b",
-                        fg="#34d399",
+                        bg=THEME["badge_bg"],
+                        fg=THEME["badge_active_fg"],
                         cursor="arrow"
                     )
                     btn_widget.unbind("<Button-1>")
@@ -3385,7 +3443,7 @@ class IVACApp(ctk.CTk):
                     self._save_config()
                     self._profiles_tab_dirty = True
                     
-                status_msg = f"✅ প্রোফাইল '{p_name}' ({p_dir}) সফলভাবে তৈরি ও ওপেন হয়েছে! প্রোফাইল ট্যাবে যুক্ত হয়েছে।"
+                    status_msg = f"✅ প্রোফাইল '{p_name}' ({p_dir}) সফলভাবে তৈরি ও ওপেন হয়েছে! প্রোফাইল ট্যাবে যুক্ত হয়েছে।"
                 self.lbl_profile_status.configure(
                     text=status_msg,
                     text_color="#10b981"
@@ -3414,33 +3472,33 @@ class IVACApp(ctk.CTk):
             tk.Label(
                 self.bm_list_frame,
                 text="কোনো অতিরিক্ত বুকমার্ক নেই। (উপরে উল্লিখিত ২ টি ডিফল্ট লিংক সবসময় থাকবে)",
-                font=("Segoe UI", 9), fg="#64748b", bg="#0a192f"
+                font=("Segoe UI", 9), fg=THEME["text_muted"], bg=THEME["bg_subcard"]
             ).pack(anchor="w", padx=10, pady=8)
             return
             
         for idx, bm in enumerate(bms):
-            row = tk.Frame(self.bm_list_frame, bg="#0a192f")
+            row = tk.Frame(self.bm_list_frame, bg=THEME["bg_subcard"])
             row.pack(fill="x", padx=10, pady=3)
             
             bm_title = bm.get('name') or bm.get('title', '')
             tk.Label(
                 row, text=f"🔗 {bm_title}:",
-                font=("Segoe UI", 9, "bold"), fg="#ccd6f6", bg="#0a192f"
+                font=("Segoe UI", 9, "bold"), fg=THEME["text_primary"], bg=THEME["bg_subcard"]
             ).pack(side="left")
             
             tk.Label(
                 row, text=bm.get("url", ""),
-                font=("Segoe UI", 9), fg="#94a3b8", bg="#0a192f"
+                font=("Segoe UI", 9), fg=THEME["text_secondary"], bg=THEME["bg_subcard"]
             ).pack(side="left", padx=(5, 10), fill="x", expand=True)
             
             del_btn = tk.Label(
                 row, text="✕", font=("Segoe UI", 9, "bold"),
-                bg="#ef4444", fg="white", padx=8, pady=2,
+                bg=THEME["danger"], fg="white", padx=8, pady=2,
                 cursor="hand2", relief="flat"
             )
             del_btn.pack(side="right")
-            del_btn.bind("<Enter>", lambda e, b=del_btn: b.configure(bg="#dc2626"))
-            del_btn.bind("<Leave>", lambda e, b=del_btn: b.configure(bg="#ef4444"))
+            del_btn.bind("<Enter>", lambda e, b=del_btn: b.configure(bg=THEME["danger_hover"]))
+            del_btn.bind("<Leave>", lambda e, b=del_btn: b.configure(bg=THEME["danger"]))
             del_btn.bind("<Button-1>", lambda e, i=idx: self._delete_custom_bookmark(i))
 
     def _add_custom_bookmark(self):
