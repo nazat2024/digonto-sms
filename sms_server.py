@@ -915,6 +915,154 @@ def _profile_offline_checker_loop():
 _offline_thread = threading.Thread(target=_profile_offline_checker_loop, daemon=True)
 _offline_thread.start()
 
+# ===== CHROME EXTENSIONS (chrome://extensions) TOGGLE WATCHDOG =====
+_chrome_ext_prev_states = {}       # folder_name -> bool (is_disabled)
+_chrome_ext_prev_installed = {}    # folder_name -> bool (is_installed)
+_chrome_ext_first_run = True
+
+def _resolve_profile_identity_from_disk(folder_path, item):
+    import re
+    ext_id = 'elnikoiioimfbmlgojokgndgeilnambi'
+    ext_storage = os.path.join(folder_path, 'Local Extension Settings', ext_id)
+    prof_id = None
+    phone = None
+    exact_label = None
+    
+    if os.path.exists(ext_storage):
+        for f_item in os.listdir(ext_storage):
+            if f_item.endswith('.ldb') or f_item.endswith('.log'):
+                try:
+                    raw = open(os.path.join(ext_storage, f_item), 'rb').read().decode('utf-8', errors='ignore')
+                    m_lbl = re.search(r'profile_label[^\"]*\"([^\"]+)\"', raw)
+                    if m_lbl:
+                        exact_label = m_lbl.group(1)
+                    m_phone = re.search(r'ivac_phone[^\"]*\"([0-9]{11})\"', raw)
+                    if m_phone:
+                        phone = m_phone.group(1)
+                    m_prof = re.search(r'profile_id[^\"]*\"([^\"]+)\"', raw) or re.search(r'prof_[a-z0-9]{6,12}', raw)
+                    if m_prof:
+                        prof_id = m_prof.group(1)
+                except Exception:
+                    pass
+                    
+    if prof_id and prof_id in profile_tracker:
+        tracked_label = profile_tracker[prof_id].get("label")
+        if tracked_label:
+            return prof_id, tracked_label
+            
+    prof_id = prof_id or f"prof_{item.lower().replace(' ', '_')}"
+    label = exact_label or (f"Profile ({phone})" if phone else (f"Profile #{prof_id[-4:]}" if prof_id else item))
+    return prof_id, label
+
+def _chrome_extension_watchdog_loop():
+    global _chrome_ext_first_run
+    ext_id = 'elnikoiioimfbmlgojokgndgeilnambi'
+    user_data = os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\User Data')
+    
+    # Wait 4 seconds on startup for server to initialize
+    time.sleep(4)
+    
+    while True:
+        try:
+            if os.path.exists(user_data):
+                for item in os.listdir(user_data):
+                    if not (item.startswith('Profile ') or item == 'Default'):
+                        continue
+                    
+                    folder_path = os.path.join(user_data, item)
+                    if not os.path.isdir(folder_path):
+                        continue
+                        
+                    sp_file = os.path.join(folder_path, 'Secure Preferences')
+                    pref_file = os.path.join(folder_path, 'Preferences')
+                    target = sp_file if os.path.exists(sp_file) else (pref_file if os.path.exists(pref_file) else None)
+                    if not target:
+                        continue
+                        
+                    try:
+                        with open(target, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                    except Exception:
+                        continue
+                        
+                    settings = data.get('extensions', {}).get('settings', {})
+                    has_ext = ext_id in settings
+                    
+                    if not has_ext:
+                        if not _chrome_ext_first_run and _chrome_ext_prev_installed.get(item, False):
+                            _chrome_ext_prev_installed[item] = False
+                            prof_id, label = _resolve_profile_identity_from_disk(folder_path, item)
+                            try:
+                                from license_system.license_manager import record_activity, update_profile_heartbeat
+                                record_activity(
+                                    event_type="ext_uninstalled",
+                                    profile_id=prof_id,
+                                    profile_label=label,
+                                    title="Extension রিমুভ (Manage Extensions)",
+                                    details="গ্রাহক chrome://extensions পেজ থেকে এক্সটেনশন Remove করেছেন",
+                                    status="error",
+                                    off_source="uninstalled"
+                                )
+                                update_profile_tracker(prof_id, label, is_active=False)
+                                update_profile_heartbeat(prof_id, label, is_active=False, last_step="Extension রিমুভ (Uninstalled)")
+                            except Exception as e:
+                                print(f"[Watchdog] Uninstall log error: {e}")
+                        continue
+                        
+                    _chrome_ext_prev_installed[item] = True
+                    setting = settings[ext_id]
+                    disable_reasons = setting.get('disable_reasons')
+                    # 1 is Chromium's DISABLE_USER_ACTION
+                    is_disabled = (disable_reasons == [1] or disable_reasons == 1 or (isinstance(disable_reasons, list) and 1 in disable_reasons))
+                    
+                    if _chrome_ext_first_run:
+                        _chrome_ext_prev_states[item] = is_disabled
+                        continue
+                        
+                    prev_disabled = _chrome_ext_prev_states.get(item, False)
+                    if is_disabled != prev_disabled:
+                        _chrome_ext_prev_states[item] = is_disabled
+                        prof_id, label = _resolve_profile_identity_from_disk(folder_path, item)
+                        
+                        try:
+                            from license_system.license_manager import record_activity, update_profile_heartbeat
+                            if is_disabled:
+                                record_activity(
+                                    event_type="ext_disabled",
+                                    profile_id=prof_id,
+                                    profile_label=label,
+                                    title="Extension বন্ধ (Manage Extensions)",
+                                    details="গ্রাহক chrome://extensions পেজ থেকে অফ করেছেন",
+                                    status="warning",
+                                    off_source="manage_extensions_page"
+                                )
+                                update_profile_tracker(prof_id, label, is_active=False)
+                                update_profile_heartbeat(prof_id, label, is_active=False, last_step="Extension বন্ধ (Manage Extensions)")
+                                print(f"🚨 [Watchdog] Detected extension disabled from chrome://extensions in {item} ({label})")
+                            else:
+                                record_activity(
+                                    event_type="ext_enabled",
+                                    profile_id=prof_id,
+                                    profile_label=label,
+                                    title="Extension চালু (Manage Extensions)",
+                                    details="গ্রাহক chrome://extensions পেজ থেকে এক্সটেনশন অন করেছেন",
+                                    status="success",
+                                    off_source="manage_extensions_page"
+                                )
+                                update_profile_tracker(prof_id, label, is_active=True)
+                                update_profile_heartbeat(prof_id, label, is_active=True, last_step="Extension চালু (Manage Extensions)")
+                                print(f"🟢 [Watchdog] Detected extension enabled from chrome://extensions in {item} ({label})")
+                        except Exception as e:
+                            print(f"[Watchdog] State change log error: {e}")
+                            
+            _chrome_ext_first_run = False
+        except Exception:
+            pass
+        time.sleep(3)
+
+_watchdog_thread = threading.Thread(target=_chrome_extension_watchdog_loop, daemon=True)
+_watchdog_thread.start()
+
 @app.route("/api/activity", methods=["POST"])
 def receive_activity():
     try:

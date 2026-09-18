@@ -547,71 +547,76 @@ if (chrome.tabs) {
 }
 checkManageExtensionsTabs();
 
-// Register uninstall URL to detect if extension is removed/deleted from Chrome
-try {
-    chrome.storage.local.get(['profile_id', 'profile_label'], (st) => {
-        const pId = st.profile_id || 'prof_default';
-        const pLabel = encodeURIComponent(st.profile_label || `Profile #${pId.slice(-4)}`);
-        if (chrome.runtime.setUninstallURL) {
-            chrome.runtime.setUninstallURL(`http://127.0.0.1:5000/api/activity/uninstall?profile_id=${pId}&profile_label=${pLabel}`);
-        }
-    });
-} catch(e) {}
+// Synchronous in-memory identity cache (ensures instant access during onSuspend before Chrome kills worker)
+let _cachedProfileId = 'prof_default';
+let _cachedProfileLabel = 'Profile';
+let _cachedPhone = '';
 
-// Watch extension enabled/disabled state in background exclusively (prevents multi-tab duplicate logs)
+chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone'], (st) => {
+    if (st.profile_id) _cachedProfileId = st.profile_id;
+    if (st.ivac_phone) _cachedPhone = st.ivac_phone;
+    if (st.profile_label) _cachedProfileLabel = st.profile_label;
+    else if (st.ivac_phone) _cachedProfileLabel = `Profile (${st.ivac_phone})`;
+    
+    // Register uninstall URL to detect if extension is removed/deleted from Chrome
+    if (chrome.runtime.setUninstallURL) {
+        const pLabel = encodeURIComponent(_cachedProfileLabel);
+        chrome.runtime.setUninstallURL(`http://127.0.0.1:5000/api/activity/uninstall?profile_id=${_cachedProfileId}&profile_label=${pLabel}`);
+    }
+});
+
+// Keep memory cache fresh and watch extension enabled/disabled state
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.ext_enabled) {
-        const isEnabled = changes.ext_enabled.newValue !== false;
-        chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone'], (st) => {
-            const profileId = st.profile_id || 'prof_default';
-            const phone = st.ivac_phone || '';
-            const profileLabel = phone ? `Profile (${phone})` : (st.profile_label || `Profile #${profileId.slice(-4)}`);
-            
+    if (area === 'local') {
+        if (changes.profile_id && changes.profile_id.newValue) _cachedProfileId = changes.profile_id.newValue;
+        if (changes.profile_label && changes.profile_label.newValue) _cachedProfileLabel = changes.profile_label.newValue;
+        if (changes.ivac_phone && changes.ivac_phone.newValue) {
+            _cachedPhone = changes.ivac_phone.newValue;
+            _cachedProfileLabel = `Profile (${_cachedPhone})`;
+        }
+        
+        if (changes.ext_enabled) {
+            const isEnabled = changes.ext_enabled.newValue !== false;
             fetch('http://127.0.0.1:5000/api/activity', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     event_type: isEnabled ? 'ext_enabled' : 'ext_disabled',
                     off_source: 'popup',
-                    profile_id: profileId,
-                    profile_label: profileLabel,
+                    profile_id: _cachedProfileId,
+                    profile_label: _cachedProfileLabel,
                     title: isEnabled ? 'Extension চালু (Active)' : 'Extension বন্ধ (Popup)',
                     details: isEnabled ? 'গ্রাহক এক্সটেনশন অন করেছেন' : 'গ্রাহক এক্সটেনশন পপআপ থেকে অফ করেছেন',
                     amount: 0,
                     status: isEnabled ? 'success' : 'warning',
-                    metadata: { phone: phone }
+                    metadata: { phone: _cachedPhone }
                 })
             }).catch(() => {});
-        });
+        }
     }
 });
 
-// Watch extension suspension / disable in background
+// Watch extension suspension / disable in background (synchronous keepalive beacon)
 if (chrome.runtime.onSuspend) {
     chrome.runtime.onSuspend.addListener(() => {
         try {
-            chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone'], (st) => {
-                const profileId = st.profile_id || 'prof_default';
-                const phone = st.ivac_phone || '';
-                const profileLabel = phone ? `Profile (${phone})` : (st.profile_label || `Profile #${profileId.slice(-4)}`);
-                const offSource = isManageExtensionsOpen ? 'manage_extensions_page' : 'browser_unload';
-                
-                // Using keepalive: true ensures the HTTP POST is transmitted even as Chrome destroys the worker
-                fetch('http://127.0.0.1:5000/api/activity', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    keepalive: true,
-                    body: JSON.stringify({
-                        event_type: 'ext_disabled',
-                        off_source: offSource,
-                        profile_id: profileId,
-                        profile_label: profileLabel,
-                        title: isManageExtensionsOpen ? 'Extension বন্ধ (Manage Extensions)' : 'Extension আনলোড (Browser Close)',
-                        details: isManageExtensionsOpen ? 'গ্রাহক chrome://extensions পেজ থেকে অফ করেছেন' : 'ব্রাউজার বন্ধ করা হয়েছে',
-                        status: 'warning'
-                    })
-                }).catch(() => {});
+            const offSource = isManageExtensionsOpen ? 'manage_extensions_page' : 'browser_unload';
+            const payload = JSON.stringify({
+                event_type: 'ext_disabled',
+                off_source: offSource,
+                profile_id: _cachedProfileId,
+                profile_label: _cachedProfileLabel,
+                title: isManageExtensionsOpen ? 'Extension বন্ধ (Manage Extensions)' : 'Extension আনলোড (Browser Close)',
+                details: isManageExtensionsOpen ? 'গ্রাহক chrome://extensions পেজ থেকে অফ করেছেন' : 'ব্রাউজার বন্ধ বা এক্সটেনশন আনলোড হয়েছে',
+                status: 'warning'
             });
+            // Synchronous keepalive fetch executes before process teardown
+            fetch('http://127.0.0.1:5000/api/activity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                keepalive: true,
+                body: payload
+            }).catch(() => {});
         } catch(e) {}
     });
 }
