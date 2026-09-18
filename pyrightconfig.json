@@ -1,0 +1,44 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "python_env",
+    "Output",
+    "build",
+    "dist",
+    "scratch",
+    "tools",
+    "win7_fix",
+    "interceptor.py",
+    "old_gui_app.py",
+    "c10b748_gui_app.py",
+    "IvacLicenseManager.tsx"
+  ],
+  "extraPaths": [
+    "d:/Ivac Auto Fill",
+    "d:/Ivac Auto Fill/license_system",
+    "d:/Ivac Auto Fill/python_env/Lib/site-packages",
+    "C:/Users/HP/AppData/Local/Programs/Python/Python311/Lib/site-packages"
+  ],
+  "pythonPath": "C:/Users/HP/AppData/Local/Programs/Python/Python311/python.exe",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "off",
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportOptionalParameter": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportFunctionMemberAccess": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOptionalSubscript": "none",
+  "reportArgumentType": "none",
+  "reportCallIssue": "none",
+  "reportAssignmentType": "none",
+  "reportIndexIssue": "none",
+  "reportOperatorIssue": "none",
+  "reportMissingModuleSource": "none"
+}

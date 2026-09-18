@@ -48,6 +48,8 @@ class OTPStore:
     def __init__(self):
         self._store: Dict[str, dict] = {} # latest per phone_source
         self._history: Dict[str, List[dict]] = {} # history per phone: [newest, older, ...]
+        self._email_otps: Dict[str, dict] = {}
+        self._latest_email_otp: Optional[dict] = None
         self._lock = threading.Lock()
 
     def _check_expiry(self, otp_dict: dict) -> dict:
@@ -62,7 +64,7 @@ class OTPStore:
                 otp_dict["used"] = True
         return otp_dict
 
-    def add_otp(self, phone: str, digits: List[int], raw_sms: str = "", source: str = None):
+    def add_otp(self, phone: str, digits: List[int], raw_sms: str = "", source: Optional[str] = None):
         with self._lock:
             clean_phone = (phone or "").strip()
             if not clean_phone:
@@ -112,7 +114,7 @@ class OTPStore:
             print(f"✅ OTP সংরক্ষিত: {clean_phone} [{source or '?'}] → {otp_data['display']}")
             return otp_data
 
-    def get_otp(self, phone: str, source: str = None, unused_only: bool = False) -> Optional[dict]:
+    def get_otp(self, phone: str, source: Optional[str] = None, unused_only: bool = False) -> Optional[dict]:
         with self._lock:
             clean_phone = (phone or "").strip()
             if source:
@@ -138,7 +140,7 @@ class OTPStore:
                     
             return None
 
-    def mark_used(self, phone: str, source: str = None):
+    def mark_used(self, phone: str, source: Optional[str] = None):
         with self._lock:
             clean_phone = (phone or "").strip()
             # If it's a payment OTP (R, B, N), preserve 5s multi-tab window (don't force used if age < 5.0s)
@@ -185,7 +187,7 @@ class OTPStore:
             result.sort(key=lambda x: x.get("iso_time", ""), reverse=True)
             return result
 
-    def clear(self, phone: str = None, source: str = None):
+    def clear(self, phone: Optional[str] = None, source: Optional[str] = None):
         with self._lock:
             if phone:
                 clean_phone = phone.strip()
@@ -196,6 +198,11 @@ class OTPStore:
             else:
                 self._store.clear()
                 self._history.clear()
+                self._email_otps.clear()
+                self._latest_email_otp = None
+
+    def clear_all(self):
+        self.clear()
 
 otp_store = OTPStore()
 

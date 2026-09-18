@@ -532,6 +532,7 @@ def update_chrome_desktop_shortcuts(safe_ext_dir: str) -> int:
             os.remove(vbs_file)
     except Exception as e:
         print(f"Warning updating desktop shortcuts: {e}")
+    return 0
 
 _profiles_status_cache = {"timestamp": 0.0, "data": []}
 

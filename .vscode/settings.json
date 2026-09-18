@@ -1,0 +1,31 @@
+{
+  "python.defaultInterpreterPath": "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "none",
+    "reportMissingTypeStubs": "none",
+    "reportGeneralTypeIssues": "none",
+    "reportOptionalParameter": "none",
+    "reportAttributeAccessIssue": "none",
+    "reportFunctionMemberAccess": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportOptionalSubscript": "none",
+    "reportArgumentType": "none",
+    "reportCallIssue": "none",
+    "reportAssignmentType": "none",
+    "reportIndexIssue": "none",
+    "reportOperatorIssue": "none"
+  },
+  "python.analysis.extraPaths": [
+    "d:\\Ivac Auto Fill",
+    "d:\\Ivac Auto Fill\\license_system",
+    "d:\\Ivac Auto Fill\\python_env\\Lib\\site-packages",
+    "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages"
+  ],
+  "python.autoComplete.extraPaths": [
+    "d:\\Ivac Auto Fill",
+    "d:\\Ivac Auto Fill\\license_system",
+    "d:\\Ivac Auto Fill\\python_env\\Lib\\site-packages",
+    "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages"
+  ]
+}
