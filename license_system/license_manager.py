@@ -941,6 +941,8 @@ def update_turso_payment_async(payment_id: str, stage: str, status: str = None, 
 
 
 
+_activity_dedup_cache = {}
+
 def record_activity(event_type: str, profile_id: str = "default", profile_label: str = "Profile", title: str = "", details: str = "", amount: float = 0, status: str = "info", metadata: dict = None, off_source: str = "popup"):
     """Records manual off events into Turso Database (0 Firebase writes) and broadcasts live via MQTT"""
     # 1. Ignore normal browser close or background unload (prevent false positives!)
@@ -958,6 +960,16 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
     # If it's not a manual on/off toggle and not a payment milestone, skip database insertion completely
     if not (is_manual_toggle or is_payment):
         return True
+
+    # 4. Strict Deduplication Guard:
+    # Discards duplicate/identical toggle events for the same profile within 4.0 seconds
+    if is_manual_toggle:
+        now_ts = time.time()
+        dedup_key = f"{profile_id}_{event_type}"
+        last_ts = _activity_dedup_cache.get(dedup_key, 0)
+        if (now_ts - last_ts) < 4.0:
+            return True
+        _activity_dedup_cache[dedup_key] = now_ts
 
     license_key = get_active_license_key_fast()
     if not license_key:

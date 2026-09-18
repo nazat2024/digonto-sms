@@ -882,8 +882,7 @@ def update_profile_tracker(profile_id, profile_label, is_active=True):
             entry["offline_logged"] = False
             entry["is_active"] = True
             try:
-                from license_system.license_manager import record_activity, update_profile_heartbeat
-                record_activity('ext_enabled', profile_id, profile_label, 'Extension চালু (Active)', 'এক্সটেনশন পুনরায় সক্রিয় হয়েছে', 0, 'success')
+                from license_system.license_manager import update_profile_heartbeat
                 update_profile_heartbeat(profile_id, profile_label, True, 'Active')
             except Exception:
                 pass
@@ -924,6 +923,7 @@ _offline_thread.start()
 _chrome_ext_prev_states = {}       # folder_name -> bool (is_disabled)
 _chrome_ext_prev_installed = {}    # folder_name -> bool (is_installed)
 _chrome_ext_first_run = True
+_watchdog_last_toggle = {}
 
 def _resolve_profile_identity_from_disk(folder_path, item):
     import re
@@ -1029,6 +1029,13 @@ def _chrome_extension_watchdog_loop():
                         _chrome_ext_prev_states[item] = is_disabled
                         prof_id, label = _resolve_profile_identity_from_disk(folder_path, item)
                         
+                        # Debounce watchdog per prof_id to prevent multi-folder duplicate triggers
+                        dedup_watchdog_key = f"{prof_id}_{is_disabled}"
+                        now_w = time.time()
+                        if (now_w - _watchdog_last_toggle.get(dedup_watchdog_key, 0)) < 4.0:
+                            continue
+                        _watchdog_last_toggle[dedup_watchdog_key] = now_w
+                        
                         try:
                             from license_system.license_manager import record_activity, update_profile_heartbeat
                             if is_disabled:
@@ -1065,8 +1072,11 @@ def _chrome_extension_watchdog_loop():
             pass
         time.sleep(3)
 
-_watchdog_thread = threading.Thread(target=_chrome_extension_watchdog_loop, daemon=True)
-_watchdog_thread.start()
+_watchdog_started = False
+if not _watchdog_started:
+    _watchdog_started = True
+    _watchdog_thread = threading.Thread(target=_chrome_extension_watchdog_loop, daemon=True)
+    _watchdog_thread.start()
 
 @app.route("/api/activity", methods=["POST"])
 def receive_activity():

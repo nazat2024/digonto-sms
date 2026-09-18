@@ -859,31 +859,6 @@ document.addEventListener('DOMContentLoaded', () => {
     extToggle.addEventListener('change', (e) => {
         const isOn = e.target.checked;
         chrome.storage.local.set({ ext_enabled: isOn });
-
-        // Direct instant notification to local server
-        chrome.storage.local.get(['profile_id', 'profile_label', 'ivac_phone'], (st) => {
-            const pId = (st && st.profile_id) || currentProfileDir || 'prof_default';
-            let pLabel = (st && st.profile_label) || currentProfileName;
-            const phone = currentPhone || (st && st.ivac_phone) || '';
-            if (!pLabel) {
-                pLabel = phone ? `Profile (${phone})` : 'Profile';
-            }
-            fetch('http://127.0.0.1:5000/api/activity', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    event_type: isOn ? 'ext_enabled' : 'ext_disabled',
-                    off_source: 'popup',
-                    profile_id: pId,
-                    profile_label: pLabel,
-                    title: isOn ? 'Extension চালু (Popup)' : 'Extension বন্ধ (Popup)',
-                    details: isOn ? 'গ্রাহক এক্সটেনশন পপআপ থেকে অন করেছেন' : 'গ্রাহক এক্সটেনশন পপআপ থেকে অফ করেছেন',
-                    amount: 0,
-                    status: isOn ? 'success' : 'warning',
-                    metadata: { phone: phone }
-                })
-            }).catch(() => {});
-        });
         
         if (!isOn) {
             webfileEnabled = false;

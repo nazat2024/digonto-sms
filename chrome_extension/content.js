@@ -136,9 +136,7 @@ function initProfileIdentity() {
             if (!sessionStorage.getItem(sessKey)) {
                 sessionStorage.setItem(sessKey, 'true');
                 if (st.ext_enabled !== false) {
-                    emitActivity('ext_enabled', 'Extension সক্রিয় (Active)', 'ব্রাউজার প্রোফাইল ও এক্সটেনশন চালু আছে', 0, 'success');
-                } else {
-                    emitActivity('ext_disabled', 'Extension বন্ধ (Off)', 'গ্রাহক এই প্রোফাইলে এক্সটেনশন অফ রেখেছেন', 0, 'warning');
+                    emitActivity('tab_presence', 'Extension সক্রিয় (Active)', 'ব্রাউজার প্রোফাইল ও এক্সটেনশন চালু আছে', 0, 'success', { off_source: 'tab_presence' });
                 }
             }
             // Profile activity heartbeat is managed centrally by background.js (sendProfileHeartbeat)
