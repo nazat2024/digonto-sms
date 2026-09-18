@@ -536,18 +536,54 @@ def update_chrome_desktop_shortcuts(safe_ext_dir: str) -> int:
 
 _profiles_status_cache = {"timestamp": 0.0, "data": []}
 
+def get_cached_profiles_extension_status() -> list:
+    """Returns cached extension profiles status immediately (0ms) without triggering any disk scan."""
+    global _profiles_status_cache
+    if _profiles_status_cache["data"]:
+        return list(_profiles_status_cache["data"])
+    try:
+        user_data_dir = get_chrome_user_data_dir()
+        if user_data_dir:
+            cache_file = os.path.join(user_data_dir, "ivac_ext_status_cache.json")
+            if os.path.exists(cache_file):
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list) and data:
+                    _profiles_status_cache["data"] = data
+                    _profiles_status_cache["timestamp"] = time.time()
+                    return list(data)
+    except Exception:
+        pass
+    return []
+
 def invalidate_profiles_status_cache():
     global _profiles_status_cache
     _profiles_status_cache["timestamp"] = 0.0
     _profiles_status_cache["data"] = []
+    try:
+        user_data_dir = get_chrome_user_data_dir()
+        if user_data_dir:
+            cache_file = os.path.join(user_data_dir, "ivac_ext_status_cache.json")
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+    except Exception:
+        pass
 
 def get_profiles_extension_status(force_refresh: bool = False) -> list:
-    """Returns status of Digonto QuickFill extension across all existing Chrome profiles with high-speed parallel scanning."""
+    """Returns status of Digonto QuickFill extension across all existing Chrome profiles with high-speed parallel scanning and persistent caching."""
     global _profiles_status_cache
     now = time.time()
-    if not force_refresh and (now - _profiles_status_cache["timestamp"] < 10.0) and _profiles_status_cache["data"]:
+    
+    # 1. Memory cache (instant return, 10 minutes TTL)
+    if not force_refresh and (now - _profiles_status_cache["timestamp"] < 600.0) and _profiles_status_cache["data"]:
         return list(_profiles_status_cache["data"])
         
+    # 2. Disk cache if memory cache is empty
+    if not force_refresh and not _profiles_status_cache["data"]:
+        cached = get_cached_profiles_extension_status()
+        if cached:
+            return cached
+
     user_data_dir = get_chrome_user_data_dir()
     if not os.path.exists(user_data_dir):
         return []
@@ -617,6 +653,16 @@ def get_profiles_extension_status(force_refresh: bool = False) -> list:
         
     _profiles_status_cache["timestamp"] = time.time()
     _profiles_status_cache["data"] = results
+    
+    # Save to disk cache for instantaneous cold-start loads
+    try:
+        if user_data_dir and results:
+            cache_file = os.path.join(user_data_dir, "ivac_ext_status_cache.json")
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(results, f)
+    except Exception:
+        pass
+        
     return results
 
 def update_extension_in_all_profiles(base_dir: str = None) -> dict:

@@ -929,10 +929,11 @@ class IVACApp(ctk.CTk):
         self.tab_settings = self.tabview.add("⚙️ Settings")
         self.tab_license = self.tabview.add("🔑 License")
         
-        # Auto sync hidden extension directory asynchronously (0ms UI impact)
+        # Auto sync hidden extension directory asynchronously and pre-scan profiles (0ms UI impact)
         def _sync_ext():
             try:
                 cpm.get_safe_extension_dir(BASE_DIR)
+                cpm.get_profiles_extension_status()
             except Exception as e:
                 print(f"Extension startup sync error: {e}")
         threading.Thread(target=_sync_ext, daemon=True).start()
@@ -959,14 +960,15 @@ class IVACApp(ctk.CTk):
 
         # Background prewarm tabs sequentially during idle time (true 0-second switch for Extension & Profiles!)
         def _prewarm_bg():
-            # Extension tab first so it is immediately loaded and ready when user clicks
-            self.after(50, lambda: self._prewarm_tab("🧩 Extension"))
-            self.after(110, lambda: self._prewarm_tab("👥 Profiles"))
-            self.after(180, lambda: self._prewarm_tab("📨 Recent OTPs"))
-            self.after(260, lambda: self._prewarm_tab("💳 Payment"))
-            self.after(330, lambda: self._prewarm_tab("⚙️ Settings"))
+            # Extension tab first so it is immediately loaded and ready when user clicks (0-delay!)
+            self.after(15, lambda: self._prewarm_tab("🧩 Extension"))
+            self.after(45, lambda: self._prewarm_tab("👥 Profiles"))
+            self.after(80, lambda: self._prewarm_tab("📨 Recent OTPs"))
+            self.after(120, lambda: self._prewarm_tab("💳 Payment"))
+            self.after(160, lambda: self._prewarm_tab("⚙️ Settings"))
+            self.after(200, lambda: self._prewarm_tab("🔑 License"))
 
-        self.after(60, _prewarm_bg)
+        self.after(20, _prewarm_bg)
 
     def _prewarm_tab(self, tab_name: str):
         if not hasattr(self, '_loaded_tabs'):
@@ -2768,13 +2770,15 @@ class IVACApp(ctk.CTk):
         self._last_profiles_hash = None
         self._device_rows = {}
         self._profiles_tab_dirty = True
-        self._ext_profiles_dirty = True
+        self._ext_profiles_dirty = False
         self._ext_no_search_box = None
         self._ext_profile_row_items = []
         self._ext_profile_row_widgets = {}
 
-        # Prewarm Home immediately in background (20ms) so switching back is instant and never empty
-        self.after(20, lambda: self._prewarm_tab("🏠 Home"))
+        # Prewarm core tabs sequentially in background so switching is 0-delay with new theme!
+        self.after(15, lambda: self._prewarm_tab("🏠 Home"))
+        self.after(35, lambda: self._prewarm_tab("🧩 Extension"))
+        self.after(65, lambda: self._prewarm_tab("👥 Profiles"))
 
     def _reset_settings_to_default(self):
         self._set_font_scale(1.0)
@@ -3001,7 +3005,7 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
             text_color=THEME["btn_secondary_text"], height=26, width=100,
-            command=lambda: (cpm.invalidate_profiles_status_cache() if hasattr(cpm, "invalidate_profiles_status_cache") else None, self._refresh_extension_profiles_list())
+            command=lambda: (cpm.invalidate_profiles_status_cache() if hasattr(cpm, "invalidate_profiles_status_cache") else None, self._refresh_extension_profiles_list(force=True))
         ).pack(side="right")
         
         self.btn_add_all_profiles = ctk.CTkButton(
@@ -3033,7 +3037,10 @@ class IVACApp(ctk.CTk):
         scroll_wrap = tk.Frame(update_card, bg=THEME["bg_subcard"], highlightbackground=THEME["border_color"], highlightthickness=1)
         scroll_wrap.pack(fill="x", padx=15, pady=(0, 15))
         
-        self._ext_canvas = tk.Canvas(scroll_wrap, bg=THEME["bg_subcard"], highlightthickness=0, height=120)
+        cached_list = getattr(self, "_last_ext_statuses", []) or (cpm.get_cached_profiles_extension_status() if hasattr(cpm, "get_cached_profiles_extension_status") else [])
+        cached_count = len(cached_list) if cached_list else 0
+        init_canvas_h = min(max(cached_count * 40 + 4, 86), 380) if cached_count > 0 else 240
+        self._ext_canvas = tk.Canvas(scroll_wrap, bg=THEME["bg_subcard"], highlightthickness=0, height=init_canvas_h)
         self._ext_scrollbar = tk.Scrollbar(scroll_wrap, orient="vertical", command=self._ext_canvas.yview)
         self._ext_canvas.configure(yscrollcommand=self._ext_scrollbar.set)
         
@@ -3138,7 +3145,7 @@ class IVACApp(ctk.CTk):
         
         self._refresh_extension_profiles_list()
 
-    def _refresh_extension_profiles_list(self):
+    def _refresh_extension_profiles_list(self, force: bool = False):
         if not hasattr(self, "_ext_profiles_container") or not self._ext_profiles_container.winfo_exists():
             return
             
@@ -3146,6 +3153,13 @@ class IVACApp(ctk.CTk):
             import tkinter as tk
             if not hasattr(self, "_ext_profiles_container") or not self._ext_profiles_container.winfo_exists():
                 return
+            if statuses is None:
+                return
+
+            # If identical status is already rendered in the UI, do not wipe/rebuild (zero flicker!)
+            if getattr(self, "_last_ext_statuses", None) == statuses and len(getattr(self, "_ext_profile_row_items", [])) > 0:
+                return
+
             for w in self._ext_profiles_container.winfo_children():
                 w.destroy()
                 
@@ -3273,8 +3287,22 @@ class IVACApp(ctk.CTk):
 
             if hasattr(self, "_on_ext_configure"):
                 self._on_ext_configure()
-                
-        self.run_in_background(cpm.get_profiles_extension_status, _update_ui)
+
+        # 1. Zero-delay Synchronous Render from cache if available (instant 0ms display!)
+        cached_data = None
+        if hasattr(cpm, "get_cached_profiles_extension_status"):
+            cached_data = cpm.get_cached_profiles_extension_status()
+        if not cached_data and getattr(self, "_last_ext_statuses", None):
+            cached_data = self._last_ext_statuses
+
+        if cached_data and not force:
+            _update_ui(cached_data)
+
+        # 2. Silent background sync to keep data 100% up-to-date
+        def _bg_scan():
+            return cpm.get_profiles_extension_status(force_refresh=force)
+
+        self.run_in_background(_bg_scan, _update_ui)
 
     def _filter_extension_profiles_search(self):
         if not hasattr(self, "_ext_profile_row_items") or not self._ext_profile_row_items:
