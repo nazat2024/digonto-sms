@@ -975,7 +975,9 @@ class IVACApp(ctk.CTk):
             return
         self._loaded_tabs.add(tab_name)
         try:
-            if tab_name == "👥 Profiles":
+            if tab_name == "🏠 Home":
+                self._build_home_tab()
+            elif tab_name == "👥 Profiles":
                 self._build_profiles_tab()
             elif tab_name == "📨 Recent OTPs":
                 self._build_otps_tab()
@@ -1021,7 +1023,7 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Cloud SMS Sync
-        cloud_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
+        cloud_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         cloud_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
@@ -1039,7 +1041,7 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=12), text_color=THEME["text_secondary"], justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 5))
         
-        code_frame = ctk.CTkFrame(cloud_card, fg_color=THEME["bg_subcard"], corner_radius=5)
+        code_frame = ctk.CTkFrame(cloud_card, fg_color=THEME["bg_subcard"], corner_radius=6, border_width=1, border_color=THEME["border_color"])
         code_frame.pack(anchor="w", padx=15, pady=(5, 15))
         
         ctk.CTkLabel(
@@ -1049,7 +1051,7 @@ class IVACApp(ctk.CTk):
         ).pack(padx=15, pady=10)
         
         # Connected Devices Card (Expanded with full height)
-        device_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
+        device_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         device_card.pack(fill="both", expand=True, padx=5, pady=(0, 5))
         
         device_header = ctk.CTkFrame(device_card, fg_color="transparent")
@@ -2770,6 +2772,9 @@ class IVACApp(ctk.CTk):
         self._ext_no_search_box = None
         self._ext_profile_row_items = []
         self._ext_profile_row_widgets = {}
+
+        # Prewarm Home immediately in background (20ms) so switching back is instant and never empty
+        self.after(20, lambda: self._prewarm_tab("🏠 Home"))
 
     def _reset_settings_to_default(self):
         self._set_font_scale(1.0)
