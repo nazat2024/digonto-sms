@@ -1527,36 +1527,38 @@ class IVACApp(ctk.CTk):
             threading.Thread(target=update_task, daemon=True).start()
 
     def _add_device_row_incremental(self, dev_data, dev_id, display_text, color, sim_text, is_active, dev_name):
-        row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=44, border_width=1, border_color=THEME["border_color"])
-        row.pack(fill="x", pady=3, padx=2)
+        row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=34, border_width=1, border_color=THEME["border_color"])
+        row.pack(fill="x", pady=2, padx=2)
         row.pack_propagate(False)
         
         name_label = ctk.CTkLabel(
             row, text=display_text,
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=color
+            text_color=color,
+            height=18
         )
-        name_label.pack(side="left", padx=12)
+        name_label.pack(side="left", padx=10)
         
         switch = ctk.CTkSwitch(
-            row, text="", width=40, height=20, switch_width=36, switch_height=18,
+            row, text="", width=38, height=18, switch_width=32, switch_height=16,
             command=lambda: self._toggle_device_status(dev_id, switch.get())
         )
         if is_active: switch.select()
         else: switch.deselect()
-        switch.pack(side="right", padx=(6, 12))
+        switch.pack(side="right", padx=(5, 10))
         
         ctk.CTkButton(
-            row, text="✏️ Edit Name", width=55, height=24,
+            row, text="✏️ Edit Name", width=52, height=20,
             font=ctk.CTkFont(size=10, weight="bold"), fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
             text_color=THEME["btn_secondary_text"],
             command=lambda: self._rename_device(dev_id)
-        ).pack(side="right", padx=6)
+        ).pack(side="right", padx=5)
         
         sim_label = ctk.CTkLabel(
             row, text=f"SIMs: {sim_text}  ",
-            font=ctk.CTkFont(size=11),
-            text_color=THEME["text_secondary"]
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=THEME["text_primary"],
+            height=18
         )
         sim_label.pack(side="right", padx=10)
         
