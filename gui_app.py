@@ -116,40 +116,40 @@ THEMES = {
         "tag": "Polished & Clean",
         "desc": "অত্যন্ত ফ্রেশ, পলিশড, ক্রিস্প ও সুন্দর কর্পোরেট লাইট লুক",
         "appearance_mode": "light",
-        "bg_main": "#f1f5f9",          # Soft slate-100 background
-        "bg_card": "#ffffff",          # Pure white crisp card
-        "bg_row": "#f8fafc",           # Slate-50 crisp row
-        "bg_subcard": "#f1f5f9",       # Slate-100 inner container
-        "header_bg": "#ffffff",        # Clean white header
-        "footer_bg": "#f8fafc",        # Soft light footer
-        "tab_bg": "#e2e8f0",           # Clean track
-        "tab_selected": "#2563eb",     # Royal Tech Blue
-        "tab_unselected": "#e2e8f0",   # Soft background
+        "bg_main": "#e6ecf4",          # Refined slate-tinted canvas with rich depth & contrast
+        "bg_card": "#ffffff",          # Crisp, pure white elevated card
+        "bg_row": "#f8fafc",           # Clean crisp row
+        "bg_subcard": "#edf2f7",       # Soft inset container with clean contrast
+        "header_bg": "#ffffff",        # Clean crisp white header
+        "footer_bg": "#e2e8f0",        # Distinct light footer
+        "tab_bg": "#cbd5e1",           # Defined track for tab selector
+        "tab_selected": "#1d4ed8",     # Royal Tech Blue
+        "tab_unselected": "#e2e8f0",   # Clean slate button
         "tab_text_selected": "#ffffff",
-        "tab_text_unselected": "#1e293b", # Dark legible text
+        "tab_text_unselected": "#0f172a", # Dark legible text
         "text_primary": "#0f172a",     # Slate-900 (ultra crisp, dark)
-        "text_secondary": "#475569",   # Slate-600 (clean body)
+        "text_secondary": "#334155",   # Slate-700 (clean legible body)
         "text_muted": "#64748b",       # Slate-500
-        "text_accent": "#2563eb",      # Royal Blue accent (sharp on white!)
+        "text_accent": "#1d4ed8",      # Royal Blue accent (sharp on white!)
         "accent_emerald": "#059669",   # Emerald 600
         "accent_hover": "#047857",     # Emerald 700
-        "accent_blue": "#2563eb",      # Blue 600
-        "border_color": "#cbd5e1",     # Crisp 1px card border
+        "accent_blue": "#1d4ed8",      # Royal Blue 700
+        "border_color": "#94a3b8",     # Defined Slate-400 border (clean, visible, high-contrast!)
         "entry_bg": "#ffffff",         # Pure white entry
-        "entry_border": "#94a3b8",     # Defined input border
+        "entry_border": "#64748b",     # Distinct Slate-500 input border
         "entry_text": "#0f172a",
-        "badge_bg": "#e0f2fe",         # Soft light blue
-        "badge_text": "#0369a1",       # Deep blue
+        "badge_bg": "#dbeafe",         # Soft blue badge
+        "badge_text": "#1e40af",       # Deep blue
         "badge_active_bg": "#d1fae5",  # Soft emerald
         "badge_active_fg": "#047857",  # Dark emerald
-        "btn_secondary": "#f1f5f9",
-        "btn_secondary_hover": "#e2e8f0",
+        "btn_secondary": "#e2e8f0",
+        "btn_secondary_hover": "#cbd5e1",
         "btn_secondary_text": "#0f172a",
-        "btn_edit_bg": "#2563eb",
-        "btn_edit_hover": "#1d4ed8",
-        "danger": "#ef4444",
-        "danger_hover": "#dc2626",
-        "swatch": ["#f1f5f9", "#ffffff", "#2563eb", "#059669"]
+        "btn_edit_bg": "#1d4ed8",
+        "btn_edit_hover": "#1e40af",
+        "danger": "#dc2626",
+        "danger_hover": "#b91c1c",
+        "swatch": ["#e6ecf4", "#ffffff", "#1d4ed8", "#059669"]
     },
     "obsidian_minimal": {
         "id": "obsidian_minimal",
@@ -910,7 +910,7 @@ class IVACApp(ctk.CTk):
         self.tabview = ctk.CTkTabview(
             self,
             corner_radius=8,
-            fg_color=THEME["bg_card"],
+            fg_color="transparent",
             segmented_button_fg_color=THEME["tab_bg"],
             segmented_button_selected_color=THEME["tab_selected"],
             segmented_button_unselected_color=THEME["tab_unselected"],
@@ -1088,7 +1088,7 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Recent OTPs Card
-        otp_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
+        otp_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         otp_card.pack(fill="both", expand=True, padx=5, pady=5)
         
         otp_header = ctk.CTkFrame(otp_card, fg_color="transparent")
@@ -1345,7 +1345,7 @@ class IVACApp(ctk.CTk):
         group_container.pack(fill="x", pady=2)
         
         # Main latest row
-        main_row = ctk.CTkFrame(group_container, fg_color=THEME["bg_row"], corner_radius=6, height=44)
+        main_row = ctk.CTkFrame(group_container, fg_color=THEME["bg_row"], corner_radius=6, height=44, border_width=1, border_color=THEME["border_color"])
         main_row.pack(fill="x")
         main_row.pack_propagate(False)
         
@@ -1527,7 +1527,7 @@ class IVACApp(ctk.CTk):
             threading.Thread(target=update_task, daemon=True).start()
 
     def _add_device_row_incremental(self, dev_data, dev_id, display_text, color, sim_text, is_active, dev_name):
-        row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=30)
+        row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=30, border_width=1, border_color=THEME["border_color"])
         row.pack(fill="x", pady=2)
         row.pack_propagate(False)
         
@@ -2343,7 +2343,7 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Rocket Config (Moved from Extension Tab) -> Now Payment Accounts
-        rocket_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
+        rocket_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         rocket_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
@@ -2407,7 +2407,7 @@ class IVACApp(ctk.CTk):
             command=self._add_rocket_account
         ).pack(side="left")
         
-        self.rocket_list_frame = SmoothScrollableFrame(rocket_card, height=100, fg_color=THEME["bg_subcard"], scroll_speed=55)
+        self.rocket_list_frame = SmoothScrollableFrame(rocket_card, height=100, fg_color=THEME["bg_subcard"], corner_radius=8, border_width=1, border_color=THEME["border_color"], scroll_speed=55)
         self.rocket_list_frame.pack(fill="x", padx=15, pady=(0, 15))
         
         self._refresh_rocket_list()
@@ -2428,7 +2428,7 @@ class IVACApp(ctk.CTk):
         # -------------------------------------------------------------
         # CARD 1: FONT & DISPLAY SIZE SCALING
         # -------------------------------------------------------------
-        font_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        font_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         font_card.pack(fill="x", padx=5, pady=(5, 10))
 
         font_header = ctk.CTkFrame(font_card, fg_color="transparent")
@@ -2516,7 +2516,7 @@ class IVACApp(ctk.CTk):
         ).pack(side="left")
 
         # Live typography preview box
-        preview_box = ctk.CTkFrame(font_card, fg_color=THEME["bg_subcard"], corner_radius=8)
+        preview_box = ctk.CTkFrame(font_card, fg_color=THEME["bg_subcard"], corner_radius=8, border_width=1, border_color=THEME["border_color"])
         preview_box.pack(fill="x", padx=15, pady=(0, 15))
 
         p_inner = ctk.CTkFrame(preview_box, fg_color="transparent")
@@ -2546,7 +2546,7 @@ class IVACApp(ctk.CTk):
         # -------------------------------------------------------------
         # CARD 2: UI TEMPLATES & THEMES (3 TEMPLATES)
         # -------------------------------------------------------------
-        theme_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        theme_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         theme_card.pack(fill="x", padx=5, pady=(0, 10))
 
         ctk.CTkLabel(
@@ -2730,7 +2730,7 @@ class IVACApp(ctk.CTk):
                 self.header_title_label.configure(text_color=THEME["text_accent"])
             if hasattr(self, "tabview") and self.tabview:
                 self.tabview.configure(
-                    fg_color=THEME["bg_card"],
+                    fg_color="transparent",
                     segmented_button_fg_color=THEME["tab_bg"],
                     segmented_button_selected_color=THEME["tab_selected"],
                     segmented_button_unselected_color=THEME["tab_unselected"],
@@ -2803,7 +2803,7 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Current License Card
-        lic_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
+        lic_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         lic_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
@@ -2836,7 +2836,7 @@ class IVACApp(ctk.CTk):
                         text_color=THEME["text_primary"], anchor="w").pack(side="left", padx=5)
                         
         # About
-        about_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
+        about_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         about_card.pack(fill="x", padx=5, pady=5)
         
         ctk.CTkLabel(
@@ -2865,7 +2865,7 @@ class IVACApp(ctk.CTk):
         scroll.pack(fill="both", expand=True, padx=5, pady=5)
         
         # --- Card 1: 1-Click Chrome Profile Generator ---
-        gen_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        gen_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         gen_card.pack(fill="x", padx=5, pady=(5, 10))
         
         ctk.CTkLabel(
@@ -2913,7 +2913,7 @@ class IVACApp(ctk.CTk):
         self.lbl_profile_status.pack(anchor="w", padx=15, pady=(0, 10))
         
         # --- Card 2: Bookmarks Configuration ---
-        bm_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        bm_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         bm_card.pack(fill="x", padx=5, pady=(0, 10))
         
         ctk.CTkLabel(
@@ -2928,18 +2928,42 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=11), text_color=THEME["text_accent"], justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 10))
         
+        # Sub Header with Toggle Button
+        bm_sub_hdr = ctk.CTkFrame(bm_card, fg_color="transparent")
+        bm_sub_hdr.pack(fill="x", padx=15, pady=(0, 6))
+
         ctk.CTkLabel(
-            bm_card, text="অতিরিক্ত কাস্টম বুকমার্ক লিংক (ঐচ্ছিক):",
+            bm_sub_hdr, text="অতিরিক্ত কাস্টম বুকমার্ক লিংক (ঐচ্ছিক):",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=THEME["text_primary"]
-        ).pack(anchor="w", padx=15, pady=(0, 4))
+        ).pack(side="left")
         
-        self.bm_list_frame = ctk.CTkFrame(bm_card, fg_color=THEME["bg_subcard"], corner_radius=8)
-        self.bm_list_frame.pack(fill="x", padx=15, pady=(0, 8))
+        self.btn_toggle_add_bm = ctk.CTkButton(
+            bm_sub_hdr, text="➕ বুকমার্ক যোগ করুন",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=THEME["accent_blue"], hover_color=THEME["accent_hover"],
+            height=28, width=150,
+            command=self._toggle_bookmark_add_box
+        )
+        self.btn_toggle_add_bm.pack(side="right")
+        
+        self.bm_list_frame = ctk.CTkFrame(bm_card, fg_color=THEME["bg_subcard"], corner_radius=8, border_width=1, border_color=THEME["border_color"])
+        self.bm_list_frame.pack(fill="x", padx=15, pady=(0, 10))
         self._refresh_bookmarks_ui()
         
-        add_bm_row = ctk.CTkFrame(bm_card, fg_color="transparent")
-        add_bm_row.pack(fill="x", padx=15, pady=(0, 12))
+        # Collapsible Add Bookmark Box (Hidden by default until button click!)
+        self.add_bm_box = ctk.CTkFrame(bm_card, fg_color=THEME["bg_subcard"], corner_radius=8, border_width=1, border_color=THEME["border_color"])
+        
+        add_bm_inner = ctk.CTkFrame(self.add_bm_box, fg_color="transparent")
+        add_bm_inner.pack(fill="x", padx=12, pady=10)
+        
+        ctk.CTkLabel(
+            add_bm_inner, text="🔗 নতুন কাস্টম বুকমার্ক লিংক যুক্ত করুন:",
+            font=ctk.CTkFont(size=11, weight="bold"), text_color=THEME["text_accent"]
+        ).pack(anchor="w", pady=(0, 6))
+        
+        add_bm_row = ctk.CTkFrame(add_bm_inner, fg_color="transparent")
+        add_bm_row.pack(fill="x")
         
         self.entry_new_bm_url = ctk.CTkEntry(
             add_bm_row, placeholder_text="বুকমার্ক লিংক লিখুন (e.g. https://mail.proton.me)",
@@ -2952,12 +2976,20 @@ class IVACApp(ctk.CTk):
         ctk.CTkButton(
             add_bm_row, text="+ Add Link",
             font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=THEME["accent_emerald"], hover_color=THEME["accent_hover"], height=34, width=100,
+            fg_color=THEME["accent_emerald"], hover_color=THEME["accent_hover"], height=34, width=95,
             command=self._add_custom_bookmark
-        ).pack(side="right")
+        ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(
+            add_bm_row, text="✕ বাতিল",
+            font=ctk.CTkFont(size=11),
+            fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["btn_secondary_text"], height=34, width=65,
+            command=self._toggle_bookmark_add_box
+        ).pack(side="left")
         
         # --- Card 3: Bulk Extension Update in All Profiles ---
-        update_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        update_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         update_card.pack(fill="x", padx=5, pady=(0, 15))
         
         ctk.CTkLabel(
@@ -3534,6 +3566,23 @@ class IVACApp(ctk.CTk):
             del_btn.bind("<Leave>", lambda e, b=del_btn: b.configure(bg=THEME["danger"]))
             del_btn.bind("<Button-1>", lambda e, i=idx: self._delete_custom_bookmark(i))
 
+    def _toggle_bookmark_add_box(self):
+        if not hasattr(self, "add_bm_box"):
+            return
+        is_open = getattr(self, "_bm_box_open", False) or bool(self.add_bm_box.winfo_manager())
+        if is_open:
+            self.add_bm_box.pack_forget()
+            self._bm_box_open = False
+            if hasattr(self, "btn_toggle_add_bm") and self.btn_toggle_add_bm.winfo_exists():
+                self.btn_toggle_add_bm.configure(text="➕ বুকমার্ক যোগ করুন", fg_color=THEME["accent_blue"])
+        else:
+            self.add_bm_box.pack(fill="x", padx=15, pady=(0, 12))
+            self._bm_box_open = True
+            if hasattr(self, "btn_toggle_add_bm") and self.btn_toggle_add_bm.winfo_exists():
+                self.btn_toggle_add_bm.configure(text="✕ বক্স বন্ধ করুন", fg_color=THEME["btn_secondary"])
+            if hasattr(self, "entry_new_bm_url") and self.entry_new_bm_url.winfo_exists():
+                self.entry_new_bm_url.focus_set()
+
     def _add_custom_bookmark(self):
         url = self.entry_new_bm_url.get().strip()
         if not url:
@@ -3561,6 +3610,11 @@ class IVACApp(ctk.CTk):
         self._save_config()
         self.entry_new_bm_url.delete(0, "end")
         self._refresh_bookmarks_ui()
+        if hasattr(self, "add_bm_box"):
+            self.add_bm_box.pack_forget()
+            self._bm_box_open = False
+            if hasattr(self, "btn_toggle_add_bm") and self.btn_toggle_add_bm.winfo_exists():
+                self.btn_toggle_add_bm.configure(text="➕ বুকমার্ক যোগ করুন", fg_color=THEME["accent_blue"])
 
     def _delete_custom_bookmark(self, index: int):
         bms = self.config.get("chrome_bookmarks", [])
