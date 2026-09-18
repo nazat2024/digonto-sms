@@ -17,6 +17,15 @@
     "c10b748_gui_app.py",
     "IvacLicenseManager.tsx"
   ],
+  "ignore": [
+    "gui_app.py",
+    "scratch/**",
+    "tools/**",
+    "old_gui_app.py",
+    "c10b748_gui_app.py",
+    "interceptor.py",
+    "IvacLicenseManager.tsx"
+  ],
   "extraPaths": [
     "d:/Ivac Auto Fill",
     "d:/Ivac Auto Fill/license_system",

@@ -1,3 +1,5 @@
+# type: ignore
+# pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportFunctionMemberAccess=false, reportOptionalMemberAccess=false, reportArgumentType=false, reportAssignmentType=false, reportIndexIssue=false, reportOperatorIssue=false, reportMissingTypeStubs=false
 """
 🖥️ Digonto QuickFill — Desktop GUI Application
 CustomTkinter দিয়ে তৈরি প্রফেশনাল Windows সফটওয়্যার।

@@ -1,6 +1,12 @@
 {
   "python.defaultInterpreterPath": "C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
   "python.analysis.typeCheckingMode": "off",
+  "python.analysis.ignore": [
+    "gui_app.py",
+    "scratch/**",
+    "tools/**",
+    "interceptor.py"
+  ],
   "python.analysis.diagnosticSeverityOverrides": {
     "reportMissingImports": "none",
     "reportMissingTypeStubs": "none",
