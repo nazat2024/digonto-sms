@@ -67,9 +67,111 @@ if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             f.write("{}")
 
-# Theme
+# Theme System: 3 Distinct, Polished UI Templates (Cyber Navy, Modern Light, Obsidian Minimal)
+THEMES = {
+    "cyber_navy": {
+        "id": "cyber_navy",
+        "name": "🌌 সাইবার নেভি (Cyber Navy)",
+        "tag": "Classic Dark",
+        "desc": "ক্লাসিক ডিপ ব্লু ও এমারেল্ড ডার্ক থিম (বর্তমান ডিফল্ট লুক)",
+        "appearance_mode": "dark",
+        "bg_main": "#0a192f",
+        "bg_card": "#112240",
+        "bg_row": "#1a1a2e",
+        "bg_subcard": "#0a192f",
+        "header_bg": "#0a192f",
+        "footer_bg": "#0a192f",
+        "tab_bg": "#1a1a2e",
+        "tab_selected": "#059669",
+        "tab_unselected": "#233554",
+        "text_primary": "#ccd6f6",
+        "text_secondary": "#8892b0",
+        "text_muted": "#495670",
+        "text_accent": "#64ffda",
+        "accent_emerald": "#059669",
+        "accent_hover": "#047857",
+        "accent_blue": "#2563eb",
+        "border_color": "#233554",
+        "entry_bg": "#0f172a",
+        "entry_border": "#233554",
+        "badge_bg": "#1e293b",
+        "btn_secondary": "#233554",
+        "btn_secondary_hover": "#334155",
+        "danger": "#e11d48",
+        "danger_hover": "#be123c",
+        "swatch": ["#0a192f", "#112240", "#059669", "#64ffda"]
+    },
+    "modern_light": {
+        "id": "modern_light",
+        "name": "☀️ মডার্ন লাইট (Modern Light)",
+        "tag": "Clean Corporate",
+        "desc": "অত্যন্ত ফ্রেশ, ক্লিন, প্রফেশনাল ও এলিগ্যান্ট কর্পোরেট লাইট লুক",
+        "appearance_mode": "light",
+        "bg_main": "#f8fafc",          # Slate 50
+        "bg_card": "#ffffff",          # Pure white crisp card
+        "bg_row": "#f1f5f9",           # Slate 100
+        "bg_subcard": "#f8fafc",       # Slate 50
+        "header_bg": "#ffffff",        # Clean white header
+        "footer_bg": "#e2e8f0",        # Slate 200 footer
+        "tab_bg": "#e2e8f0",           # Slate 200
+        "tab_selected": "#059669",     # Vibrant emerald
+        "tab_unselected": "#cbd5e1",   # Slate 300
+        "text_primary": "#0f172a",     # Slate 900
+        "text_secondary": "#334155",   # Slate 700
+        "text_muted": "#64748b",       # Slate 500
+        "text_accent": "#0284c7",      # Sky 600
+        "accent_emerald": "#059669",   # Emerald 600
+        "accent_hover": "#047857",     # Emerald 700
+        "accent_blue": "#2563eb",      # Blue 600
+        "border_color": "#e2e8f0",     # Slate 200
+        "entry_bg": "#ffffff",         # White
+        "entry_border": "#cbd5e1",     # Slate 300
+        "badge_bg": "#e2e8f0",
+        "btn_secondary": "#e2e8f0",
+        "btn_secondary_hover": "#cbd5e1",
+        "danger": "#e11d48",
+        "danger_hover": "#be123c",
+        "swatch": ["#f8fafc", "#ffffff", "#059669", "#0284c7"]
+    },
+    "obsidian_minimal": {
+        "id": "obsidian_minimal",
+        "name": "🌑 অবসিডিয়ান মিনিমাল (Obsidian Minimal)",
+        "tag": "Sleek Ultra Dark",
+        "desc": "ম্যাট চারকোল ডার্ক ও আধুনিক ইন্ডিগো/ভায়োলেট অ্যাকসেন্ট থিম",
+        "appearance_mode": "dark",
+        "bg_main": "#121214",          # Deep Obsidian
+        "bg_card": "#18181b",          # Zinc 900
+        "bg_row": "#27272a",           # Zinc 800
+        "bg_subcard": "#202024",       # Dark slate
+        "header_bg": "#121214",        # Header
+        "footer_bg": "#121214",        # Footer
+        "tab_bg": "#202024",           # Tab background
+        "tab_selected": "#6366f1",     # Indigo 500
+        "tab_unselected": "#2e2e35",   # Muted button
+        "text_primary": "#f4f4f5",     # Zinc 100
+        "text_secondary": "#a1a1aa",   # Zinc 400
+        "text_muted": "#71717a",       # Zinc 500
+        "text_accent": "#38bdf8",      # Sky 400
+        "accent_emerald": "#10b981",   # Emerald 500
+        "accent_hover": "#059669",     # Emerald 600
+        "accent_blue": "#6366f1",      # Indigo
+        "border_color": "#3f3f46",     # Zinc 700
+        "entry_bg": "#18181b",         # Zinc 900
+        "entry_border": "#3f3f46",     # Zinc 700
+        "badge_bg": "#27272a",
+        "btn_secondary": "#27272a",
+        "btn_secondary_hover": "#3f3f46",
+        "danger": "#ef4444",
+        "danger_hover": "#dc2626",
+        "swatch": ["#121214", "#18181b", "#6366f1", "#38bdf8"]
+    }
+}
+
+CURRENT_THEME_KEY = "cyber_navy"
+THEME = dict(THEMES["cyber_navy"])
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")
+
 
 def get_local_ip():
     import socket
@@ -262,6 +364,22 @@ class IVACApp(ctk.CTk):
         self.otp_data = {}
         self._expanded_phones = set()
         self._loaded_tabs = set()
+        
+        # Apply user theme and font scale preferences
+        saved_theme = self.config.get("ui_theme", "cyber_navy")
+        if saved_theme in THEMES:
+            global CURRENT_THEME_KEY
+            CURRENT_THEME_KEY = saved_theme
+            THEME.update(THEMES[saved_theme])
+        saved_scale = float(self.config.get("font_scale", 1.0))
+        try:
+            ctk.set_widget_scaling(saved_scale)
+        except Exception:
+            pass
+        try:
+            ctk.set_appearance_mode(THEME["appearance_mode"])
+        except Exception:
+            pass
         
         # Instant UI Launch (< 50ms) - No slow loading screen!
         self.loading_label = None
@@ -719,12 +837,14 @@ class IVACApp(ctk.CTk):
         for widget in self.winfo_children():
             widget.destroy()
         
-        # ===== TOP HEADER =====
-        header = ctk.CTkFrame(self, fg_color="#0a192f", corner_radius=0, height=55)
-        header.pack(fill="x")
-        header.pack_propagate(False)
+        self.configure(fg_color=THEME["bg_main"])
         
-        header_inner = ctk.CTkFrame(header, fg_color="transparent")
+        # ===== TOP HEADER =====
+        self.header = ctk.CTkFrame(self, fg_color=THEME["header_bg"], corner_radius=0, height=55)
+        self.header.pack(fill="x")
+        self.header.pack_propagate(False)
+        
+        header_inner = ctk.CTkFrame(self.header, fg_color="transparent")
         header_inner.pack(fill="both", expand=True, padx=15)
         
         # Custom App Logo in Header
@@ -738,12 +858,13 @@ class IVACApp(ctk.CTk):
         except Exception:
             pass
 
-        ctk.CTkLabel(
+        self.header_title_label = ctk.CTkLabel(
             header_inner,
             text=APP_NAME,
             font=ctk.CTkFont(size=16, weight="bold"),
-            text_color="#64ffda"
-        ).pack(side="left", pady=10)
+            text_color=THEME["text_accent"]
+        )
+        self.header_title_label.pack(side="left", pady=10)
         
         # License badge
         badge_color = "#059669" if self.license_info.days_remaining > 7 else "#f59e0b"
@@ -762,9 +883,12 @@ class IVACApp(ctk.CTk):
         self.tabview = ctk.CTkTabview(
             self,
             corner_radius=8,
-            segmented_button_fg_color="#1a1a2e",
-            segmented_button_selected_color="#059669",
-            segmented_button_unselected_color="#233554",
+            fg_color=THEME["bg_card"],
+            segmented_button_fg_color=THEME["tab_bg"],
+            segmented_button_selected_color=THEME["tab_selected"],
+            segmented_button_unselected_color=THEME["tab_unselected"],
+            segmented_button_selected_hover_color=THEME["accent_hover"],
+            text_color=THEME["text_primary"],
             command=self._on_tab_changed
         )
         self.tabview.pack(fill="both", expand=True, padx=10, pady=(5, 0))
@@ -775,7 +899,7 @@ class IVACApp(ctk.CTk):
         self.tab_profiles = self.tabview.add("👥 Profiles")
         self.tab_extension = self.tabview.add("🧩 Extension")
         self.tab_payment = self.tabview.add("💳 Payment")
-        self.tab_settings = self.tab_payment
+        self.tab_settings = self.tabview.add("⚙️ Settings")
         self.tab_license = self.tabview.add("🔑 License")
         
         # Auto sync hidden extension directory asynchronously (0ms UI impact)
@@ -787,15 +911,15 @@ class IVACApp(ctk.CTk):
         threading.Thread(target=_sync_ext, daemon=True).start()
 
         # ===== FOOTER =====
-        footer = ctk.CTkFrame(self, fg_color="#0a192f", corner_radius=0, height=30)
-        footer.pack(fill="x", side="bottom")
-        footer.pack_propagate(False)
+        self.footer = ctk.CTkFrame(self, fg_color=THEME["footer_bg"], corner_radius=0, height=30)
+        self.footer.pack(fill="x", side="bottom")
+        self.footer.pack_propagate(False)
         
         self.footer_label = ctk.CTkLabel(
-            footer,
+            self.footer,
             text="🟢 Server Ready  |  v" + APP_VERSION + "  |  © " + APP_AUTHOR,
             font=ctk.CTkFont(size=10),
-            text_color="#495670"
+            text_color=THEME["text_muted"]
         )
         self.footer_label.pack(pady=5)
 
@@ -813,6 +937,7 @@ class IVACApp(ctk.CTk):
             self.after(110, lambda: self._prewarm_tab("👥 Profiles"))
             self.after(180, lambda: self._prewarm_tab("📨 Recent OTPs"))
             self.after(260, lambda: self._prewarm_tab("💳 Payment"))
+            self.after(330, lambda: self._prewarm_tab("⚙️ Settings"))
 
         self.after(60, _prewarm_bg)
 
@@ -827,7 +952,9 @@ class IVACApp(ctk.CTk):
                 self._build_profiles_tab()
             elif tab_name == "📨 Recent OTPs":
                 self._build_otps_tab()
-            elif tab_name in ("💳 Payment", "⚙️ Settings"):
+            elif tab_name == "💳 Payment":
+                self._build_payment_tab()
+            elif tab_name == "⚙️ Settings":
                 self._build_settings_tab()
             elif tab_name in ("🧩 Extension", "🔌 Extension"):
                 self._build_extension_tab()
@@ -867,13 +994,13 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Cloud SMS Sync
-        cloud_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        cloud_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
         cloud_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
             cloud_card, text="☁️ Cloud SMS Forwarder",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#00d2ff"
+            text_color=THEME["text_accent"]
         ).pack(anchor="w", padx=15, pady=(10, 5))
         
         from license_system.hwid import get_pairing_code
@@ -882,20 +1009,20 @@ class IVACApp(ctk.CTk):
         ctk.CTkLabel(
             cloud_card, 
             text=f"আপনার মোবাইলে 'SMS Forwarder' অ্যাপটি ওপেন করে নিচের কোডটি দিন:\nযেকোনো নেটওয়ার্ক থেকে অটোমেটিক মেসেজ আসবে।",
-            font=ctk.CTkFont(size=12), text_color="#8892b0", justify="left"
+            font=ctk.CTkFont(size=12), text_color=THEME["text_secondary"], justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 5))
         
-        code_frame = ctk.CTkFrame(cloud_card, fg_color="#0a192f", corner_radius=5)
+        code_frame = ctk.CTkFrame(cloud_card, fg_color=THEME["bg_subcard"], corner_radius=5)
         code_frame.pack(anchor="w", padx=15, pady=(5, 15))
         
         ctk.CTkLabel(
             code_frame, text=f"Pairing Code: {pairing_code}",
             font=ctk.CTkFont(family="Consolas", size=18, weight="bold"),
-            text_color="#64ffda"
+            text_color=THEME["text_accent"]
         ).pack(padx=15, pady=10)
         
         # Connected Devices Card (Expanded with full height)
-        device_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        device_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
         device_card.pack(fill="both", expand=True, padx=5, pady=(0, 5))
         
         device_header = ctk.CTkFrame(device_card, fg_color="transparent")
@@ -904,7 +1031,7 @@ class IVACApp(ctk.CTk):
         ctk.CTkLabel(
             device_header, text="📱 Connected Mobiles",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(side="left")
         
         self.device_list_frame = SmoothScrollableFrame(device_card, fg_color="transparent", scroll_speed=60)
@@ -916,7 +1043,7 @@ class IVACApp(ctk.CTk):
             self.device_list_frame,
             text="⏳ Waiting for mobile connection...",
             font=ctk.CTkFont(size=11),
-            text_color="#495670"
+            text_color=THEME["text_muted"]
         )
         self.device_placeholder.pack(pady=20)
         
@@ -930,7 +1057,7 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Recent OTPs Card
-        otp_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        otp_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
         otp_card.pack(fill="both", expand=True, padx=5, pady=5)
         
         otp_header = ctk.CTkFrame(otp_card, fg_color="transparent")
@@ -939,20 +1066,20 @@ class IVACApp(ctk.CTk):
         ctk.CTkLabel(
             otp_header, text="📨 Recent OTPs",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(side="left")
         
         # Reset Button for GUI
         ctk.CTkButton(
             otp_header, text="🗑️ Reset Data", width=80, height=24,
-            font=ctk.CTkFont(size=11, weight="bold"), fg_color="#e11d48", hover_color="#be123c",
+            font=ctk.CTkFont(size=11, weight="bold"), fg_color=THEME["danger"], hover_color=THEME["danger_hover"],
             command=self._clear_all_data
         ).pack(side="left", padx=15)
         
         self.otp_count_label = ctk.CTkLabel(
             otp_header, text="0 টি",
             font=ctk.CTkFont(size=11),
-            text_color="#8892b0"
+            text_color=THEME["text_secondary"]
         )
         self.otp_count_label.pack(side="right", padx=10)
         
@@ -2173,60 +2300,435 @@ class IVACApp(ctk.CTk):
             
         for acc in accounts:
             self._build_rocket_row(acc)
-    # ===== SETTINGS TAB =====
-    def _build_settings_tab(self):
-        tab = self.tab_settings
+    # ===== PAYMENT TAB =====
+    def _build_payment_tab(self):
+        tab = self.tab_payment
         for w in tab.winfo_children():
             w.destroy()
         
         # Rocket Config (Moved from Extension Tab) -> Now Payment Accounts
-        rocket_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        rocket_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
         rocket_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
             rocket_card, text="💳 Payment Accounts",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(anchor="w", padx=15, pady=(10, 5))
         
         ctk.CTkLabel(
             rocket_card, text="আপনার মোবাইল নম্বর এবং পিন সেভ করুন। রকেটের জন্য ১২তম ডিজিটটি আলাদা বক্সে দিন।",
-            font=ctk.CTkFont(size=11), text_color="#8892b0"
+            font=ctk.CTkFont(size=11), text_color=THEME["text_secondary"]
         ).pack(anchor="w", padx=15, pady=(0, 10))
         
         # Row 1
         input_frame1 = ctk.CTkFrame(rocket_card, fg_color="transparent")
         input_frame1.pack(fill="x", padx=15, pady=(0, 5))
         
-        self.pay_num_entry = ctk.CTkEntry(input_frame1, placeholder_text="Base Phone Number (11 digit)", width=200)
+        self.pay_num_entry = ctk.CTkEntry(
+            input_frame1, placeholder_text="Base Phone Number (11 digit)",
+            width=200, fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["text_primary"]
+        )
         self.pay_num_entry.pack(side="left", padx=(0, 10))
         
-        self.rocket_extra_entry = ctk.CTkEntry(input_frame1, placeholder_text="Rocket Extra (1 digit)", width=130)
+        self.rocket_extra_entry = ctk.CTkEntry(
+            input_frame1, placeholder_text="Rocket Extra (1 digit)",
+            width=130, fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["text_primary"]
+        )
         self.rocket_extra_entry.pack(side="left", padx=(0, 10))
         
         # Row 2
         input_frame2 = ctk.CTkFrame(rocket_card, fg_color="transparent")
         input_frame2.pack(fill="x", padx=15, pady=(0, 10))
         
-        self.rocket_pin_entry = ctk.CTkEntry(input_frame2, placeholder_text="Rocket PIN", show="*", width=90)
+        self.rocket_pin_entry = ctk.CTkEntry(
+            input_frame2, placeholder_text="Rocket PIN", show="*",
+            width=90, fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["text_primary"]
+        )
         self.rocket_pin_entry.pack(side="left", padx=(0, 10))
         
-        self.bkash_pin_entry = ctk.CTkEntry(input_frame2, placeholder_text="bKash PIN", show="*", width=90)
+        self.bkash_pin_entry = ctk.CTkEntry(
+            input_frame2, placeholder_text="bKash PIN", show="*",
+            width=90, fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["text_primary"]
+        )
         self.bkash_pin_entry.pack(side="left", padx=(0, 10))
         
-        self.nagad_pin_entry = ctk.CTkEntry(input_frame2, placeholder_text="Nagad PIN", show="*", width=90)
+        self.nagad_pin_entry = ctk.CTkEntry(
+            input_frame2, placeholder_text="Nagad PIN", show="*",
+            width=90, fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["text_primary"]
+        )
         self.nagad_pin_entry.pack(side="left", padx=(0, 10))
         
         ctk.CTkButton(
             input_frame2, text="Add", width=60,
-            fg_color="#233554", hover_color="#059669",
+            fg_color=THEME["btn_secondary"], hover_color=THEME["accent_emerald"],
+            text_color=THEME["text_primary"],
             command=self._add_rocket_account
         ).pack(side="left")
         
-        self.rocket_list_frame = SmoothScrollableFrame(rocket_card, height=100, fg_color="#0a192f", scroll_speed=55)
+        self.rocket_list_frame = SmoothScrollableFrame(rocket_card, height=100, fg_color=THEME["bg_subcard"], scroll_speed=55)
         self.rocket_list_frame.pack(fill="x", padx=15, pady=(0, 15))
         
         self._refresh_rocket_list()
+
+    # ===== SETTINGS TAB =====
+    def _build_settings_tab(self):
+        tab = self.tab_settings
+        for w in tab.winfo_children():
+            w.destroy()
+            
+        current_theme_key = self.config.get("ui_theme", CURRENT_THEME_KEY)
+        current_scale = float(self.config.get("font_scale", 1.0))
+        scale_pct = int(round(current_scale * 100))
+
+        scroll = SmoothScrollableFrame(tab, fg_color="transparent", scroll_speed=55)
+        scroll.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # -------------------------------------------------------------
+        # CARD 1: FONT & DISPLAY SIZE SCALING
+        # -------------------------------------------------------------
+        font_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        font_card.pack(fill="x", padx=5, pady=(5, 10))
+
+        font_header = ctk.CTkFrame(font_card, fg_color="transparent")
+        font_header.pack(fill="x", padx=15, pady=(12, 4))
+
+        ctk.CTkLabel(
+            font_header, text="🔤 ফন্ট ও ডিসপ্লে সাইজ স্কেলিং (Font & UI Scaling)",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=THEME["text_primary"]
+        ).pack(side="left")
+
+        scale_badge = ctk.CTkLabel(
+            font_header,
+            text=f"বর্তমান: {scale_pct}%",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME["text_accent"],
+            fg_color=THEME["bg_subcard"],
+            corner_radius=6,
+            padx=8, pady=2
+        )
+        scale_badge.pack(side="right")
+
+        ctk.CTkLabel(
+            font_card,
+            text="অ্যাপের সকল টেক্সট ও উইজেট সাইজ বড় বা ছোট করুন। পছন্দের সাইজে ক্লিক করলে তাৎক্ষণিক পরিবর্তন দেখতে পাবেন।",
+            font=ctk.CTkFont(size=11),
+            text_color=THEME["text_secondary"]
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        # Controls row: Presets + Stepper
+        ctrl_row = ctk.CTkFrame(font_card, fg_color="transparent")
+        ctrl_row.pack(fill="x", padx=15, pady=(0, 10))
+
+        # Presets
+        presets = [
+            ("🔍 ছোট (85%)", 0.85),
+            ("🔍 সাধারণ (100%)", 1.00),
+            ("🔍 বড় (115%)", 1.15),
+            ("🔍 অনেক বড় (130%)", 1.30)
+        ]
+        presets_frame = ctk.CTkFrame(ctrl_row, fg_color="transparent")
+        presets_frame.pack(side="left", fill="x", expand=True)
+
+        for label, val in presets:
+            is_cur = abs(current_scale - val) < 0.03
+            btn = ctk.CTkButton(
+                presets_frame,
+                text=label,
+                width=100,
+                height=28,
+                font=ctk.CTkFont(size=11, weight="bold" if is_cur else "normal"),
+                fg_color=THEME["accent_emerald"] if is_cur else THEME["btn_secondary"],
+                hover_color=THEME["accent_hover"] if is_cur else THEME["btn_secondary_hover"],
+                text_color="white" if is_cur else THEME["text_primary"],
+                command=lambda v=val: self._set_font_scale(v)
+            )
+            btn.pack(side="left", padx=(0, 6))
+
+        # Stepper buttons
+        stepper_frame = ctk.CTkFrame(ctrl_row, fg_color="transparent")
+        stepper_frame.pack(side="right")
+
+        ctk.CTkButton(
+            stepper_frame,
+            text="➖ ছোট (-5%)",
+            width=85,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color=THEME["btn_secondary"],
+            hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["text_primary"],
+            command=lambda: self._adjust_font_scale(-0.05)
+        ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(
+            stepper_frame,
+            text="➕ বড় (+5%)",
+            width=85,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color=THEME["btn_secondary"],
+            hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["text_primary"],
+            command=lambda: self._adjust_font_scale(0.05)
+        ).pack(side="left")
+
+        # Live typography preview box
+        preview_box = ctk.CTkFrame(font_card, fg_color=THEME["bg_subcard"], corner_radius=8)
+        preview_box.pack(fill="x", padx=15, pady=(0, 15))
+
+        p_inner = ctk.CTkFrame(preview_box, fg_color="transparent")
+        p_inner.pack(fill="x", padx=12, pady=10)
+
+        ctk.CTkLabel(
+            p_inner,
+            text=f"লাইভ টেক্সট প্রিভিউ ({scale_pct}% স্কেলিং):",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=THEME["text_muted"]
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            p_inner,
+            text="IVAC Master Pro — অটো ফিল ও এসএমএস ফরওয়ার্ডার",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=THEME["text_accent"]
+        ).pack(anchor="w", pady=(2, 0))
+
+        ctk.CTkLabel(
+            p_inner,
+            text="ভিসা আবেদন ও ওটিপি অটোমেশন এখন আরও দ্রুত, নিরাপদ এবং শতভাগ নির্ভরযোগ্য।",
+            font=ctk.CTkFont(size=11),
+            text_color=THEME["text_secondary"]
+        ).pack(anchor="w", pady=(2, 0))
+
+        # -------------------------------------------------------------
+        # CARD 2: UI TEMPLATES & THEMES (3 TEMPLATES)
+        # -------------------------------------------------------------
+        theme_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        theme_card.pack(fill="x", padx=5, pady=(0, 10))
+
+        ctk.CTkLabel(
+            theme_card, text="🎨 ইউআই থিম ও টেমপ্লেট নির্বাচন (3 UI Templates)",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=THEME["text_primary"]
+        ).pack(anchor="w", padx=15, pady=(12, 4))
+
+        ctk.CTkLabel(
+            theme_card,
+            text="আপনার পছন্দের ইন্টারফেস বেছে নিন (মোট ৩টি সম্পূর্ণ ভিন্ন ও আধুনিক লুক):",
+            font=ctk.CTkFont(size=11),
+            text_color=THEME["text_secondary"]
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        # Render 3 theme template cards
+        theme_keys = ["cyber_navy", "modern_light", "obsidian_minimal"]
+        for t_key in theme_keys:
+            t_data = THEMES[t_key]
+            is_active = (t_key == current_theme_key)
+
+            t_box = ctk.CTkFrame(
+                theme_card,
+                fg_color=THEME["bg_row"],
+                corner_radius=8,
+                border_width=2 if is_active else 1,
+                border_color=THEME["accent_emerald"] if is_active else THEME["border_color"]
+            )
+            t_box.pack(fill="x", padx=15, pady=(0, 8))
+
+            t_row = ctk.CTkFrame(t_box, fg_color="transparent")
+            t_row.pack(fill="x", padx=12, pady=10)
+
+            # Left side: Icon, Name, Tag, Description, and Swatches
+            left_col = ctk.CTkFrame(t_row, fg_color="transparent")
+            left_col.pack(side="left", fill="both", expand=True)
+
+            title_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+            title_frame.pack(anchor="w")
+
+            ctk.CTkLabel(
+                title_frame,
+                text=t_data["name"],
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=THEME["text_primary"]
+            ).pack(side="left")
+
+            ctk.CTkLabel(
+                title_frame,
+                text=f"  •  {t_data['tag']}",
+                font=ctk.CTkFont(size=11),
+                text_color=THEME["text_accent"] if is_active else THEME["text_muted"]
+            ).pack(side="left")
+
+            ctk.CTkLabel(
+                left_col,
+                text=t_data["desc"],
+                font=ctk.CTkFont(size=11),
+                text_color=THEME["text_secondary"]
+            ).pack(anchor="w", pady=(2, 6))
+
+            # Swatches row
+            swatch_row = ctk.CTkFrame(left_col, fg_color="transparent")
+            swatch_row.pack(anchor="w")
+            ctk.CTkLabel(
+                swatch_row, text="কালার প্যালেট: ",
+                font=ctk.CTkFont(size=10),
+                text_color=THEME["text_muted"]
+            ).pack(side="left", padx=(0, 4))
+            
+            for color_hex in t_data.get("swatch", []):
+                ctk.CTkFrame(
+                    swatch_row,
+                    width=18, height=14,
+                    corner_radius=3,
+                    fg_color=color_hex,
+                    border_width=1,
+                    border_color="#475569"
+                ).pack(side="left", padx=2)
+
+            # Right side: Status / Apply Button
+            right_col = ctk.CTkFrame(t_row, fg_color="transparent")
+            right_col.pack(side="right", padx=(10, 0))
+
+            if is_active:
+                ctk.CTkLabel(
+                    right_col,
+                    text="✓ সক্রিয় আছে (Active)",
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color="#10b981",
+                    fg_color=THEME["bg_subcard"],
+                    corner_radius=6,
+                    padx=12, pady=6
+                ).pack()
+            else:
+                ctk.CTkButton(
+                    right_col,
+                    text="👉 থিম প্রয়োগ করুন",
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    width=130,
+                    height=30,
+                    fg_color=THEME["accent_emerald"],
+                    hover_color=THEME["accent_hover"],
+                    text_color="white",
+                    command=lambda k=t_key: self._apply_theme(k)
+                ).pack()
+
+        # -------------------------------------------------------------
+        # CARD 3: QUICK ACTIONS & RESTART
+        # -------------------------------------------------------------
+        action_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
+        action_card.pack(fill="x", padx=5, pady=(0, 10))
+
+        ctk.CTkLabel(
+            action_card, text="⚡ অতিরিক্ত একশন ও রিস্টার্ট",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=THEME["text_primary"]
+        ).pack(anchor="w", padx=15, pady=(10, 4))
+
+        act_row = ctk.CTkFrame(action_card, fg_color="transparent")
+        act_row.pack(fill="x", padx=15, pady=(0, 12))
+
+        ctk.CTkButton(
+            act_row,
+            text="🔄 অ্যাপ রিস্টার্ট করুন (Restart)",
+            width=150,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color=THEME["btn_secondary"],
+            hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["text_primary"],
+            command=self._restart_app
+        ).pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(
+            act_row,
+            text="↩️ ডিফল্ট রিসেট (Reset Defaults)",
+            width=160,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color=THEME["btn_secondary"],
+            hover_color=THEME["btn_secondary_hover"],
+            text_color=THEME["text_primary"],
+            command=self._reset_settings_to_default
+        ).pack(side="left")
+
+    def _adjust_font_scale(self, delta: float):
+        current_scale = float(self.config.get("font_scale", 1.0))
+        new_scale = round(current_scale + delta, 2)
+        self._set_font_scale(new_scale)
+
+    def _set_font_scale(self, scale_factor: float):
+        scale_factor = round(max(0.75, min(1.45, float(scale_factor))), 2)
+        self.config["font_scale"] = scale_factor
+        self._save_config()
+        try:
+            ctk.set_widget_scaling(scale_factor)
+        except Exception as e:
+            print(f"Set widget scaling error: {e}")
+        self._build_settings_tab()
+
+    def _apply_theme(self, theme_key: str):
+        global CURRENT_THEME_KEY
+        if theme_key not in THEMES:
+            return
+        CURRENT_THEME_KEY = theme_key
+        THEME.update(THEMES[theme_key])
+        self.config["ui_theme"] = theme_key
+        self._save_config()
+        
+        try:
+            ctk.set_appearance_mode(THEME["appearance_mode"])
+        except Exception:
+            pass
+            
+        try:
+            self.configure(fg_color=THEME["bg_main"])
+            if hasattr(self, "header") and self.header:
+                self.header.configure(fg_color=THEME["header_bg"])
+            if hasattr(self, "header_title_label") and self.header_title_label:
+                self.header_title_label.configure(text_color=THEME["text_accent"])
+            if hasattr(self, "tabview") and self.tabview:
+                self.tabview.configure(
+                    fg_color=THEME["bg_card"],
+                    segmented_button_fg_color=THEME["tab_bg"],
+                    segmented_button_selected_color=THEME["tab_selected"],
+                    segmented_button_unselected_color=THEME["tab_unselected"],
+                    segmented_button_selected_hover_color=THEME["accent_hover"],
+                    text_color=THEME["text_primary"]
+                )
+            if hasattr(self, "footer") and self.footer:
+                self.footer.configure(fg_color=THEME["footer_bg"])
+            if hasattr(self, "footer_label") and self.footer_label:
+                self.footer_label.configure(text_color=THEME["text_muted"])
+        except Exception as e:
+            print(f"Configure theme widgets error: {e}")
+            
+        # Re-build settings tab immediately so active theme indicator updates
+        self._build_settings_tab()
+        
+        # Invalidate tab cache for all other tabs so when user clicks them they render with new theme
+        self._loaded_tabs = {"⚙️ Settings"}
+
+    def _reset_settings_to_default(self):
+        self._set_font_scale(1.0)
+        self._apply_theme("cyber_navy")
+
+    def _restart_app(self):
+        try:
+            import subprocess
+            if getattr(sys, 'frozen', False):
+                exe = sys.executable
+                subprocess.Popen([exe])
+            else:
+                subprocess.Popen([sys.executable, os.path.abspath(__file__)])
+            self.destroy()
+        except Exception as e:
+            print(f"Restart error: {e}")
     
     # ===== LICENSE TAB =====
     def _build_license_tab(self):
@@ -2235,13 +2737,13 @@ class IVACApp(ctk.CTk):
             w.destroy()
         
         # Current License Card
-        lic_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        lic_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
         lic_card.pack(fill="x", padx=5, pady=(5, 5))
         
         ctk.CTkLabel(
             lic_card, text="🔑 বর্তমান লাইসেন্স",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(anchor="w", padx=15, pady=(10, 5))
         
         info = self.license_info
@@ -2263,25 +2765,25 @@ class IVACApp(ctk.CTk):
             row = ctk.CTkFrame(details, fg_color="transparent")
             row.pack(fill="x", pady=1)
             ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=11, weight="bold"),
-                        text_color="#8892b0", width=100, anchor="w").pack(side="left")
+                        text_color=THEME["text_secondary"], width=100, anchor="w").pack(side="left")
             ctk.CTkLabel(row, text=value, font=ctk.CTkFont(size=11),
-                        text_color="#ccd6f6", anchor="w").pack(side="left", padx=5)
+                        text_color=THEME["text_primary"], anchor="w").pack(side="left", padx=5)
                         
         # About
-        about_card = ctk.CTkFrame(tab, fg_color="#112240", corner_radius=10)
+        about_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10)
         about_card.pack(fill="x", padx=5, pady=5)
         
         ctk.CTkLabel(
             about_card, text="ℹ️ About",
             font=ctk.CTkFont(size=13, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(anchor="w", padx=15, pady=(10, 5))
         
         ctk.CTkLabel(
             about_card,
             text=f"{APP_NAME} v{APP_VERSION}\n© 2026 {APP_AUTHOR}\nAll Rights Reserved.",
             font=ctk.CTkFont(size=11),
-            text_color="#8892b0",
+            text_color=THEME["text_secondary"],
             justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 10))
     
@@ -2297,19 +2799,19 @@ class IVACApp(ctk.CTk):
         scroll.pack(fill="both", expand=True, padx=5, pady=5)
         
         # --- Card 1: 1-Click Chrome Profile Generator ---
-        gen_card = ctk.CTkFrame(scroll, fg_color="#112240", corner_radius=10)
+        gen_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
         gen_card.pack(fill="x", padx=5, pady=(5, 10))
         
         ctk.CTkLabel(
             gen_card, text="⚡ 1-Click Chrome Profile Generator",
             font=ctk.CTkFont(size=15, weight="bold"),
-            text_color="#64ffda"
+            text_color=THEME["text_accent"]
         ).pack(anchor="w", padx=15, pady=(12, 3))
         
         ctk.CTkLabel(
             gen_card,
             text="নতুন Chrome Profile তৈরি, নাম নির্ধারণ, অটো-বুকমার্ক (Search + IVAC) এবং Extension Auto-Pin এক ক্লিকেই!\nতৈরি হওয়া প্রোফাইলটি স্বয়ংক্রিয়ভাবে Profiles ট্যাবে যুক্ত হবে।",
-            font=ctk.CTkFont(size=11), text_color="#8892b0", justify="left"
+            font=ctk.CTkFont(size=11), text_color=THEME["text_secondary"], justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 10))
         
         gen_row = ctk.CTkFrame(gen_card, fg_color="transparent")
@@ -2318,12 +2820,14 @@ class IVACApp(ctk.CTk):
         ctk.CTkLabel(
             gen_row, text="Profile Name:",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(side="left", padx=(0, 10))
         
         self.entry_chrome_profile_name = ctk.CTkEntry(
             gen_row, placeholder_text="e.g. 30. MOHIR বা Counter 1",
-            font=ctk.CTkFont(size=13), height=38, width=280
+            font=ctk.CTkFont(size=13), height=38, width=280,
+            fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["text_primary"]
         )
         self.entry_chrome_profile_name.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.entry_chrome_profile_name.bind("<Return>", lambda e: self._create_and_launch_chrome_profile())
@@ -2331,7 +2835,7 @@ class IVACApp(ctk.CTk):
         self.btn_create_profile = ctk.CTkButton(
             gen_row, text="🚀 Create & Launch Profile",
             font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color="#0284c7", hover_color="#0369a1", height=38,
+            fg_color=THEME["accent_blue"], hover_color="#1d4ed8", height=38,
             command=self._create_and_launch_chrome_profile
         )
         self.btn_create_profile.pack(side="right")
@@ -2343,28 +2847,28 @@ class IVACApp(ctk.CTk):
         self.lbl_profile_status.pack(anchor="w", padx=15, pady=(0, 10))
         
         # --- Card 2: Bookmarks Configuration ---
-        bm_card = ctk.CTkFrame(scroll, fg_color="#112240", corner_radius=10)
+        bm_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
         bm_card.pack(fill="x", padx=5, pady=(0, 10))
         
         ctk.CTkLabel(
             bm_card, text="📌 Auto Bookmarks Configuration",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(anchor="w", padx=15, pady=(12, 4))
         
         ctk.CTkLabel(
             bm_card,
             text="প্রতিটি নতুন প্রোফাইলে ডিফল্টভাবে নিচের ২ টি বুকমার্ক যুক্ত হয় এবং Show Bookmarks Bar চালু থাকে:\n  ⭐ 1. {Profile Name} - Google Search\n  ⭐ 2. Indian Visa Application Center (https://appointment.ivacbd.com/signin)",
-            font=ctk.CTkFont(size=11), text_color="#38bdf8", justify="left"
+            font=ctk.CTkFont(size=11), text_color=THEME["text_accent"], justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 10))
         
         ctk.CTkLabel(
             bm_card, text="অতিরিক্ত কাস্টম বুকমার্ক লিংক (ঐচ্ছিক):",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(anchor="w", padx=15, pady=(0, 4))
         
-        self.bm_list_frame = ctk.CTkFrame(bm_card, fg_color="#0a192f", corner_radius=8)
+        self.bm_list_frame = ctk.CTkFrame(bm_card, fg_color=THEME["bg_subcard"], corner_radius=8)
         self.bm_list_frame.pack(fill="x", padx=15, pady=(0, 8))
         self._refresh_bookmarks_ui()
         
@@ -2373,7 +2877,8 @@ class IVACApp(ctk.CTk):
         
         self.entry_new_bm_url = ctk.CTkEntry(
             add_bm_row, placeholder_text="বুকমার্ক লিংক লিখুন (e.g. https://mail.proton.me)",
-            height=34
+            height=34, fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["text_primary"]
         )
         self.entry_new_bm_url.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.entry_new_bm_url.bind("<Return>", lambda e: self._add_custom_bookmark())
@@ -2381,18 +2886,18 @@ class IVACApp(ctk.CTk):
         ctk.CTkButton(
             add_bm_row, text="+ Add Link",
             font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color="#059669", hover_color="#047857", height=34, width=100,
+            fg_color=THEME["accent_emerald"], hover_color=THEME["accent_hover"], height=34, width=100,
             command=self._add_custom_bookmark
         ).pack(side="right")
         
         # --- Card 3: Bulk Extension Update in All Profiles ---
-        update_card = ctk.CTkFrame(scroll, fg_color="#112240", corner_radius=10)
+        update_card = ctk.CTkFrame(scroll, fg_color=THEME["bg_card"], corner_radius=10)
         update_card.pack(fill="x", padx=5, pady=(0, 15))
         
         ctk.CTkLabel(
             update_card, text="🔄 Update Extension in All Profiles",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#ccd6f6"
+            text_color=THEME["text_primary"]
         ).pack(anchor="w", padx=15, pady=(12, 4))
         
         ctk.CTkLabel(
