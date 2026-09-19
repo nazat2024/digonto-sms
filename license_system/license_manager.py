@@ -149,8 +149,15 @@ def _parse_firestore_doc(data: dict) -> dict:
             result[key] = None
     return result
 
+_last_cloud_sync_time = 0
+
 def _bg_cloud_sync(license_key, current_hwid):
-    """Silent background check to keep license cache fresh without blocking startup"""
+    """Silent background check to keep license cache fresh without blocking startup (max once per 15 minutes)"""
+    global _last_cloud_sync_time, _cached_license_mtime
+    now = time.time()
+    if now - _last_cloud_sync_time < 900:  # 15 minutes cooldown
+        return
+    _last_cloud_sync_time = now
     try:
         res = requests.get(f"{BASE_URL}/{license_key}?key={API_KEY}", timeout=5)
         if res.status_code == 200:
@@ -181,6 +188,10 @@ def _bg_cloud_sync(license_key, current_hwid):
                 encrypted = encrypt_data(json.dumps(new_data), extra_key=current_hwid)
                 with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
                     f.write(encrypted)
+                try:
+                    _cached_license_mtime = os.path.getmtime(LICENSE_FILE)
+                except Exception:
+                    pass
         elif res.status_code == 404:
             # License was permanently deleted by admin in dashboard! Instantly revoke locally!
             mark_license_blocked_locally(license_key)
@@ -287,9 +298,12 @@ def check_license(force_cloud: bool = False) -> LicenseInfo:
         return info
         
     try:
-        mtime = os.path.getmtime(LICENSE_FILE)
         now = time.time()
-        if not force_cloud and _cached_license_info is not None and mtime == _cached_license_mtime and (now - _cached_license_timestamp < 15):
+        if not force_cloud and _cached_license_info is not None and (now - _cached_license_timestamp < 60):
+            return _cached_license_info
+        mtime = os.path.getmtime(LICENSE_FILE)
+        if not force_cloud and _cached_license_info is not None and mtime == _cached_license_mtime:
+            _cached_license_timestamp = now
             return _cached_license_info
 
         with open(LICENSE_FILE, 'r', encoding='utf-8') as f:

@@ -2440,7 +2440,11 @@ export default function IvacLicenseManager() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [customDays, setCustomDays] = useState<string>('30');
   const [clientNameInput, setClientNameInput] = useState('');
-  const [selectedLicense, setSelectedLicense] = useState<IvacLicense | null>(null);
+  const [selectedLicenseKey, setSelectedLicenseKey] = useState<string | null>(null);
+  const selectedLicense = useMemo(() => {
+    if (!selectedLicenseKey) return null;
+    return licenses.find(l => l.key === selectedLicenseKey || l.id === selectedLicenseKey) || null;
+  }, [licenses, selectedLicenseKey]);
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState<string | null>(null);
 
@@ -2485,7 +2489,7 @@ export default function IvacLicenseManager() {
   };
 
   useEffect(() => {
-    // Listen to ivac_licenses in real-time
+    // Listen to ivac_licenses in real-time (mounts ONCE, 0 duplicate reads)
     const q = query(collection(db, 'ivac_licenses'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: IvacLicense[] = [];
@@ -2495,18 +2499,11 @@ export default function IvacLicenseManager() {
       // Sort by latest created
       data.sort((a, b) => b.created_at - a.created_at);
       setLicenses(data);
-
-      // Update selected license if it changes
-      if (selectedLicense) {
-        const updated = data.find(l => l.id === selectedLicense.id);
-        if (updated) setSelectedLicense(updated);
-      }
-
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [selectedLicense]);
+  }, []); // Empty dependency array prevents re-subscription read storms!
 
   const generateKey = async (days: number) => {
     setIsGenerating(true);
@@ -2554,7 +2551,6 @@ export default function IvacLicenseManager() {
       await updateDoc(doc(db, 'ivac_licenses', key), {
         status: nextStatus
       });
-      setSelectedLicense(prev => prev && prev.key === key ? { ...prev, status: nextStatus } : prev);
       setLicenses(prev => prev.map(l => l.key === key ? { ...l, status: nextStatus } : l));
       const targetLic = licenses.find(l => l.key === key) || selectedLicense;
       publishLicenseKillSwitch(key, nextStatus, targetLic);
@@ -2636,7 +2632,7 @@ export default function IvacLicenseManager() {
       await deleteDoc(doc(db, 'ivac_licenses', key));
 
       if (selectedLicense?.key === key) {
-        setSelectedLicense(null);
+        setSelectedLicenseKey(null);
       }
       setKeyToDelete(null);
     } catch (error: any) {
@@ -2653,7 +2649,7 @@ export default function IvacLicenseManager() {
       <>
         <ProfileView
           license={selectedLicense}
-          onBack={() => setSelectedLicense(null)}
+          onBack={() => setSelectedLicenseKey(null)}
           onBlockKey={blockKey}
           onDeleteKey={(key) => requestDeleteKey(key, selectedLicense?.client_name)}
         />
@@ -2880,7 +2876,7 @@ export default function IvacLicenseManager() {
                         <tr
                           key={lic.id}
                           className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group cursor-pointer"
-                          onClick={() => setSelectedLicense(lic)}
+                          onClick={() => setSelectedLicenseKey(lic.key)}
                         >
                           <td className="px-4 py-3">
                             {lic.client_name && (
@@ -2971,7 +2967,7 @@ export default function IvacLicenseManager() {
                           <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
                               <button
-                                onClick={(e) => { e.stopPropagation(); setSelectedLicense(lic); }}
+                                onClick={(e) => { e.stopPropagation(); setSelectedLicenseKey(lic.key); }}
                                 title="View Profile"
                                 className="p-2 flex items-center gap-1 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors font-medium text-sm"
                               >
