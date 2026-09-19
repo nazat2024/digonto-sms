@@ -635,8 +635,51 @@ function TursoVaultView({ license, onBack }: {
     };
   }, [license.key]);
 
+  // Merge payments seamlessly into activities stream so all past and current payments are immediately visible in the Live Activity timeline
+  const combinedActivities = useMemo(() => {
+    const list = [...activities];
+    const existingIds = new Set(list.map(a => a.id));
+    const existingSignatures = new Set(list.map(a => `${a.profile_id}_${Math.floor(Number(a.timestamp || 0) / 10000)}`));
+
+    payments.forEach((p: PaymentRecord) => {
+      const actId = `act_pay_${p.id}`;
+      const sig = `${p.profile_id}_${Math.floor(Number(p.timestamp || 0) / 10000)}`;
+      if (existingIds.has(actId) || existingIds.has(p.id) || existingSignatures.has(sig)) {
+        return;
+      }
+
+      const isSuccess = p.status === 'success';
+      const stageName = p.stage ? p.stage.toUpperCase() : 'INITIATED';
+      const amount = Number(p.amount_3 || p.amount || 0);
+
+      const syntheticAct: ActivityRecord = {
+        id: actId,
+        event_type: isSuccess ? 'payment_success' : 'payment_flow',
+        profile_id: p.profile_id || 'default',
+        profile_label: p.profile_label || (p.profile_id ? `Profile (${p.profile_id})` : 'Profile'),
+        title: isSuccess ? 'পেমেন্ট সফল (Payment Success)' : `পেমেন্ট স্টেজ: ${stageName}`,
+        details: [
+          p.rocket_account ? `একাউন্ট/গেটওয়ে: ${p.rocket_account}` : (p.stage ? `মেথড: ${p.stage}` : ''),
+          amount > 0 ? `পরিমাণ: ৳${amount.toLocaleString()}` : '',
+          p.status ? `স্ট্যাটাস: ${p.status}` : '',
+          p.description ? `নোট: ${p.description}` : ''
+        ].filter(Boolean).join(' | '),
+        amount: amount,
+        status: isSuccess ? 'success' : (p.status === 'failed' ? 'error' : 'info'),
+        timestamp: Number(p.timestamp || 0),
+        datetime: p.datetime,
+        off_source: p.stage || 'payment'
+      };
+
+      list.push(syntheticAct);
+    });
+
+    list.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+    return list;
+  }, [activities, payments]);
+
   // Filtered Activities (Respecting Archive/Hide Cutoff)
-  const filteredActivities = activities.filter((act: ActivityRecord) => {
+  const filteredActivities = combinedActivities.filter((act: ActivityRecord) => {
     if (selectedProfile !== 'all' && act.profile_id !== selectedProfile) return false;
     if (!showHidden && isItemArchived(act.profile_id, act.timestamp)) return false;
     if (selectedCategory === 'all') return true;
@@ -659,7 +702,7 @@ function TursoVaultView({ license, onBack }: {
   // When a hidden profile gets a new activity, it automatically reappears!
   const distinctProfiles = useMemo(() => {
     const map = new Map<string, string>();
-    const actList = showHidden ? activities : activities.filter(a => !isItemArchived(a.profile_id, a.timestamp));
+    const actList = showHidden ? combinedActivities : combinedActivities.filter(a => !isItemArchived(a.profile_id, a.timestamp));
     const payList = showHidden ? payments : payments.filter(p => !isItemArchived(p.profile_id, Number(p.timestamp || 0)));
 
     actList.forEach((a: ActivityRecord) => {
@@ -669,7 +712,7 @@ function TursoVaultView({ license, onBack }: {
       if (p.profile_id) map.set(p.profile_id, p.profile_label || `Profile ${p.profile_id}`);
     });
     return Array.from(map.entries());
-  }, [activities, payments, archivedCutoffs, showHidden]);
+  }, [combinedActivities, payments, archivedCutoffs, showHidden]);
 
   // Auto-reset selectedProfile if that profile is now archived/hidden
   useEffect(() => {
@@ -681,7 +724,7 @@ function TursoVaultView({ license, onBack }: {
     }
   }, [distinctProfiles, selectedProfile, showHidden]);
 
-  const hiddenActivitiesCount = activities.filter(a => (selectedProfile === 'all' || a.profile_id === selectedProfile) && isItemArchived(a.profile_id, a.timestamp)).length;
+  const hiddenActivitiesCount = combinedActivities.filter(a => (selectedProfile === 'all' || a.profile_id === selectedProfile) && isItemArchived(a.profile_id, a.timestamp)).length;
   const hiddenPaymentsCount = payments.filter(p => (selectedProfile === 'all' || p.profile_id === selectedProfile) && isItemArchived(p.profile_id, Number(p.timestamp || 0))).length;
   const totalHiddenCount = activeTab === 'activities' ? hiddenActivitiesCount : hiddenPaymentsCount;
   const isProfileArchived = Boolean(archivedCutoffs[selectedProfile] || (selectedProfile === 'all' && Object.keys(archivedCutoffs).length > 0));
@@ -743,7 +786,7 @@ function TursoVaultView({ license, onBack }: {
             <div>
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">অ্যাক্টিভিটি রেকর্ড (Turso)</p>
               <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">
-                {showHidden ? activities.length : filteredActivities.length}
+                {showHidden ? combinedActivities.length : filteredActivities.length}
                 {hiddenActivitiesCount > 0 && !showHidden && (
                   <span className="text-xs font-normal text-amber-600 dark:text-amber-400 ml-1.5">
                     ({hiddenActivitiesCount} লুকানো)
@@ -825,7 +868,7 @@ function TursoVaultView({ license, onBack }: {
                 }`}
               >
                 <Activity className="h-3.5 w-3.5" />
-                লাইভ অ্যাক্টিভিটি ও অফ লগ ({showHidden ? activities.length : filteredActivities.length})
+                লাইভ অ্যাক্টিভিটি ও অফ লগ ({showHidden ? combinedActivities.length : filteredActivities.length})
               </button>
               <button
                 onClick={() => setActiveTab('payments')}
@@ -1062,7 +1105,7 @@ function TursoVaultView({ license, onBack }: {
                                 <div className="font-semibold text-slate-800 dark:text-slate-200">
                                   {act.title}
                                 </div>
-                                                                {act.off_source && (
+                                                                {act.off_source && !act.event_type.includes('payment') && !act.event_type.includes('pay') && (
                                   <span className={`inline-block mt-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded border ${
                                     act.event_type === 'ext_enabled'
                                       ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
@@ -1077,6 +1120,11 @@ function TursoVaultView({ license, onBack }: {
                                           : act.off_source === 'uninstalled'
                                           ? 'এক্সটেনশন আনইনস্টল/রিমুভ'
                                           : act.off_source)}
+                                  </span>
+                                )}
+                                {(act.event_type.includes('payment') || act.event_type.includes('pay')) && act.off_source && (
+                                  <span className="inline-block mt-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded border bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 uppercase font-semibold">
+                                    {act.off_source}
                                   </span>
                                 )}
                               </div>

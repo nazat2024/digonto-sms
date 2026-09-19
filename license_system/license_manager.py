@@ -615,6 +615,25 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
             
         # ৩. Turso Database-এ সেভ করো (Dual-Cloud Failsafe: id=clean_id হওয়ায় ১০০% গ্যারান্টি ১টি রো হবে)
         insert_turso_payment_async(payment_record)
+        
+        # ৩.১ Turso Activities এবং MQTT লাইভ চ্যানেলে পেমেন্ট ইভেন্ট রেকর্ড ও ব্রডকাস্ট করো
+        try:
+            act_event = "payment_success" if status == "success" else "payment_flow"
+            is_succ = (status == "success")
+            act_title = "পেমেন্ট সফল (Payment Success)" if is_succ else f"পেমেন্ট স্টেজ: {str(stage or 'initiated').upper()}"
+            act_details = f"মেথড: {stage or rocket_account or 'payment'} | একাউন্ট: {rocket_account or 'N/A'} | পরিমাণ: ৳{final_amount:.2f} | স্ট্যাটাস: {status}"
+            record_activity(
+                event_type=act_event,
+                profile_id=profile_id or "default",
+                profile_label=payment_record["profile_label"],
+                title=act_title,
+                details=act_details,
+                amount=final_amount,
+                status="success" if is_succ else "info",
+                off_source=stage or "payment"
+            )
+        except Exception as act_err:
+            print(f"[Payment Activity Error] {act_err}")
             
         # ৪. ক্লাউড ফায়ারবেসে Idempotent PATCH পাঠানো (কোনো ডুপ্লিকেট ডকুমেন্ট হবে না)
         payments_doc_url = f"{BASE_URL}/{license_key}/payments/{clean_id}"
@@ -729,6 +748,24 @@ def update_payment_stage(payment_id: str, stage: str, status: str = None, amount
         # Turso Database-এও স্টেজ, স্ট্যাটাস ও অ্যামাউন্ট সিঙ্ক করো
         try:
             update_turso_payment_async(payment_id, stage, status, amount)
+            # Turso activities ও MQTT লাইভ চ্যানেলে পেমেন্ট আপডেট ব্রডকাস্ট করো
+            is_succ = (status == "success")
+            target_record = next((x for x in local_list if x.get("id") == payment_id or x.get("local_id") == payment_id or x.get("cloud_id") == payment_id), {})
+            p_label = target_record.get("profile_label") or "Profile"
+            p_id = target_record.get("profile_id") or "default"
+            p_amt = float(amount or target_record.get("amount_3") or target_record.get("amount") or 0)
+            act_title = "পেমেন্ট সফল (Payment Success)" if is_succ else f"পেমেন্ট স্টেজ: {str(stage).upper()}"
+            act_details = f"স্টেজ: {stage} | স্ট্যাটাস: {status or 'updated'}{f' | পরিমাণ: ৳{p_amt:.2f}' if p_amt > 0 else ''}"
+            record_activity(
+                event_type="payment_success" if is_succ else "payment_flow",
+                profile_id=p_id,
+                profile_label=p_label,
+                title=act_title,
+                details=act_details,
+                amount=p_amt,
+                status="success" if is_succ else "info",
+                off_source=stage or "payment"
+            )
         except Exception as turso_err:
             print(f"[Turso Sync Error] {turso_err}")
             
@@ -956,7 +993,7 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
 
     # 3. We record genuine MANUAL ON/OFF toggle events (and payments/milestones) to Turso Database!
     is_manual_toggle = (event_type in ["ext_disabled", "ext_enabled", "manual_off", "ext_uninstalled"] and off_source in ["popup", "manage_extensions_page", "uninstalled"])
-    is_payment = (event_type in ["payment_recorded", "payment_success"])
+    is_payment = (event_type in ["payment_recorded", "payment_success", "payment_flow"])
 
     # If it's not a manual on/off toggle and not a payment milestone, skip database insertion completely
     if not (is_manual_toggle or is_payment):
@@ -1024,7 +1061,7 @@ def record_activity(event_type: str, profile_id: str = "default", profile_label:
         "title": str(title),
         "details": str(details or ""),
         "amount": float(amount or 0),
-        "status": str(status or "warning"),
+        "status": str(status or ("info" if is_payment else "warning")),
         "timestamp": timestamp_ms,
         "datetime": datetime_str,
         "time_formatted": time_str
