@@ -1,59 +1,101 @@
 package com.digonto.smsforwarder;
 
 import android.Manifest;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.google.android.material.textfield.TextInputEditText;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
 
+    // Tab Views
+    private ScrollView tabHomeLayout;
+    private LinearLayout tabMessageLayout;
+    private ScrollView tabProxyLayout;
+    private ScrollView tabSettingLayout;
+    private BottomNavigationView bottomNavigation;
+
+    // Tab 1: Home View Elements
     private TextInputEditText pairingCodeInput, sim1Input, sim2Input;
     private TextView tvSim1Operator, tvSim2Operator;
-    private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnAutoDetectSim, btnHistory;
+    private Button btnAddDesktop, btnAddAnotherDesktop, btnSaveSim, btnAutoDetectSim;
     private TextView btnCancelAddDesktop, tvDesktopCount;
     private LinearLayout layoutPairingInputBox;
     private ChipGroup chipGroupDesktops;
     private TextView statusText;
     private ImageView statusIcon;
-    private SharedPreferences prefs;
+    private LinearLayout layoutHomeDivertAlert;
+    private Button btnQuickCancelDivert;
 
+    // Tab 2: Message View Elements
+    private RecyclerView rvHistoryTab;
+    private TextView tvEmptyHistoryTab;
+    private Button btnRefreshMessages, btnClearMessages;
+    private HistoryAdapter historyAdapter;
+
+    // Tab 4: Setting View Elements
+    private SwitchMaterial switchKeepScreenAwake, switchAmoledSaver, switchFocusModeDnd;
+    private TextInputEditText etCustomDeviceName;
+    private Button btnSaveCustomDeviceName, btnStartCallDivert, btnCancelCallDivert;
+
+    // AMOLED Black Saver Elements
+    private FrameLayout layoutBlackSaverOverlay;
+    private Handler amoledHandler = new Handler(Looper.getMainLooper());
+    private Runnable amoledRunnable;
+    private static final long AMOLED_TIMEOUT_MS = 120_000; // 2 minutes
+
+    private SharedPreferences prefs;
     private boolean isSimLocked = false;
+    private Handler statusPollHandler;
+    private Runnable statusPollRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
+
         // Permissions check fallback
         if (!hasAllPermissions()) {
             startActivity(new Intent(this, PermissionsActivity.class));
             finish();
             return;
         }
-        
+
         setContentView(R.layout.activity_main);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -63,6 +105,41 @@ public class MainActivity extends AppCompatActivity {
 
         prefs = getSharedPreferences("SMSConfig", MODE_PRIVATE);
 
+        initViews();
+        setupBottomNavigation();
+        setupHomeTab();
+        setupMessageTab();
+        setupSettingTab();
+        setupAmoledBlackSaver();
+
+        // Screen Awake Preference Init
+        boolean keepAwake = prefs.getBoolean("keep_screen_awake", true);
+        applyScreenAwake(keepAwake);
+
+        // Start Background MQTT Service
+        startMqttService();
+
+        // Periodic Status Polling Loop for live UI & chip LEDs
+        statusPollHandler = new Handler(Looper.getMainLooper());
+        statusPollRunnable = new Runnable() {
+            @Override
+            public void run() {
+                updateConnectionStatusLive();
+                statusPollHandler.postDelayed(this, 1500);
+            }
+        };
+        statusPollHandler.post(statusPollRunnable);
+    }
+
+    private void initViews() {
+        // Tabs
+        tabHomeLayout = findViewById(R.id.tabHomeLayout);
+        tabMessageLayout = findViewById(R.id.tabMessageLayout);
+        tabProxyLayout = findViewById(R.id.tabProxyLayout);
+        tabSettingLayout = findViewById(R.id.tabSettingLayout);
+        bottomNavigation = findViewById(R.id.bottomNavigation);
+
+        // Tab 1: Home
         pairingCodeInput = findViewById(R.id.pairingCodeInput);
         sim1Input = findViewById(R.id.sim1Input);
         sim2Input = findViewById(R.id.sim2Input);
@@ -75,17 +152,61 @@ public class MainActivity extends AppCompatActivity {
         layoutPairingInputBox = findViewById(R.id.layoutPairingInputBox);
         btnSaveSim = findViewById(R.id.btnSaveSim);
         btnAutoDetectSim = findViewById(R.id.btnAutoDetectSim);
-        btnHistory = findViewById(R.id.btnHistory);
         chipGroupDesktops = findViewById(R.id.chipGroupDesktops);
-        
         statusText = findViewById(R.id.statusText);
         statusIcon = findViewById(R.id.statusIcon);
+        layoutHomeDivertAlert = findViewById(R.id.layoutHomeDivertAlert);
+        btnQuickCancelDivert = findViewById(R.id.btnQuickCancelDivert);
 
-        // History Button Click Listener
-        btnHistory.setOnClickListener(v -> {
-            startActivity(new Intent(MainActivity.this, HistoryActivity.class));
+        // Tab 2: Message
+        rvHistoryTab = findViewById(R.id.rvHistoryTab);
+        tvEmptyHistoryTab = findViewById(R.id.tvEmptyHistoryTab);
+        btnRefreshMessages = findViewById(R.id.btnRefreshMessages);
+        btnClearMessages = findViewById(R.id.btnClearMessages);
+
+        // Tab 4: Setting
+        switchKeepScreenAwake = findViewById(R.id.switchKeepScreenAwake);
+        switchAmoledSaver = findViewById(R.id.switchAmoledSaver);
+        switchFocusModeDnd = findViewById(R.id.switchFocusModeDnd);
+        etCustomDeviceName = findViewById(R.id.etCustomDeviceName);
+        btnSaveCustomDeviceName = findViewById(R.id.btnSaveCustomDeviceName);
+        btnStartCallDivert = findViewById(R.id.btnStartCallDivert);
+        btnCancelCallDivert = findViewById(R.id.btnCancelCallDivert);
+
+        // AMOLED Overlay
+        layoutBlackSaverOverlay = findViewById(R.id.layoutBlackSaverOverlay);
+    }
+
+    private void setupBottomNavigation() {
+        bottomNavigation.setOnItemSelectedListener(item -> {
+            int itemId = item.getItemId();
+            if (itemId == R.id.nav_home) {
+                switchTab(0);
+                return true;
+            } else if (itemId == R.id.nav_message) {
+                switchTab(1);
+                loadHistoryTab();
+                return true;
+            } else if (itemId == R.id.nav_proxy) {
+                switchTab(2);
+                return true;
+            } else if (itemId == R.id.nav_setting) {
+                switchTab(3);
+                return true;
+            }
+            return false;
         });
+    }
 
+    private void switchTab(int index) {
+        tabHomeLayout.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+        tabMessageLayout.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+        tabProxyLayout.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        tabSettingLayout.setVisibility(index == 3 ? View.VISIBLE : View.GONE);
+    }
+
+    // ==================== TAB 1: HOME SETUP ====================
+    private void setupHomeTab() {
         // "+ Add Another Desktop" click
         btnAddAnotherDesktop.setOnClickListener(v -> {
             layoutPairingInputBox.setVisibility(View.VISIBLE);
@@ -115,14 +236,13 @@ public class MainActivity extends AppCompatActivity {
         String savedOp1 = prefs.getString("sim1_operator", "");
         String savedOp2 = prefs.getString("sim2_operator", "");
 
-        // Auto-migration: if savedSim1 was an operator name rather than a phone number
         if (!savedSim1.isEmpty() && !isPhoneNumber(savedSim1)) {
             if (savedOp1.isEmpty()) savedOp1 = savedSim1;
-            savedSim1 = ""; // clear input so ghost hint 019XXXXXXXX shows!
+            savedSim1 = "";
         }
         if (!savedSim2.isEmpty() && !isPhoneNumber(savedSim2)) {
             if (savedOp2.isEmpty()) savedOp2 = savedSim2;
-            savedSim2 = ""; // clear input so ghost hint 017XXXXXXXX shows!
+            savedSim2 = "";
         }
 
         sim1Input.setText(savedSim1);
@@ -137,21 +257,16 @@ public class MainActivity extends AppCompatActivity {
             updateSimHint(sim2Input, savedOp2);
         }
 
-        // If either has a real saved phone number, lock them. Otherwise unlock so user can type directly!
         if (!savedSim1.isEmpty() || !savedSim2.isEmpty()) {
             lockSimInputs();
         } else {
             unlockSimInputs();
-            // Auto detect carrier operators on startup if not yet detected
             if (savedOp1.isEmpty() && savedOp2.isEmpty()) {
                 autoDetectSims(false);
             }
         }
 
-        // Manual Auto Detect Button Click
-        btnAutoDetectSim.setOnClickListener(v -> {
-            autoDetectSims(true);
-        });
+        btnAutoDetectSim.setOnClickListener(v -> autoDetectSims(true));
 
         btnSaveSim.setOnClickListener(v -> {
             if (isSimLocked) {
@@ -163,37 +278,29 @@ public class MainActivity extends AppCompatActivity {
                 String op1 = prefs.getString("sim1_operator", "Banglalink");
                 String op2 = prefs.getString("sim2_operator", "Grameenphone");
 
-                // If user entered number, use it as sim name. Otherwise fallback to operator name for MQTT/SMS
                 String name1 = !num1.isEmpty() ? num1 : op1;
                 String name2 = !num2.isEmpty() ? num2 : op2;
 
                 prefs.edit()
-                    .putString("sim1_number", num1)
-                    .putString("sim2_number", num2)
-                    .putString("sim1_name", name1)
-                    .putString("sim2_name", name2)
-                    .apply();
+                        .putString("sim1_number", num1)
+                        .putString("sim2_number", num2)
+                        .putString("sim1_name", name1)
+                        .putString("sim2_name", name2)
+                        .apply();
 
                 Toast.makeText(this, "SIM Numbers Saved!", Toast.LENGTH_SHORT).show();
                 lockSimInputs();
-            }
-        });
-        
-        loadChips();
-        updateStatusUI();
 
-        // Check connection status periodically
-        Handler statusHandler = new Handler(android.os.Looper.getMainLooper());
-        statusHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                updateConnectionStatusLive();
-                statusHandler.postDelayed(this, 1000);
+                // Trigger instant sync ping
+                if (MqttService.instance != null) {
+                    MqttService.instance.sendSinglePing();
+                }
             }
         });
 
+        // Add Desktop Code with Instant Dynamic MQTT Subscription
         btnAddDesktop.setOnClickListener(v -> {
-            String code = pairingCodeInput.getText().toString().trim();
+            String code = pairingCodeInput.getText() != null ? pairingCodeInput.getText().toString().trim() : "";
             if (code.length() < 6) {
                 Toast.makeText(this, "Please enter a valid 6-digit code", Toast.LENGTH_SHORT).show();
                 return;
@@ -205,26 +312,355 @@ public class MainActivity extends AppCompatActivity {
             }
             codes.add(code);
             prefs.edit().putStringSet("pairing_codes", codes).apply();
-            
-            // For backwards compatibility
             prefs.edit().putString("pairing_code", code).apply();
-            
+
             pairingCodeInput.setText("");
             InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             if (imm != null) {
                 imm.hideSoftInputFromWindow(pairingCodeInput.getWindowToken(), 0);
             }
-            
+
+            // Dynamically subscribe immediately without restarting service!
+            if (MqttService.instance != null) {
+                MqttService.instance.subscribeToCode(code);
+                MqttService.instance.sendSinglePing();
+            } else {
+                startMqttService();
+            }
+
             loadChips();
-            Toast.makeText(this, "Desktop added successfully!", Toast.LENGTH_SHORT).show();
-            updateStatusUI();
-            startMqttService();
+            Toast.makeText(this, "Desktop added & connected!", Toast.LENGTH_SHORT).show();
+            updateConnectionStatusLive();
+        });
+
+        // Quick Cancel Divert from banner
+        btnQuickCancelDivert.setOnClickListener(v -> executeCallDivert("##21#", false));
+
+        // Update Divert Banner visibility on launch
+        boolean isDivertActive = prefs.getBoolean("divert_active", false);
+        layoutHomeDivertAlert.setVisibility(isDivertActive ? View.VISIBLE : View.GONE);
+
+        loadChips();
+    }
+
+    // ==================== TAB 2: MESSAGE (SMS HISTORY) ====================
+    private void setupMessageTab() {
+        rvHistoryTab.setLayoutManager(new LinearLayoutManager(this));
+        historyAdapter = new HistoryAdapter(this, new ArrayList<>());
+        rvHistoryTab.setAdapter(historyAdapter);
+
+        btnRefreshMessages.setOnClickListener(v -> loadHistoryTab());
+
+        btnClearMessages.setOnClickListener(v -> {
+            new AlertDialog.Builder(this)
+                    .setTitle("Clear History")
+                    .setMessage("Are you sure you want to delete all saved SMS logs?")
+                    .setPositiveButton("Clear", (dialog, which) -> {
+                        SmsLogDbHelper.getInstance(this).deleteAllLogs();
+                        loadHistoryTab();
+                        Toast.makeText(this, "All SMS logs deleted", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
         });
     }
 
+    private void loadHistoryTab() {
+        if (historyAdapter != null) {
+            List<SmsLog> logs = SmsLogDbHelper.getInstance(this).getAllLogs();
+            historyAdapter.updateData(logs);
+            if (logs.isEmpty()) {
+                tvEmptyHistoryTab.setVisibility(View.VISIBLE);
+                rvHistoryTab.setVisibility(View.GONE);
+            } else {
+                tvEmptyHistoryTab.setVisibility(View.GONE);
+                rvHistoryTab.setVisibility(View.VISIBLE);
+            }
+        }
+    }
+
+    // ==================== TAB 4: SETTING SETUP ====================
+    private void setupSettingTab() {
+        // Screen Awake switch
+        boolean keepAwake = prefs.getBoolean("keep_screen_awake", true);
+        switchKeepScreenAwake.setChecked(keepAwake);
+        switchKeepScreenAwake.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("keep_screen_awake", isChecked).apply();
+            applyScreenAwake(isChecked);
+            Toast.makeText(this, isChecked ? "Screen will stay awake" : "Normal screen timeout restored", Toast.LENGTH_SHORT).show();
+        });
+
+        // AMOLED Black Saver switch
+        boolean amoledSaver = prefs.getBoolean("amoled_black_saver", false);
+        switchAmoledSaver.setChecked(amoledSaver);
+        switchAmoledSaver.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("amoled_black_saver", isChecked).apply();
+            resetAmoledTimer();
+            Toast.makeText(this, isChecked ? "AMOLED Saver Enabled (2 min idle)" : "AMOLED Saver Disabled", Toast.LENGTH_SHORT).show();
+        });
+
+        // Custom Device Name
+        String savedCustomName = prefs.getString("custom_device_name", "");
+        if (savedCustomName.isEmpty()) {
+            savedCustomName = Build.MODEL;
+        }
+        etCustomDeviceName.setText(savedCustomName);
+
+        btnSaveCustomDeviceName.setOnClickListener(v -> {
+            String name = etCustomDeviceName.getText() != null ? etCustomDeviceName.getText().toString().trim() : "";
+            if (name.isEmpty()) {
+                name = Build.MODEL;
+            }
+            prefs.edit().putString("custom_device_name", name).apply();
+            if (MqttService.instance != null) {
+                MqttService.instance.updateCustomDeviceName(name);
+            }
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(etCustomDeviceName.getWindowToken(), 0);
+            }
+            Toast.makeText(this, "Device name saved & synced to all desktops!", Toast.LENGTH_SHORT).show();
+        });
+
+        // Focus Mode: DND
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && nm != null) {
+            switchFocusModeDnd.setChecked(nm.getCurrentInterruptionFilter() == NotificationManager.INTERRUPTION_FILTER_NONE
+                    || nm.getCurrentInterruptionFilter() == NotificationManager.INTERRUPTION_FILTER_PRIORITY);
+        }
+        switchFocusModeDnd.setOnClickListener(v -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && nm != null) {
+                if (!nm.isNotificationPolicyAccessGranted()) {
+                    Toast.makeText(this, "Please grant Do Not Disturb access", Toast.LENGTH_SHORT).show();
+                    Intent intent = new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+                    startActivity(intent);
+                    switchFocusModeDnd.setChecked(false);
+                } else {
+                    if (switchFocusModeDnd.isChecked()) {
+                        nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE);
+                        Toast.makeText(this, "Focus Mode (DND) Activated: Calls & Popups Muted", Toast.LENGTH_SHORT).show();
+                    } else {
+                        nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL);
+                        Toast.makeText(this, "Focus Mode Disabled", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        });
+
+        // GSM Call Divert Controls
+        btnStartCallDivert.setOnClickListener(v -> {
+            new AlertDialog.Builder(this)
+                    .setTitle("কল ব্লক (Call Divert)")
+                    .setMessage("কল ব্লক মোড চালু করলে কোনো সাধারণ ভয়েস কল ঢুকবে না (কলারকে বলবে নম্বরটি বন্ধ/ব্যস্ত), কিন্তু 4G ইন্টারনেট ও SMS/OTP ১০০% চালু থাকবে।\n\nআপনি কি কল ব্লক করতে চান?")
+                    .setPositiveButton("চালু করুন", (dialog, which) -> executeCallDivert("*21*01700000000#", true))
+                    .setNegativeButton("বাতিল", null)
+                    .show();
+        });
+
+        btnCancelCallDivert.setOnClickListener(v -> executeCallDivert("##21#", false));
+    }
+
+    private void executeCallDivert(String ussdCode, boolean isDiverting) {
+        try {
+            // Encode '#' as '%23' for USSD dialer intent
+            String encodedUssd = "tel:" + Uri.encode(ussdCode);
+            Intent callIntent = new Intent(Intent.ACTION_CALL, Uri.parse(encodedUssd));
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                startActivity(callIntent);
+            } else {
+                Intent dialIntent = new Intent(Intent.ACTION_DIAL, Uri.parse(encodedUssd));
+                startActivity(dialIntent);
+            }
+
+            prefs.edit().putBoolean("divert_active", isDiverting).apply();
+            layoutHomeDivertAlert.setVisibility(isDiverting ? View.VISIBLE : View.GONE);
+
+            if (isDiverting) {
+                Toast.makeText(this, "কল ব্লক কোড ডায়াল করা হয়েছে। 4G ও SMS সচল থাকবে।", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "কল স্বাভাবিক করার কোড ডায়াল করা হয়েছে।", Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Error executing USSD: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ==================== SCREEN AWAKE & AMOLED SAVER ====================
+    private void applyScreenAwake(boolean awake) {
+        if (awake) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
+    private void setupAmoledBlackSaver() {
+        amoledRunnable = () -> {
+            boolean isSaverEnabled = prefs.getBoolean("amoled_black_saver", false);
+            if (isSaverEnabled && layoutBlackSaverOverlay != null) {
+                layoutBlackSaverOverlay.setVisibility(View.VISIBLE);
+            }
+        };
+
+        if (layoutBlackSaverOverlay != null) {
+            layoutBlackSaverOverlay.setOnClickListener(v -> {
+                layoutBlackSaverOverlay.setVisibility(View.GONE);
+                resetAmoledTimer();
+            });
+        }
+        resetAmoledTimer();
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        resetAmoledTimer();
+    }
+
+    private void resetAmoledTimer() {
+        if (amoledHandler != null && amoledRunnable != null) {
+            amoledHandler.removeCallbacks(amoledRunnable);
+            boolean isSaverEnabled = prefs.getBoolean("amoled_black_saver", false);
+            if (isSaverEnabled) {
+                amoledHandler.postDelayed(amoledRunnable, AMOLED_TIMEOUT_MS);
+            }
+        }
+    }
+
+    // ==================== DESKTOP CHIPS & STATUS LEDS ====================
+    private void loadChips() {
+        chipGroupDesktops.removeAllViews();
+        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+
+        tvDesktopCount.setText(codes.size() + " Paired");
+
+        if (codes.isEmpty()) {
+            layoutPairingInputBox.setVisibility(View.VISIBLE);
+            btnAddAnotherDesktop.setVisibility(View.GONE);
+            btnCancelAddDesktop.setVisibility(View.GONE);
+        } else {
+            layoutPairingInputBox.setVisibility(View.GONE);
+            btnAddAnotherDesktop.setVisibility(View.VISIBLE);
+            btnCancelAddDesktop.setVisibility(View.GONE);
+        }
+
+        for (String code : codes) {
+            Chip chip = new Chip(this);
+            chip.setTag(code);
+            chip.setChipCornerRadius(16f);
+            chip.setTextSize(13f);
+            chip.setCloseIconVisible(true);
+            chip.setCloseIconTint(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#EF4444")));
+
+            // Update chip text and LED state
+            updateSingleChipState(chip, code);
+
+            chip.setOnCloseIconClickListener(v -> {
+                Set<String> currentCodes = new HashSet<>(prefs.getStringSet("pairing_codes", new HashSet<>()));
+                currentCodes.remove(code);
+                prefs.edit().putStringSet("pairing_codes", currentCodes).apply();
+
+                if (currentCodes.isEmpty()) {
+                    prefs.edit().remove("pairing_code").apply();
+                } else if (code.equals(prefs.getString("pairing_code", ""))) {
+                    prefs.edit().putString("pairing_code", currentCodes.iterator().next()).apply();
+                }
+
+                if (MqttService.instance != null) {
+                    MqttService.instance.unsubscribeFromCode(code);
+                }
+
+                loadChips();
+                updateConnectionStatusLive();
+            });
+
+            chipGroupDesktops.addView(chip);
+        }
+    }
+
     /**
-     * Auto detects SIM carrier names and phone numbers from the device hardware.
+     * Individual LED Badge: 🟢 Live, 🔴 Offline, 🟡 Waiting per desktop!
      */
+    private void updateSingleChipState(Chip chip, String code) {
+        long lastPong = MqttService.lastPongReceivedTimes.containsKey(code) ? MqttService.lastPongReceivedTimes.get(code) : 0;
+        long timeSinceLastPong = System.currentTimeMillis() - lastPong;
+
+        if (timeSinceLastPong < 10000 && lastPong > 0) {
+            // Live Online: Emerald Green
+            chip.setText("🟢 Desktop: " + code + " (Live)");
+            chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#F0FDF4")));
+            chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#10B981")));
+            chip.setChipStrokeWidth(2f);
+            chip.setTextColor(android.graphics.Color.parseColor("#065F46"));
+        } else if (MqttService.isConnectedToBroker) {
+            // Broker connected, but desktop pong not received: Offline Red
+            chip.setText("🔴 Desktop: " + code + " (Offline)");
+            chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FEF2F2")));
+            chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#EF4444")));
+            chip.setChipStrokeWidth(2f);
+            chip.setTextColor(android.graphics.Color.parseColor("#991B1B"));
+        } else {
+            // Connecting / Waiting: Amber
+            chip.setText("🟡 Desktop: " + code + " (Waiting...)");
+            chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFFBEB")));
+            chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#F59E0B")));
+            chip.setChipStrokeWidth(2f);
+            chip.setTextColor(android.graphics.Color.parseColor("#92400E"));
+        }
+    }
+
+    private void updateConnectionStatusLive() {
+        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+        if (codes.isEmpty()) {
+            statusText.setText("Offline");
+            statusText.setTextColor(0xFFDC2626);
+            statusIcon.setColorFilter(0xFFDC2626);
+            return;
+        }
+
+        // Refresh each chip's individual LED without recreating chips
+        for (int i = 0; i < chipGroupDesktops.getChildCount(); i++) {
+            View child = chipGroupDesktops.getChildAt(i);
+            if (child instanceof Chip) {
+                Chip chip = (Chip) child;
+                String code = (String) chip.getTag();
+                if (code != null) {
+                    updateSingleChipState(chip, code);
+                }
+            }
+        }
+
+        if (MqttService.isConnectedToBroker) {
+            int onlineCount = 0;
+            for (String code : codes) {
+                long lastPong = MqttService.lastPongReceivedTimes.containsKey(code) ? MqttService.lastPongReceivedTimes.get(code) : 0;
+                long timeSinceLastPong = System.currentTimeMillis() - lastPong;
+                if (timeSinceLastPong < 10000 && lastPong > 0) {
+                    onlineCount++;
+                }
+            }
+
+            if (onlineCount == codes.size()) {
+                statusText.setText("Live Sync (" + onlineCount + ")");
+                statusText.setTextColor(0xFF10B981); // Emerald Green
+                statusIcon.setColorFilter(0xFF10B981);
+            } else if (onlineCount > 0) {
+                statusText.setText("Partial (" + onlineCount + "/" + codes.size() + ")");
+                statusText.setTextColor(0xFFF59E0B); // Amber
+                statusIcon.setColorFilter(0xFFF59E0B);
+            } else {
+                statusText.setText("Waiting...");
+                statusText.setTextColor(0xFF0284C7); // Blue
+                statusIcon.setColorFilter(0xFF0284C7);
+            }
+        } else {
+            statusText.setText("Connecting...");
+            statusText.setTextColor(0xFFDC2626); // Red
+            statusIcon.setColorFilter(0xFFDC2626);
+        }
+    }
+
+    // ==================== SIM AUTO DETECT & LOCK ====================
     private void autoDetectSims(boolean showToast) {
         try {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
@@ -251,97 +687,43 @@ public class MainActivity extends AppCompatActivity {
 
             for (SubscriptionInfo info : subList) {
                 int slot = info.getSimSlotIndex();
-                String number = "";
-
-                // Android 13+ (Tiramisu) specific phone number getter
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    try {
-                        number = sm.getPhoneNumber(info.getSubscriptionId());
-                    } catch (Exception ignored) {}
-                }
-
-                if (number == null || number.isEmpty()) {
-                    try {
-                        number = info.getNumber();
-                    } catch (Exception ignored) {}
-                }
-
-                CharSequence carrier = info.getCarrierName();
-                CharSequence displayName = info.getDisplayName();
-                String opName = "";
-                if (carrier != null && !carrier.toString().trim().isEmpty()) {
-                    opName = carrier.toString().trim();
-                } else if (displayName != null && !displayName.toString().trim().isEmpty()) {
-                    opName = displayName.toString().trim();
-                } else {
-                    opName = "SIM " + (slot + 1);
-                }
+                String carrier = info.getCarrierName() != null ? info.getCarrierName().toString().trim() : "";
+                String number = info.getNumber() != null ? info.getNumber().trim() : "";
 
                 if (slot == 0) {
-                    detectedOp1 = opName;
-                    if (number != null && isPhoneNumber(number)) {
-                        detectedNum1 = formatBDNumber(number);
-                    }
+                    detectedOp1 = cleanCarrierName(carrier);
+                    if (isPhoneNumber(number)) detectedNum1 = cleanPhoneNumber(number);
                 } else if (slot == 1) {
-                    detectedOp2 = opName;
-                    if (number != null && isPhoneNumber(number)) {
-                        detectedNum2 = formatBDNumber(number);
-                    }
+                    detectedOp2 = cleanCarrierName(carrier);
+                    if (isPhoneNumber(number)) detectedNum2 = cleanPhoneNumber(number);
                 }
             }
-
-            SharedPreferences.Editor editor = prefs.edit();
-            boolean updated = false;
 
             if (!detectedOp1.isEmpty()) {
                 tvSim1Operator.setText("📶 " + detectedOp1);
                 updateSimHint(sim1Input, detectedOp1);
-                editor.putString("sim1_operator", detectedOp1);
-                updated = true;
-
-                // Only setText if hardware returned an actual phone number
-                if (!detectedNum1.isEmpty()) {
-                    sim1Input.setText(detectedNum1);
-                    editor.putString("sim1_name", detectedNum1);
-                } else if (sim1Input.getText() == null || sim1Input.getText().toString().trim().isEmpty()) {
-                    // Box stays empty with ghost hint 019XXXXXXXX
-                    editor.putString("sim1_name", detectedOp1);
-                }
+                prefs.edit().putString("sim1_operator", detectedOp1).apply();
             }
-
             if (!detectedOp2.isEmpty()) {
                 tvSim2Operator.setText("📶 " + detectedOp2);
                 updateSimHint(sim2Input, detectedOp2);
-                editor.putString("sim2_operator", detectedOp2);
-                updated = true;
-
-                // Only setText if hardware returned an actual phone number
-                if (!detectedNum2.isEmpty()) {
-                    sim2Input.setText(detectedNum2);
-                    editor.putString("sim2_name", detectedNum2);
-                } else if (sim2Input.getText() == null || sim2Input.getText().toString().trim().isEmpty()) {
-                    // Box stays empty with ghost hint 017XXXXXXXX
-                    editor.putString("sim2_name", detectedOp2);
-                }
+                prefs.edit().putString("sim2_operator", detectedOp2).apply();
             }
 
-            if (updated) {
-                editor.apply();
-                if (showToast) {
-                    Toast.makeText(this, "Operators detected!", Toast.LENGTH_SHORT).show();
-                }
-                if (MqttService.instance != null) {
-                    MqttService.instance.sendSinglePing();
-                }
-            } else {
-                if (showToast) {
-                    Toast.makeText(this, "Could not determine SIM details", Toast.LENGTH_SHORT).show();
-                }
+            if (!detectedNum1.isEmpty() && (sim1Input.getText() == null || sim1Input.getText().toString().isEmpty())) {
+                sim1Input.setText(detectedNum1);
+                prefs.edit().putString("sim1_number", detectedNum1).putString("sim1_name", detectedNum1).apply();
+            }
+            if (!detectedNum2.isEmpty() && (sim2Input.getText() == null || sim2Input.getText().toString().isEmpty())) {
+                sim2Input.setText(detectedNum2);
+                prefs.edit().putString("sim2_number", detectedNum2).putString("sim2_name", detectedNum2).apply();
+            }
+
+            if (showToast) {
+                Toast.makeText(this, "SIM Auto-Detected Successfully!", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
-            if (showToast) {
-                Toast.makeText(this, "Error detecting SIMs: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
+            if (showToast) Toast.makeText(this, "Detection Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -349,197 +731,62 @@ public class MainActivity extends AppCompatActivity {
         isSimLocked = true;
         sim1Input.setEnabled(false);
         sim2Input.setEnabled(false);
+        sim1Input.setFocusable(false);
+        sim2Input.setFocusable(false);
         btnSaveSim.setText("EDIT");
-        btnSaveSim.setTextColor(android.graphics.Color.parseColor("#0284C7"));
-        if (MqttService.instance != null) {
-            MqttService.instance.sendSinglePing();
-        }
+        btnSaveSim.setTextColor(0xFF0284C7);
     }
 
     private void unlockSimInputs() {
         isSimLocked = false;
         sim1Input.setEnabled(true);
         sim2Input.setEnabled(true);
+        sim1Input.setFocusableInTouchMode(true);
+        sim2Input.setFocusableInTouchMode(true);
         btnSaveSim.setText("SAVE");
-        btnSaveSim.setTextColor(android.graphics.Color.parseColor("#10B981"));
+        btnSaveSim.setTextColor(0xFF10B981);
     }
 
-    private boolean isPhoneNumber(String text) {
-        if (text == null) return false;
-        String clean = text.replaceAll("[\\s\\-\\(\\)]", "");
-        return clean.matches("^(\\+?88)?01[3-9]\\d{8}$");
+    private String cleanCarrierName(String raw) {
+        if (raw == null) return "Unknown";
+        String l = raw.toLowerCase();
+        if (l.contains("grameen") || l.contains("gp")) return "Grameenphone";
+        if (l.contains("banglalink") || l.contains("bl")) return "Banglalink";
+        if (l.contains("robi")) return "Robi";
+        if (l.contains("airtel")) return "Airtel";
+        if (l.contains("teletalk")) return "Teletalk";
+        return raw;
     }
 
-    private String formatBDNumber(String number) {
-        if (number == null) return "";
-        String clean = number.replaceAll("[^0-9]", "");
-        if (clean.startsWith("8801") && clean.length() == 13) {
-            return clean.substring(2);
-        }
-        if (clean.startsWith("01") && clean.length() == 11) {
-            return clean;
-        }
-        return number.trim();
+    private String cleanPhoneNumber(String num) {
+        if (num == null) return "";
+        String clean = num.replaceAll("[^0-9+]", "");
+        if (clean.startsWith("+880")) clean = clean.substring(3);
+        if (clean.startsWith("880")) clean = clean.substring(2);
+        return clean;
     }
 
-    private void updateSimHint(TextInputEditText input, String operatorName) {
+    private boolean isPhoneNumber(String str) {
+        if (str == null) return false;
+        String clean = str.replaceAll("[^0-9]", "");
+        return (clean.startsWith("01") && clean.length() == 11) || (clean.startsWith("8801") && clean.length() == 13);
+    }
+
+    private void updateSimHint(TextInputEditText input, String op) {
         if (input == null) return;
-        if (operatorName == null || operatorName.trim().isEmpty()) {
-            input.setHint("017XXXXXXXX");
-            return;
-        }
-        String lower = operatorName.toLowerCase();
-        if (lower.contains("banglalink")) {
-            input.setHint("019XXXXXXXX");
-        } else if (lower.contains("grameen") || lower.contains("gp")) {
-            input.setHint("017XXXXXXXX");
-        } else if (lower.contains("robi")) {
-            input.setHint("018XXXXXXXX");
-        } else if (lower.contains("airtel")) {
-            input.setHint("016XXXXXXXX");
-        } else if (lower.contains("teletalk")) {
-            input.setHint("015XXXXXXXX");
-        } else {
-            input.setHint("017XXXXXXXX");
-        }
+        String l = op.toLowerCase();
+        if (l.contains("banglalink")) input.setHint("019XXXXXXXX");
+        else if (l.contains("grameen")) input.setHint("017XXXXXXXX");
+        else if (l.contains("robi")) input.setHint("018XXXXXXXX");
+        else if (l.contains("airtel")) input.setHint("016XXXXXXXX");
+        else if (l.contains("teletalk")) input.setHint("015XXXXXXXX");
+        else input.setHint("01XXXXXXXXX");
     }
 
     private boolean hasAllPermissions() {
-        boolean hasSms = androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED;
-        boolean hasPhone = androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == android.content.pm.PackageManager.PERMISSION_GRANTED;
-        
-        boolean hasBattery = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
-            hasBattery = pm.isIgnoringBatteryOptimizations(getPackageName());
-        }
-        
-        boolean hasNotif = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            hasNotif = androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED;
-        }
-        
-        return hasSms && hasPhone && hasBattery && hasNotif;
-    }
-
-    private void loadChips() {
-        chipGroupDesktops.removeAllViews();
-        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
-        
-        // Handle migration from old single code to set
-        String oldCode = prefs.getString("pairing_code", "");
-        if (!oldCode.isEmpty() && codes.isEmpty()) {
-            codes = new HashSet<>();
-            codes.add(oldCode);
-            prefs.edit().putStringSet("pairing_codes", codes).apply();
-        }
-
-        int count = codes.size();
-        if (count == 0) {
-            tvDesktopCount.setText("No Desktops");
-            layoutPairingInputBox.setVisibility(View.VISIBLE);
-            btnAddAnotherDesktop.setVisibility(View.GONE);
-            btnCancelAddDesktop.setVisibility(View.GONE);
-        } else {
-            tvDesktopCount.setText(count + (count == 1 ? " Desktop" : " Desktops"));
-            layoutPairingInputBox.setVisibility(View.GONE);
-            btnAddAnotherDesktop.setVisibility(View.VISIBLE);
-            btnCancelAddDesktop.setVisibility(View.GONE);
-        }
-
-        for (String code : codes) {
-            Chip chip = new Chip(this);
-            chip.setText("🖥️ Desktop: " + code);
-            chip.setChipBackgroundColorResource(android.R.color.white);
-            chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#E2E8F0")));
-            chip.setChipStrokeWidth(2f);
-            chip.setTextColor(android.graphics.Color.parseColor("#0F172A"));
-            chip.setTextSize(13f);
-            chip.setCloseIconVisible(true);
-            chip.setCloseIconTint(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#EF4444")));
-            chip.setOnCloseIconClickListener(v -> {
-                Set<String> currentCodes = new HashSet<>(prefs.getStringSet("pairing_codes", new HashSet<>()));
-                currentCodes.remove(code);
-                prefs.edit().putStringSet("pairing_codes", currentCodes).apply();
-                
-                if (currentCodes.isEmpty()) {
-                    prefs.edit().remove("pairing_code").apply();
-                } else if (code.equals(prefs.getString("pairing_code", ""))) {
-                    prefs.edit().putString("pairing_code", currentCodes.iterator().next()).apply();
-                }
-                
-                loadChips();
-                updateStatusUI();
-                startMqttService();
-            });
-            chipGroupDesktops.addView(chip);
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (hasAllPermissions()) {
-            startMqttService();
-            if (MqttService.instance != null) {
-                MqttService.instance.sendSinglePing();
-            }
-        } else {
-            startActivity(new Intent(this, PermissionsActivity.class));
-            finish();
-        }
-    }
-
-    private void updateStatusUI() {
-        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
-        if (!codes.isEmpty()) {
-            statusText.setText("Ready");
-            statusText.setTextColor(0xFF0284C7); // Sky blue
-            statusIcon.setColorFilter(0xFF0284C7);
-        } else {
-            statusText.setText("Offline");
-            statusText.setTextColor(0xFFDC2626); // Red
-            statusIcon.setColorFilter(0xFFDC2626);
-        }
-    }
-
-    private void updateConnectionStatusLive() {
-        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
-        if (codes.isEmpty()) {
-            statusText.setText("Offline");
-            statusText.setTextColor(0xFFDC2626);
-            statusIcon.setColorFilter(0xFFDC2626);
-            return;
-        }
-        
-        if (MqttService.isConnectedToBroker) {
-            int onlineCount = 0;
-            for (String code : codes) {
-                long lastPong = MqttService.lastPongReceivedTimes.containsKey(code) ? MqttService.lastPongReceivedTimes.get(code) : 0;
-                long timeSinceLastPong = System.currentTimeMillis() - lastPong;
-                if (timeSinceLastPong < 10000) {
-                    onlineCount++;
-                }
-            }
-            
-            if (onlineCount == codes.size()) {
-                statusText.setText("Live Sync (" + onlineCount + ")");
-                statusText.setTextColor(0xFF10B981); // Emerald Green
-                statusIcon.setColorFilter(0xFF10B981);
-            } else if (onlineCount > 0) {
-                statusText.setText("Partial (" + onlineCount + "/" + codes.size() + ")");
-                statusText.setTextColor(0xFFF59E0B); // Amber
-                statusIcon.setColorFilter(0xFFF59E0B);
-            } else {
-                statusText.setText("Waiting...");
-                statusText.setTextColor(0xFF0284C7); // Blue
-                statusIcon.setColorFilter(0xFF0284C7);
-            }
-        } else {
-            statusText.setText("Connecting...");
-            statusText.setTextColor(0xFFDC2626); // Red
-            statusIcon.setColorFilter(0xFFDC2626);
-        }
+        boolean sms = ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
+        boolean phone = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
+        return sms && phone;
     }
 
     private void startMqttService() {
@@ -551,9 +798,33 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 startService(serviceIntent);
             }
-        } else {
-            Intent serviceIntent = new Intent(this, MqttService.class);
-            stopService(serviceIntent);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (hasAllPermissions()) {
+            startMqttService();
+            if (MqttService.instance != null) {
+                MqttService.instance.sendSinglePing();
+            }
+        }
+        resetAmoledTimer();
+        // If message tab is open, refresh logs
+        if (tabMessageLayout.getVisibility() == View.VISIBLE) {
+            loadHistoryTab();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (statusPollHandler != null && statusPollRunnable != null) {
+            statusPollHandler.removeCallbacks(statusPollRunnable);
+        }
+        if (amoledHandler != null && amoledRunnable != null) {
+            amoledHandler.removeCallbacks(amoledRunnable);
         }
     }
 }

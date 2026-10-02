@@ -9,10 +9,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.wifi.WifiManager;
 import android.os.Build;
-import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Base64;
 import android.util.Log;
@@ -31,6 +28,10 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class MqttService extends Service {
 
@@ -40,17 +41,17 @@ public class MqttService extends Service {
 
     private MqttClient mqttClient;
     private SharedPreferences prefs;
-    
-    private HandlerThread pingThread;
-    private Handler pingHandler;
-    private Runnable pingRunnable;
+
+    // High performance single-thread background executors (Zero Thread-Leak / Zero Hang)
+    private ScheduledExecutorService pingExecutor;
+    private ExecutorService smsExecutor;
 
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
-    
-    // Static reference to publish SMS easily from SmsReceiver
+
+    // Static reference to publish SMS easily from SmsReceiver and MainActivity
     public static MqttService instance;
-    
+
     // Status tracking for MainActivity
     public static boolean isConnectedToBroker = false;
     public static ConcurrentHashMap<String, Long> lastPongReceivedTimes = new ConcurrentHashMap<>();
@@ -60,10 +61,12 @@ public class MqttService extends Service {
         super.onCreate();
         instance = this;
         prefs = getSharedPreferences("SMSConfig", MODE_PRIVATE);
-        
+
         if (prefs.getString("device_id", "").isEmpty()) {
             prefs.edit().putString("device_id", UUID.randomUUID().toString()).apply();
         }
+
+        smsExecutor = Executors.newSingleThreadExecutor();
 
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -82,14 +85,14 @@ public class MqttService extends Service {
                 wifiLock.acquire();
             }
         } catch (Exception ignored) {}
-        
+
         createNotificationChannel();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Set<String> pairingCodes = prefs.getStringSet("pairing_codes", new HashSet<>());
-        
+
         if (pairingCodes.isEmpty()) {
             String oldCode = prefs.getString("pairing_code", "");
             if (!oldCode.isEmpty()) {
@@ -104,9 +107,9 @@ public class MqttService extends Service {
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("IVAC Master Pro Active")
-                .setContentText("Listening for SMS in background...")
+                .setContentText("Listening for SMS & live desktop sync...")
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .build();
 
@@ -116,16 +119,21 @@ public class MqttService extends Service {
         return START_STICKY;
     }
 
-    private void connectToMqtt(Set<String> pairingCodes) {
+    public synchronized void connectToMqtt(Set<String> pairingCodes) {
         new Thread(() -> {
             try {
                 if (mqttClient != null && mqttClient.isConnected()) {
-                    return; // Already connected
+                    // Already connected to broker! Dynamically ensure all codes are subscribed!
+                    for (String code : pairingCodes) {
+                        subscribeToCode(code);
+                    }
+                    sendSinglePing();
+                    return;
                 }
 
                 String clientId = "andr_" + (System.currentTimeMillis() % 1000000);
                 mqttClient = new MqttClient("tcp://broker.emqx.io:1883", clientId, new MemoryPersistence());
-                
+
                 MqttConnectOptions options = new MqttConnectOptions();
                 options.setCleanSession(true);
                 options.setAutomaticReconnect(true);
@@ -141,20 +149,20 @@ public class MqttService extends Service {
                             for (String code : currentCodes) {
                                 String sysTopic = "digonto_ivac_sms_" + code + "_sys";
                                 mqttClient.subscribe(sysTopic);
-                                Log.d(TAG, "Subscribed to sysTopic: " + sysTopic);
+                                Log.d(TAG, "Subscribed on connect: " + sysTopic);
                             }
                         } catch (Exception e) {
                             Log.e(TAG, "Error subscribing on connectComplete", e);
                         }
 
-                        // Send ping IMMEDIATELY upon connection!
+                        // Send ping immediately upon connection
                         sendSinglePing();
                     }
 
                     @Override
                     public void connectionLost(Throwable cause) {
                         isConnectedToBroker = false;
-                        Log.e(TAG, "Connection lost", cause);
+                        Log.e(TAG, "MQTT Connection lost", cause);
                     }
 
                     @Override
@@ -177,31 +185,100 @@ public class MqttService extends Service {
 
                 mqttClient.connect(options);
                 isConnectedToBroker = true;
-                
+
                 startPingLoop();
 
             } catch (Exception e) {
                 isConnectedToBroker = false;
                 Log.e(TAG, "MQTT Connection error", e);
-                new Handler(Looper.getMainLooper()).postDelayed(() -> connectToMqtt(pairingCodes), 5000);
+                // Retry connection in 5 seconds
+                if (pingExecutor != null && !pingExecutor.isShutdown()) {
+                    pingExecutor.schedule(() -> connectToMqtt(pairingCodes), 5, TimeUnit.SECONDS);
+                }
             }
         }).start();
     }
 
+    public void subscribeToCode(String code) {
+        if (mqttClient != null && mqttClient.isConnected()) {
+            try {
+                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                mqttClient.subscribe(sysTopic);
+                Log.d(TAG, "Dynamically subscribed to sysTopic: " + sysTopic);
+            } catch (Exception e) {
+                Log.e(TAG, "Error dynamically subscribing: " + code, e);
+            }
+        }
+    }
+
+    public void unsubscribeFromCode(String code) {
+        if (mqttClient != null && mqttClient.isConnected()) {
+            try {
+                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                mqttClient.unsubscribe(sysTopic);
+                lastPongReceivedTimes.remove(code);
+                Log.d(TAG, "Unsubscribed from sysTopic: " + sysTopic);
+            } catch (Exception ignored) {}
+        }
+    }
+
     public void sendSinglePing() {
+        if (mqttClient == null || !mqttClient.isConnected()) {
+            return;
+        }
+        try {
+            String customName = prefs.getString("custom_device_name", "");
+            if (customName.isEmpty()) {
+                customName = Build.MODEL;
+            }
+
+            JSONObject pingData = new JSONObject();
+            pingData.put("type", "ping");
+            pingData.put("device_id", prefs.getString("device_id", "Unknown"));
+            pingData.put("device_name", Build.MODEL);
+            pingData.put("custom_name", customName);
+            pingData.put("sim1_name", prefs.getString("sim1_name", "Unknown SIM 1"));
+            pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
+            pingData.put("timestamp", System.currentTimeMillis());
+
+            MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
+            msg.setQos(0);
+
+            Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+            for (String code : codes) {
+                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                try {
+                    mqttClient.publish(sysTopic, msg);
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private synchronized void startPingLoop() {
+        if (pingExecutor != null && !pingExecutor.isShutdown()) {
+            pingExecutor.shutdownNow();
+        }
+        pingExecutor = Executors.newSingleThreadScheduledExecutor();
+        // High-speed 2000ms ping loop on dedicated single daemon thread (Zero Thread Leak!)
+        pingExecutor.scheduleAtFixedRate(this::sendSinglePing, 0, 2000, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Broadcasts updated custom device name immediately to all connected desktop software.
+     */
+    public void updateCustomDeviceName(String newName) {
+        prefs.edit().putString("custom_device_name", newName).apply();
         new Thread(() -> {
             try {
                 if (mqttClient != null && mqttClient.isConnected()) {
-                    JSONObject pingData = new JSONObject();
-                    pingData.put("type", "ping");
-                    pingData.put("device_id", prefs.getString("device_id", "Unknown"));
-                    pingData.put("device_name", Build.MODEL);
-                    pingData.put("sim1_name", prefs.getString("sim1_name", "Unknown SIM 1"));
-                    pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
-                    pingData.put("timestamp", System.currentTimeMillis());
+                    JSONObject updateData = new JSONObject();
+                    updateData.put("type", "update_device_name");
+                    updateData.put("device_id", prefs.getString("device_id", "Unknown"));
+                    updateData.put("custom_name", newName);
+                    updateData.put("timestamp", System.currentTimeMillis());
 
-                    MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
-                    msg.setQos(0);
+                    MqttMessage msg = new MqttMessage(updateData.toString().getBytes());
+                    msg.setQos(1);
 
                     Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
                     for (String code : codes) {
@@ -215,31 +292,15 @@ public class MqttService extends Service {
         }).start();
     }
 
-    private void startPingLoop() {
-        if (pingHandler != null) {
-            pingHandler.removeCallbacksAndMessages(null);
-        }
-        if (pingThread != null) {
-            pingThread.quitSafely();
-        }
-        pingThread = new HandlerThread("MqttPingThread");
-        pingThread.start();
-        pingHandler = new Handler(pingThread.getLooper());
-
-        pingRunnable = new Runnable() {
-            @Override
-            public void run() {
-                sendSinglePing();
-                if (pingHandler != null) {
-                    pingHandler.postDelayed(this, 1000);
-                }
-            }
-        };
-        pingHandler.post(pingRunnable);
-    }
-
+    /**
+     * VIP Express Lane: Instant OTP / SMS forwarding with highest execution priority!
+     */
     public void publishSms(long logId, String phone, String smsBody, String simName) {
-        new Thread(() -> {
+        if (smsExecutor == null || smsExecutor.isShutdown()) {
+            smsExecutor = Executors.newSingleThreadExecutor();
+        }
+
+        smsExecutor.execute(() -> {
             try {
                 if (mqttClient == null || !mqttClient.isConnected()) {
                     Log.e(TAG, "Cannot publish SMS, not connected!");
@@ -276,28 +337,23 @@ public class MqttService extends Service {
                         message.setQos(1);
                         mqttClient.publish(topic, message);
                         atLeastOneSuccess = true;
-                        Log.d(TAG, "SMS Published Successfully to topic: " + topic);
+                        Log.d(TAG, "SMS VIP Express Published Successfully to topic: " + topic);
                     } catch (Exception e) {
                         Log.e(TAG, "Error publishing SMS to topic " + topic, e);
                     }
                 }
-                
-                if (atLeastOneSuccess) {
-                    if (logId != -1) {
-                        SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_SUCCESS);
-                    }
-                } else {
-                    if (logId != -1) {
-                        SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
-                    }
+
+                if (logId != -1) {
+                    int status = atLeastOneSuccess ? SmsLog.STATUS_SUCCESS : SmsLog.STATUS_FAILED;
+                    SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, status);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error processing SMS publishing", e);
+                Log.e(TAG, "Error processing VIP SMS publishing", e);
                 if (logId != -1) {
                     SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
                 }
             }
-        }).start();
+        });
     }
 
     private byte[] xorBytes(byte[] data, byte[] key) {
@@ -324,11 +380,11 @@ public class MqttService extends Service {
     public void onDestroy() {
         super.onDestroy();
         instance = null;
-        if (pingHandler != null) {
-            pingHandler.removeCallbacksAndMessages(null);
+        if (pingExecutor != null) {
+            pingExecutor.shutdownNow();
         }
-        if (pingThread != null) {
-            pingThread.quitSafely();
+        if (smsExecutor != null) {
+            smsExecutor.shutdownNow();
         }
         if (wakeLock != null && wakeLock.isHeld()) {
             try { wakeLock.release(); } catch (Exception ignored) {}

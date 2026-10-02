@@ -1177,12 +1177,12 @@ def receive_heartbeat():
         
         update_profile_tracker(profile_id, profile_label, is_active=is_active)
         
-        success = bool(update_profile_heartbeat(
+        success = update_profile_heartbeat(
             profile_id=profile_id,
             profile_label=profile_label,
             is_active=is_active,
             last_step=last_step
-        ))
+        )
         return jsonify({"success": success}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1208,7 +1208,7 @@ def is_license_active():
             try:
                 from license_system.license_manager import check_license
                 info = check_license()
-                last_license_status = bool(info.is_valid)
+                last_license_status = info.is_valid
             except Exception:
                 pass
             finally:
@@ -1628,12 +1628,16 @@ try:
                 if sys_data.get("type") == "ping":
                     dev_id = sys_data.get("device_id", "Unknown Device")
                     dev_model = sys_data.get("device_name", "Unknown Model")
+                    incoming_custom = (sys_data.get("custom_name") or "").strip()
                     
                     if dev_id not in saved_devices:
                         saved_devices[dev_id] = {
-                            "custom_name": dev_model,
+                            "custom_name": incoming_custom if incoming_custom else dev_model,
                             "is_active": True
                         }
+                        save_device_config(saved_devices)
+                    elif incoming_custom and incoming_custom != dev_model and saved_devices[dev_id].get("custom_name") != incoming_custom:
+                        saved_devices[dev_id]["custom_name"] = incoming_custom
                         save_device_config(saved_devices)
                         
                     sim1 = sys_data.get("sim1_name", "")
@@ -1658,6 +1662,17 @@ try:
                     # Send pong immediately back to mobile
                     pong = json.dumps({"type": "pong"}).encode('utf-8')
                     client.publish(MQTT_SYS_TOPIC, pong)
+                elif sys_data.get("type") == "update_device_name":
+                    dev_id = sys_data.get("device_id")
+                    incoming_custom = (sys_data.get("custom_name") or "").strip()
+                    if dev_id and incoming_custom:
+                        if dev_id not in saved_devices:
+                            saved_devices[dev_id] = {"is_active": True}
+                        saved_devices[dev_id]["custom_name"] = incoming_custom
+                        save_device_config(saved_devices)
+                        if dev_id in connected_devices:
+                            connected_devices[dev_id]["custom_name"] = incoming_custom
+                        print(f"[Device Sync] Live updated custom name for {dev_id}: {incoming_custom}")
                 elif sys_data.get("type") == "offline":
                     dev_id = sys_data.get("device_id")
                     if dev_id and dev_id in connected_devices:

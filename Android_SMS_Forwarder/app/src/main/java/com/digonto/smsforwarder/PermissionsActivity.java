@@ -99,9 +99,12 @@ public class PermissionsActivity extends AppCompatActivity {
                         } catch (Exception ignored) {}
                     }
                 } else {
+                    openOemAutostartSettings();
                     Toast.makeText(this, "Battery Optimization already disabled!", Toast.LENGTH_SHORT).show();
                     switchBattery.setChecked(true);
                 }
+            } else {
+                openOemAutostartSettings();
             }
         });
 
@@ -168,5 +171,24 @@ public class PermissionsActivity extends AppCompatActivity {
     private void goToMainActivity() {
         startActivity(new Intent(this, MainActivity.class));
         finish();
+    }
+
+    private void openOemAutostartSettings() {
+        String manufacturer = Build.MANUFACTURER.toLowerCase();
+        try {
+            Intent intent = new Intent();
+            if (manufacturer.contains("xiaomi")) {
+                intent.setComponent(new android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"));
+            } else if (manufacturer.contains("oppo")) {
+                intent.setComponent(new android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
+            } else if (manufacturer.contains("vivo")) {
+                intent.setComponent(new android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
+            } else if (manufacturer.contains("huawei")) {
+                intent.setComponent(new android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"));
+            } else {
+                return;
+            }
+            startActivity(intent);
+        } catch (Exception ignored) {}
     }
 }

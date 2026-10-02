@@ -1,95 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
     android:background="#F8FAFC">
 
-    <LinearLayout
+    <!-- Main Content Container for 4 Tabs -->
+    <FrameLayout
+        android:id="@+id/tabContentContainer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_height="match_parent"
+        android:layout_above="@id/bottomNavigation">
 
-        <!-- Top Header: Logo & Title -->
-        <LinearLayout
+        <!-- ==================== TAB 1: HOME ==================== -->
+        <ScrollView
+            android:id="@+id/tabHomeLayout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="12dp">
-
-            <ImageView
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:src="@drawable/ic_logo"
-                android:scaleType="fitCenter"
-                android:layout_marginEnd="12dp"/>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="IVAC Master Pro"
-                    android:textSize="20sp"
-                    android:textStyle="bold"
-                    android:textColor="#0F172A"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Real-time SMS &amp; OTP Sync"
-                    android:textSize="12sp"
-                    android:textColor="#64748B"/>
-            </LinearLayout>
-
-            <!-- Live Status Pill -->
-            <LinearLayout
-                android:id="@+id/layoutStatusBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:background="@drawable/status_bg"
-                android:paddingStart="10dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="5dp"
-                android:paddingBottom="5dp">
-
-                <ImageView
-                    android:id="@+id/statusIcon"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:src="@android:drawable/presence_offline"
-                    android:layout_marginEnd="6dp"
-                    app:tint="#DC2626"/>
-
-                <TextView
-                    android:id="@+id/statusText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Offline"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:textColor="#DC2626"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Card 1: Desktop Connection -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardCornerRadius="14dp"
-            app:cardElevation="1dp"
-            app:cardBackgroundColor="#FFFFFF"
-            android:layout_marginBottom="12dp">
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="visible">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -97,140 +26,591 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
+                <!-- Top Header: Logo & Title -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="10dp">
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="12dp">
+
+                    <ImageView
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:src="@drawable/ic_logo"
+                        android:scaleType="fitCenter"
+                        android:layout_marginEnd="12dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="IVAC Master Pro"
+                            android:textSize="20sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Real-time SMS &amp; OTP Sync"
+                            android:textSize="12sp"
+                            android:textColor="#64748B"/>
+                    </LinearLayout>
+
+                    <!-- Live Status Pill -->
+                    <LinearLayout
+                        android:id="@+id/layoutStatusBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="@drawable/status_bg"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="12dp"
+                        android:paddingTop="5dp"
+                        android:paddingBottom="5dp">
+
+                        <ImageView
+                            android:id="@+id/statusIcon"
+                            android:layout_width="10dp"
+                            android:layout_height="10dp"
+                            android:src="@android:drawable/presence_offline"
+                            android:layout_marginEnd="6dp"
+                            app:tint="#DC2626"/>
+
+                        <TextView
+                            android:id="@+id/statusText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Offline"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="#DC2626"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Call Divert Active Warning Banner (Visible if Divert is Active) -->
+                <LinearLayout
+                    android:id="@+id/layoutHomeDivertAlert"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="#FEF2F2"
+                    android:padding="10dp"
+                    android:layout_marginBottom="12dp"
+                    android:visibility="gone">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:text="💻 Connected Desktops"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:textColor="#1E293B"/>
+                        android:text="⚠️ কল ডাইভার্ট চালু আছে! কাজ শেষে বন্ধ করতে ভুলবেন না।"
+                        android:textSize="12sp"
+                        android:textColor="#DC2626"
+                        android:textStyle="bold"/>
 
-                    <TextView
-                        android:id="@+id/tvDesktopCount"
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnQuickCancelDivert"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0 Paired"
+                        android:layout_height="36dp"
+                        android:text="বন্ধ করুন"
                         android:textSize="11sp"
-                        android:textColor="#64748B"
-                        android:background="#F1F5F9"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        android:paddingTop="2dp"
-                        android:paddingBottom="2dp"/>
+                        android:backgroundTint="#DC2626"
+                        android:textColor="#FFFFFF"
+                        app:cornerRadius="6dp"/>
                 </LinearLayout>
 
-                <!-- Paired Desktops Chip Group -->
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chipGroupDesktops"
+                <!-- Card 1: Desktop Connection -->
+                <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:chipSpacing="6dp"
-                    android:layout_marginBottom="6dp"/>
-
-                <!-- Add Another Desktop Button (Visible when 1+ desktops exist and input box is collapsed) -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnAddAnotherDesktop"
-                    android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:text="+ Add Another Desktop"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:textColor="#0284C7"
-                    app:cornerRadius="8dp"
-                    app:strokeColor="#0284C7"
-                    app:strokeWidth="1dp"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_marginTop="4dp"
-                    android:visibility="gone"/>
-
-                <!-- Input Box Layout for 6-Digit Pairing Code (Expandable / Collapsible) -->
-                <LinearLayout
-                    android:id="@+id/layoutPairingInputBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#F8FAFC"
-                    android:padding="12dp"
-                    android:layout_marginTop="6dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Enter 6-Digit Code from Desktop App:"
-                        android:textSize="12sp"
-                        android:textColor="#475569"
-                        android:layout_marginBottom="8dp"/>
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="1dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    android:layout_marginBottom="12dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                        <com.google.android.material.textfield.TextInputLayout
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
+                        <LinearLayout
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                            android:hint="6-Digit Code"
-                            android:layout_marginEnd="8dp">
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="10dp">
 
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/pairingCodeInput"
-                                android:layout_width="match_parent"
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
                                 android:layout_height="wrap_content"
-                                android:inputType="number"
-                                android:maxLength="6"
-                                android:textSize="16sp"
+                                android:text="💻 Connected Desktops"
+                                android:textSize="15sp"
                                 android:textStyle="bold"
-                                android:textColor="#0F172A" />
-                        </com.google.android.material.textfield.TextInputLayout>
+                                android:textColor="#1E293B"/>
 
+                            <TextView
+                                android:id="@+id/tvDesktopCount"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0 Paired"
+                                android:textSize="11sp"
+                                android:textColor="#64748B"
+                                android:background="#F1F5F9"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"/>
+                        </LinearLayout>
+
+                        <!-- Paired Desktops Chip Group (With Individual 🟢/🔴 Status) -->
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupDesktops"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:chipSpacing="6dp"
+                            android:layout_marginBottom="6dp"/>
+
+                        <!-- Add Another Desktop Button -->
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnAddDesktop"
-                            android:layout_width="wrap_content"
-                            android:layout_height="52dp"
-                            android:text="PAIR"
+                            android:id="@+id/btnAddAnotherDesktop"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:text="+ Add Another Desktop"
                             android:textSize="13sp"
                             android:textStyle="bold"
-                            android:backgroundTint="#0284C7"
-                            android:textColor="#FFFFFF"
-                            app:cornerRadius="8dp"/>
-                    </LinearLayout>
+                            android:textColor="#0284C7"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#0284C7"
+                            app:strokeWidth="1dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_marginTop="4dp"
+                            android:visibility="gone"/>
 
-                    <!-- Cancel button when adding additional desktop -->
-                    <TextView
-                        android:id="@+id/btnCancelAddDesktop"
-                        android:layout_width="wrap_content"
+                        <!-- Input Box Layout for 6-Digit Pairing Code -->
+                        <LinearLayout
+                            android:id="@+id/layoutPairingInputBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="#F8FAFC"
+                            android:padding="12dp"
+                            android:layout_marginTop="6dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Enter 6-Digit Code from Desktop App:"
+                                android:textSize="12sp"
+                                android:textColor="#475569"
+                                android:layout_marginBottom="8dp"/>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    android:layout_width="0dp"
+                                    android:layout_weight="1"
+                                    android:layout_height="wrap_content"
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:hint="6-Digit Code"
+                                    android:layout_marginEnd="8dp">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/pairingCodeInput"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="number"
+                                        android:maxLength="6"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold"
+                                        android:textColor="#0F172A" />
+                                </com.google.android.material.textfield.TextInputLayout>
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnAddDesktop"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="52dp"
+                                    android:text="PAIR"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold"
+                                    android:backgroundTint="#0284C7"
+                                    android:textColor="#FFFFFF"
+                                    app:cornerRadius="8dp"/>
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/btnCancelAddDesktop"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="✕ Cancel"
+                                android:textSize="12sp"
+                                android:textColor="#94A3B8"
+                                android:layout_gravity="end"
+                                android:paddingTop="6dp"
+                                android:paddingBottom="2dp"
+                                android:visibility="gone"/>
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+                <!-- Card 2: SIM Configuration -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="1dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    android:layout_marginBottom="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="✕ Cancel"
-                        android:textSize="12sp"
-                        android:textColor="#94A3B8"
-                        android:layout_gravity="end"
-                        android:paddingTop="6dp"
-                        android:paddingBottom="2dp"
-                        android:visibility="gone"/>
-                </LinearLayout>
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:text="📱 SIM Numbers"
+                                android:textSize="15sp"
+                                android:textStyle="bold"
+                                android:textColor="#1E293B"/>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnAutoDetectSim"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:text="⚡ AUTO DETECT"
+                                android:textSize="11sp"
+                                android:textStyle="bold"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                style="@style/Widget.MaterialComponents.Button.TextButton"
+                                android:textColor="#10B981"/>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSaveSim"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:text="EDIT"
+                                android:textSize="11sp"
+                                android:textStyle="bold"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                style="@style/Widget.MaterialComponents.Button.TextButton"
+                                android:textColor="#0284C7"/>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <!-- SIM 1 Column -->
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginEnd="6dp">
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    android:id="@+id/layoutSim1Input"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:hint="SIM 1 Number"
+                                    app:hintTextColor="#0284C7"
+                                    app:boxStrokeColor="#0284C7"
+                                    app:expandedHintEnabled="false">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/sim1Input"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:textSize="14sp"
+                                        android:textColor="#0F172A"
+                                        android:hint="019XXXXXXXX"
+                                        android:textColorHint="#94A3B8"
+                                        android:inputType="phone"
+                                        android:maxLength="14"
+                                        android:singleLine="true" />
+                                </com.google.android.material.textfield.TextInputLayout>
+
+                                <TextView
+                                    android:id="@+id/tvSim1Operator"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:paddingStart="8dp"
+                                    android:paddingEnd="8dp"
+                                    android:paddingTop="5dp"
+                                    android:paddingBottom="5dp"
+                                    android:text="📶 Operator: Auto"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    android:textColor="#0369A1"
+                                    android:background="@drawable/bg_sim_badge"
+                                    android:gravity="center"
+                                    android:maxLines="1"
+                                    android:ellipsize="end" />
+                            </LinearLayout>
+
+                            <!-- SIM 2 Column -->
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:layout_marginStart="6dp">
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    android:id="@+id/layoutSim2Input"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:hint="SIM 2 Number"
+                                    app:hintTextColor="#0284C7"
+                                    app:boxStrokeColor="#0284C7"
+                                    app:expandedHintEnabled="false">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/sim2Input"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:textSize="14sp"
+                                        android:textColor="#0F172A"
+                                        android:hint="017XXXXXXXX"
+                                        android:textColorHint="#94A3B8"
+                                        android:inputType="phone"
+                                        android:maxLength="14"
+                                        android:singleLine="true" />
+                                </com.google.android.material.textfield.TextInputLayout>
+
+                                <TextView
+                                    android:id="@+id/tvSim2Operator"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:paddingStart="8dp"
+                                    android:paddingEnd="8dp"
+                                    android:paddingTop="5dp"
+                                    android:paddingBottom="5dp"
+                                    android:text="📶 Operator: Auto"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    android:textColor="#0369A1"
+                                    android:background="@drawable/bg_sim_badge"
+                                    android:gravity="center"
+                                    android:maxLines="1"
+                                    android:ellipsize="end" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="IVAC Master Pro • Background Service Active"
+                    android:textSize="11sp"
+                    android:textColor="#94A3B8"
+                    android:gravity="center"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="16dp"/>
 
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </ScrollView>
 
-        <!-- Card 2: SIM Configuration -->
-        <androidx.cardview.widget.CardView
+        <!-- ==================== TAB 2: MESSAGE (SMS HISTORY) ==================== -->
+        <LinearLayout
+            android:id="@+id/tabMessageLayout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardCornerRadius="14dp"
-            app:cardElevation="1dp"
-            app:cardBackgroundColor="#FFFFFF"
-            android:layout_marginBottom="14dp">
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone">
+
+            <!-- Message Header -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="12dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SMS &amp; OTP Logs"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="#0F172A"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Live Incoming SMS History"
+                        android:textSize="12sp"
+                        android:textColor="#64748B"/>
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRefreshMessages"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="🔄 Refresh"
+                    android:textSize="11sp"
+                    android:textColor="#0284C7"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_marginEnd="4dp"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnClearMessages"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="🗑️ Clear"
+                    android:textSize="11sp"
+                    android:textColor="#EF4444"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"/>
+            </LinearLayout>
+
+            <!-- RecyclerView for History -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvHistoryTab"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingBottom="16dp"/>
+
+                <TextView
+                    android:id="@+id/tvEmptyHistoryTab"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:text="কোনো SMS এখনও আসেনি\n(No SMS Received Yet)"
+                    android:gravity="center"
+                    android:textColor="#94A3B8"
+                    android:textSize="14sp"
+                    android:visibility="gone"/>
+            </FrameLayout>
+
+        </LinearLayout>
+
+        <!-- ==================== TAB 3: PROXY ==================== -->
+        <ScrollView
+            android:id="@+id/tabProxyLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="24dp">
+
+                <ImageView
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    android:src="@drawable/ic_nav_proxy"
+                    app:tint="#0284C7"
+                    android:layout_marginBottom="16dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="4G Mobile Proxy Node"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="#0F172A"
+                    android:layout_marginBottom="8dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Reserved for Distributed Proxy Network"
+                    android:textSize="13sp"
+                    android:textColor="#64748B"
+                    android:layout_marginBottom="16dp"/>
+
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🌐 Status: Standby (Inactive)"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="#10B981"
+                            android:layout_marginBottom="6dp"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="এই মডিউলটি মোবাইল সিমের 4G ইন্টারনেটকে ডেস্কটপের নির্দিষ্ট ক্রোম প্রোফাইলে প্রক্সি হিসেবে পাইপ করার জন্য সংরক্ষিত। পরবর্তী আপডেটে এই ফিচারটি চালু করা হবে।"
+                            android:textSize="12sp"
+                            android:textColor="#475569"
+                            android:lineSpacingExtra="3dp"/>
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ==================== TAB 4: SETTING ==================== -->
+        <ScrollView
+            android:id="@+id/tabSettingLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -238,188 +618,384 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <LinearLayout
+                <!-- Header -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="System Controls &amp; Settings"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#0F172A"
+                    android:layout_marginBottom="4dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Manage display, identity &amp; focus"
+                    android:textSize="12sp"
+                    android:textColor="#64748B"
+                    android:layout_marginBottom="14dp"/>
+
+                <!-- Card 1: Screen & Display Controls -->
+                <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginBottom="8dp">
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="1dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    android:layout_marginBottom="12dp">
 
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="📱 SIM Numbers"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:textColor="#1E293B"/>
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnAutoDetectSim"
-                        android:layout_width="wrap_content"
-                        android:layout_height="36dp"
-                        android:text="⚡ AUTO DETECT"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:textColor="#10B981"/>
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📱 Display &amp; Screen Controls"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A"
+                            android:layout_marginBottom="10dp"/>
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnSaveSim"
-                        android:layout_width="wrap_content"
-                        android:layout_height="36dp"
-                        android:text="EDIT"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:textColor="#0284C7"/>
-                </LinearLayout>
+                        <!-- Switch: Keep Screen Awake -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
 
-                <LinearLayout
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Keep Screen Awake (স্ক্রিন অন রাখুন)"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold"
+                                    android:textColor="#1E293B"/>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="অ্যাপ খোলা থাকলে স্ক্রিন স্লিপ বা লক হবে না"
+                                    android:textSize="11sp"
+                                    android:textColor="#64748B"/>
+                            </LinearLayout>
+
+                            <com.google.android.material.switchmaterial.SwitchMaterial
+                                android:id="@+id/switchKeepScreenAwake"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true"/>
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#F1F5F9"
+                            android:layout_marginTop="4dp"
+                            android:layout_marginBottom="8dp"/>
+
+                        <!-- Switch: AMOLED Black Saver -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="AMOLED Black Saver (ব্ল্যাক স্ক্রিন)"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold"
+                                    android:textColor="#1E293B"/>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="২ মিনিট স্পর্শ না থাকলে স্ক্রিন কালো হয়ে ব্যাটারি বাঁচাবে"
+                                    android:textSize="11sp"
+                                    android:textColor="#64748B"/>
+                            </LinearLayout>
+
+                            <com.google.android.material.switchmaterial.SwitchMaterial
+                                android:id="@+id/switchAmoledSaver"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="false"/>
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+                <!-- Card 2: Custom Device Name -->
+                <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="1dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    android:layout_marginBottom="12dp">
 
-                    <!-- SIM 1 Column -->
                     <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:layout_marginEnd="6dp">
+                        android:padding="16dp">
 
-                        <com.google.android.material.textfield.TextInputLayout
-                            android:id="@+id/layoutSim1Input"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                            android:hint="SIM 1 Number"
-                            app:hintTextColor="#0284C7"
-                            app:boxStrokeColor="#0284C7"
-                            app:expandedHintEnabled="false">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/sim1Input"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:textSize="14sp"
-                                android:textColor="#0F172A"
-                                android:hint="019XXXXXXXX"
-                                android:textColorHint="#94A3B8"
-                                android:inputType="phone"
-                                android:maxLength="14"
-                                android:singleLine="true" />
-                        </com.google.android.material.textfield.TextInputLayout>
-
-                        <!-- SIM 1 Operator Badge -->
                         <TextView
-                            android:id="@+id/tvSim1Operator"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="✏️ Custom Device Name"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A"
+                            android:layout_marginBottom="4dp"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="ডেস্কটপ সফটওয়্যারে এই নামটি রিয়েলটাইমে প্রদর্শিত হবে"
+                            android:textSize="11sp"
+                            android:textColor="#64748B"
+                            android:layout_marginBottom="10dp"/>
+
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:paddingStart="8dp"
-                            android:paddingEnd="8dp"
-                            android:paddingTop="5dp"
-                            android:paddingBottom="5dp"
-                            android:text="📶 Operator: Auto"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:textColor="#0369A1"
-                            android:background="@drawable/bg_sim_badge"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:ellipsize="end" />
-                    </LinearLayout>
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
 
-                    <!-- SIM 2 Column -->
+                            <com.google.android.material.textfield.TextInputLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                android:hint="ডিভাইস বা সিমের নাম"
+                                android:layout_marginEnd="8dp">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/etCustomDeviceName"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:textSize="14sp"
+                                    android:textColor="#0F172A"
+                                    android:singleLine="true"/>
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSaveCustomDeviceName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="52dp"
+                                android:text="SAVE"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:backgroundTint="#0284C7"
+                                android:textColor="#FFFFFF"
+                                app:cornerRadius="8dp"/>
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+                <!-- Card 3: Call & Notification Focus -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="1dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    android:layout_marginBottom="16dp">
+
                     <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:layout_marginStart="6dp">
+                        android:padding="16dp">
 
-                        <com.google.android.material.textfield.TextInputLayout
-                            android:id="@+id/layoutSim2Input"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                            android:hint="SIM 2 Number"
-                            app:hintTextColor="#0284C7"
-                            app:boxStrokeColor="#0284C7"
-                            app:expandedHintEnabled="false">
-
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/sim2Input"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:textSize="14sp"
-                                android:textColor="#0F172A"
-                                android:hint="017XXXXXXXX"
-                                android:textColorHint="#94A3B8"
-                                android:inputType="phone"
-                                android:maxLength="14"
-                                android:singleLine="true" />
-                        </com.google.android.material.textfield.TextInputLayout>
-
-                        <!-- SIM 2 Operator Badge -->
                         <TextView
-                            android:id="@+id/tvSim2Operator"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🛡️ Call &amp; Notification Focus"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#0F172A"
+                            android:layout_marginBottom="8dp"/>
+
+                        <!-- Switch: DND Focus Mode -->
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:paddingStart="8dp"
-                            android:paddingEnd="8dp"
-                            android:paddingTop="5dp"
-                            android:paddingBottom="5dp"
-                            android:text="📶 Operator: Auto"
-                            android:textSize="11sp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🔕 সাইলেন্ট মোড (DND - Focus)"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold"
+                                    android:textColor="#1E293B"/>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="IMO, WhatsApp, Messenger সাইলেন্ট থাকবে"
+                                    android:textSize="11sp"
+                                    android:textColor="#64748B"/>
+                            </LinearLayout>
+
+                            <com.google.android.material.switchmaterial.SwitchMaterial
+                                android:id="@+id/switchFocusModeDnd"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"/>
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#F1F5F9"
+                            android:layout_marginTop="4dp"
+                            android:layout_marginBottom="10dp"/>
+
+                        <!-- GSM Call Divert Controls -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🚫 স্মার্ট কল ডাইভার্ট (Non-VoLTE &amp; VoLTE)"
+                            android:textSize="13sp"
                             android:textStyle="bold"
-                            android:textColor="#0369A1"
-                            android:background="@drawable/bg_sim_badge"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:ellipsize="end" />
+                            android:textColor="#1E293B"
+                            android:layout_marginBottom="3dp"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="স্লটের সময় কল আসলে 4G নেটওয়ার্ক যেন ড্রপ না করে। এক ক্লিকে কল ডাইভার্ট করুন (4G ও SMS চালু থাকবে):"
+                            android:textSize="11sp"
+                            android:textColor="#64748B"
+                            android:lineSpacingExtra="2dp"
+                            android:layout_marginBottom="8dp"/>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnStartCallDivert"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="44dp"
+                                android:text="কল ব্লক (*21*..)"
+                                android:textSize="11sp"
+                                android:textStyle="bold"
+                                android:textColor="#DC2626"
+                                app:strokeColor="#DC2626"
+                                app:strokeWidth="1dp"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                                android:layout_marginEnd="6dp"
+                                app:cornerRadius="8dp"/>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCancelCallDivert"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="44dp"
+                                android:text="কল চালু (##21#)"
+                                android:textSize="11sp"
+                                android:textStyle="bold"
+                                android:textColor="#10B981"
+                                app:strokeColor="#10B981"
+                                app:strokeWidth="1dp"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                                android:layout_marginStart="6dp"
+                                app:cornerRadius="8dp"/>
+                        </LinearLayout>
+
                     </LinearLayout>
-                </LinearLayout>
+                </androidx.cardview.widget.CardView>
 
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </ScrollView>
 
-        <!-- Spacer -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"/>
+    </FrameLayout>
 
-        <!-- Action Button: SMS History -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnHistory"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:text="View SMS History"
-            android:backgroundTint="#0F172A"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold"
-            android:textSize="14sp"
-            android:layout_marginBottom="8dp"
-            app:cornerRadius="10dp"
-            app:icon="@android:drawable/ic_menu_recent_history"
-            app:iconGravity="textStart"
-            app:iconPadding="8dp" />
+    <!-- AMOLED Black Saver Overlay (Pulsing sleep overlay to prevent battery drain) -->
+    <FrameLayout
+        android:id="@+id/layoutBlackSaverOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
 
-        <TextView
-            android:layout_width="match_parent"
+        <LinearLayout
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="IVAC Master Pro • Background Service Active"
-            android:textSize="11sp"
-            android:textColor="#94A3B8"
+            android:orientation="vertical"
             android:gravity="center"
-            android:layout_marginBottom="4dp"/>
+            android:layout_gravity="center">
 
-    </LinearLayout>
-</ScrollView>
+            <View
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:background="@drawable/bg_status_badge"
+                android:backgroundTint="#10B981"
+                android:layout_marginBottom="12dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="IVAC Master Pro • Live"
+                android:textColor="#34D399"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AMOLED Saver Active • Tap screen to wake"
+                android:textColor="#475569"
+                android:textSize="12sp"/>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Bottom Navigation Bar (4 Modern Tabs) -->
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNavigation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="#FFFFFF"
+        app:elevation="8dp"
+        app:itemIconTint="@color/bottom_nav_color"
+        app:itemTextColor="@color/bottom_nav_color"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/bottom_nav_menu" />
+
+</RelativeLayout>
