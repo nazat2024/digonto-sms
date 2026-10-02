@@ -125,4 +125,9 @@ public class SmsLogDbHelper extends SQLiteOpenHelper {
         return logs;
     }
 
+    public void deleteAllLogs() {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.delete(TABLE_NAME, null, null);
+    }
+
 }
