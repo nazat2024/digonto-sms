@@ -67,7 +67,10 @@ public class PermissionsActivity extends AppCompatActivity {
     private void setupPermissionSwitches() {
         switchSms.setOnClickListener(v -> {
             if (switchSms.isChecked()) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECEIVE_SMS}, 101);
+                ActivityCompat.requestPermissions(this, new String[]{
+                        Manifest.permission.RECEIVE_SMS,
+                        Manifest.permission.READ_SMS
+                }, 101);
             } else {
                 Toast.makeText(this, "Cannot disable from here. Go to App Settings.", Toast.LENGTH_SHORT).show();
                 switchSms.setChecked(true); // Revert
@@ -76,7 +79,11 @@ public class PermissionsActivity extends AppCompatActivity {
 
         switchPhone.setOnClickListener(v -> {
             if (switchPhone.isChecked()) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_PHONE_STATE}, 102);
+                ActivityCompat.requestPermissions(this, new String[]{
+                        Manifest.permission.READ_PHONE_STATE,
+                        Manifest.permission.READ_PHONE_NUMBERS,
+                        Manifest.permission.CALL_PHONE
+                }, 102);
             } else {
                 Toast.makeText(this, "Cannot disable from here. Go to App Settings.", Toast.LENGTH_SHORT).show();
                 switchPhone.setChecked(true);

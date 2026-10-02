@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -15,6 +16,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -29,9 +31,15 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.chip.Chip;
@@ -724,17 +732,35 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ==================== SIM AUTO DETECT & LOCK ====================
+    // ==================== SIM AUTO DETECT & LOCK (4-LAYER HYBRID ENGINE) ====================
+    private static final int PERMISSION_REQ_SIM_DETECT = 555;
+
     private void autoDetectSims(boolean showToast) {
         try {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-                if (showToast) Toast.makeText(this, "Permission required to read SIM details", Toast.LENGTH_SHORT).show();
-                return;
+            boolean hasPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
+            boolean hasSms = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
+            boolean hasCall = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED;
+
+            if (!hasPhone || !hasSms || !hasCall) {
+                ActivityCompat.requestPermissions(this, new String[]{
+                        Manifest.permission.READ_PHONE_STATE,
+                        Manifest.permission.READ_SMS,
+                        Manifest.permission.CALL_PHONE,
+                        Manifest.permission.READ_PHONE_NUMBERS
+                }, PERMISSION_REQ_SIM_DETECT);
+                if (showToast) {
+                    Toast.makeText(this, "Please allow permissions to detect SIM numbers", Toast.LENGTH_SHORT).show();
+                }
             }
 
             SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
-            if (sm == null) {
-                if (showToast) Toast.makeText(this, "SubscriptionManager unavailable", Toast.LENGTH_SHORT).show();
+            TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+            if (sm == null || tm == null) {
+                if (showToast) Toast.makeText(this, "Telephony services unavailable", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
                 return;
             }
 
@@ -744,50 +770,254 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            String detectedOp1 = "";
-            String detectedOp2 = "";
-            String detectedNum1 = "";
-            String detectedNum2 = "";
+            boolean anyDetected = false;
 
             for (SubscriptionInfo info : subList) {
                 int slot = info.getSimSlotIndex();
-                String carrier = info.getCarrierName() != null ? info.getCarrierName().toString().trim() : "";
-                String number = info.getNumber() != null ? info.getNumber().trim() : "";
+                int subId = info.getSubscriptionId();
+                String carrier = cleanCarrierName(info.getCarrierName() != null ? info.getCarrierName().toString().trim() : "");
 
                 if (slot == 0) {
-                    detectedOp1 = cleanCarrierName(carrier);
-                    if (isPhoneNumber(number)) detectedNum1 = cleanPhoneNumber(number);
+                    tvSim1Operator.setText("📶 " + carrier);
+                    updateSimHint(sim1Input, carrier);
+                    prefs.edit().putString("sim1_operator", carrier).apply();
                 } else if (slot == 1) {
-                    detectedOp2 = cleanCarrierName(carrier);
-                    if (isPhoneNumber(number)) detectedNum2 = cleanPhoneNumber(number);
+                    tvSim2Operator.setText("📶 " + carrier);
+                    updateSimHint(sim2Input, carrier);
+                    prefs.edit().putString("sim2_operator", carrier).apply();
+                }
+
+                // Layer 1: System Telephony/Subscription API
+                String detectedNum = extractNumberFromSubscription(sm, tm, info);
+
+                // Layer 2: SMS Inbox Deep Scan (Filtered by this SIM's subId)
+                if (detectedNum.isEmpty()) {
+                    detectedNum = scanNumberFromSmsInbox(subId, carrier);
+                }
+
+                // Layer 3: Local App SMS DB Scan
+                if (detectedNum.isEmpty()) {
+                    detectedNum = scanNumberFromAppSmsDb(carrier);
+                }
+
+                if (!detectedNum.isEmpty()) {
+                    applyDetectedNumber(slot, detectedNum);
+                    anyDetected = true;
+                } else {
+                    // Layer 4: Silent Network USSD Request (*511# for Banglalink, *2# for GP/Robi/Airtel, *551# for Teletalk)
+                    tryNetworkUssdDetection(tm, subId, slot, carrier);
                 }
             }
 
-            if (!detectedOp1.isEmpty()) {
-                tvSim1Operator.setText("📶 " + detectedOp1);
-                updateSimHint(sim1Input, detectedOp1);
-                prefs.edit().putString("sim1_operator", detectedOp1).apply();
-            }
-            if (!detectedOp2.isEmpty()) {
-                tvSim2Operator.setText("📶 " + detectedOp2);
-                updateSimHint(sim2Input, detectedOp2);
-                prefs.edit().putString("sim2_operator", detectedOp2).apply();
+            if (showToast && anyDetected) {
+                Toast.makeText(this, "SIM Numbers Auto-Detected & Saved!", Toast.LENGTH_SHORT).show();
+            } else if (showToast) {
+                Toast.makeText(this, "Detecting via network... Please wait", Toast.LENGTH_SHORT).show();
             }
 
-            if (!detectedNum1.isEmpty() && (sim1Input.getText() == null || sim1Input.getText().toString().isEmpty())) {
-                sim1Input.setText(detectedNum1);
-                prefs.edit().putString("sim1_number", detectedNum1).putString("sim1_name", detectedNum1).apply();
-            }
-            if (!detectedNum2.isEmpty() && (sim2Input.getText() == null || sim2Input.getText().toString().isEmpty())) {
-                sim2Input.setText(detectedNum2);
-                prefs.edit().putString("sim2_number", detectedNum2).putString("sim2_name", detectedNum2).apply();
-            }
-
-            if (showToast) {
-                Toast.makeText(this, "SIM Auto-Detected Successfully!", Toast.LENGTH_SHORT).show();
-            }
         } catch (Exception e) {
             if (showToast) Toast.makeText(this, "Detection Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String extractNumberFromSubscription(SubscriptionManager sm, TelephonyManager tm, SubscriptionInfo info) {
+        String num = "";
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    num = sm.getPhoneNumber(info.getSubscriptionId());
+                } catch (Exception ignored) {}
+            }
+            if (!isPhoneNumber(num) && info.getNumber() != null) {
+                num = info.getNumber();
+            }
+            if (!isPhoneNumber(num) && tm != null) {
+                try {
+                    TelephonyManager subTm = tm.createForSubscriptionId(info.getSubscriptionId());
+                    num = subTm.getLine1Number();
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return isPhoneNumber(num) ? cleanPhoneNumber(num) : "";
+    }
+
+    private String scanNumberFromSmsInbox(int targetSubId, String operatorName) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return "";
+        }
+        Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://sms");
+            String[] projection = new String[]{"_id", "body", "address", "sub_id"};
+            String sortOrder = "date DESC LIMIT 200";
+            cursor = getContentResolver().query(uri, projection, null, null, sortOrder);
+            if (cursor != null && cursor.moveToFirst()) {
+                int bodyIdx = cursor.getColumnIndex("body");
+                int addrIdx = cursor.getColumnIndex("address");
+                int subIdIdx = cursor.getColumnIndex("sub_id");
+
+                Map<String, Integer> candidateScores = new HashMap<>();
+
+                do {
+                    int subId = subIdIdx != -1 ? cursor.getInt(subIdIdx) : -1;
+                    if (targetSubId != -1 && subId != -1 && subId != targetSubId) {
+                        continue;
+                    }
+
+                    String body = bodyIdx != -1 ? cursor.getString(bodyIdx) : "";
+                    String addr = addrIdx != -1 ? cursor.getString(addrIdx) : "";
+
+                    if (body == null || body.isEmpty()) continue;
+
+                    Matcher matcher = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(body);
+                    while (matcher.find()) {
+                        String match = cleanPhoneNumber(matcher.group(1));
+                        if (isPhoneNumber(match)) {
+                            int score = 1;
+                            String addrLower = (addr != null ? addr.toLowerCase() : "");
+                            String bodyLower = body.toLowerCase();
+                            String op = operatorName != null ? operatorName.toLowerCase() : "";
+
+                            if ((op.contains("grameen") || op.contains("gp")) && (match.startsWith("017") || match.startsWith("013"))) score += 12;
+                            else if ((op.contains("banglalink") || op.contains("bl")) && (match.startsWith("019") || match.startsWith("014"))) score += 12;
+                            else if (op.contains("robi") && match.startsWith("018")) score += 12;
+                            else if (op.contains("airtel") && match.startsWith("016")) score += 12;
+                            else if (op.contains("teletalk") && match.startsWith("015")) score += 12;
+
+                            if (addrLower.contains("121") || addrLower.contains("gp") || addrLower.contains("banglalink")
+                                    || addrLower.contains("robi") || addrLower.contains("airtel") || addrLower.contains("teletalk")
+                                    || addrLower.contains("bkash") || addrLower.contains("nagad") || addrLower.contains("rocket")
+                                    || addrLower.contains("flexi") || addrLower.contains("recharge") || addrLower.contains("billpay")
+                                    || addrLower.contains("16216")) {
+                                score += 20;
+                            }
+
+                            if (bodyLower.contains("recharge") || bodyLower.contains("রিচার্জ")
+                                    || bodyLower.contains("account") || bodyLower.contains("balance")
+                                    || bodyLower.contains("নাম্বার") || bodyLower.contains("number")
+                                    || bodyLower.contains("cash in") || bodyLower.contains("successful")) {
+                                score += 10;
+                            }
+
+                            candidateScores.put(match, candidateScores.getOrDefault(match, 0) + score);
+                        }
+                    }
+                } while (cursor.moveToNext());
+
+                String bestNum = "";
+                int highest = 0;
+                for (Map.Entry<String, Integer> entry : candidateScores.entrySet()) {
+                    if (entry.getValue() > highest) {
+                        highest = entry.getValue();
+                        bestNum = entry.getKey();
+                    }
+                }
+
+                if (highest >= 10) {
+                    return bestNum;
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+        return "";
+    }
+
+    private String scanNumberFromAppSmsDb(String operatorName) {
+        try {
+            SmsLogDbHelper db = SmsLogDbHelper.getInstance(this);
+            List<SmsLog> logs = db.getAllLogs();
+            if (logs != null) {
+                for (SmsLog log : logs) {
+                    String body = log.getBody();
+                    if (body != null) {
+                        Matcher m = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(body);
+                        while (m.find()) {
+                            String match = cleanPhoneNumber(m.group(1));
+                            if (isPhoneNumber(match)) {
+                                String op = operatorName != null ? operatorName.toLowerCase() : "";
+                                if ((op.contains("grameen") || op.contains("gp")) && (match.startsWith("017") || match.startsWith("013"))) return match;
+                                if ((op.contains("banglalink") || op.contains("bl")) && (match.startsWith("019") || match.startsWith("014"))) return match;
+                                if (op.contains("robi") && match.startsWith("018")) return match;
+                                if (op.contains("airtel") && match.startsWith("016")) return match;
+                                if (op.contains("teletalk") && match.startsWith("015")) return match;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private void tryNetworkUssdDetection(TelephonyManager tm, int subId, int slot, String carrier) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+
+        String op = carrier != null ? carrier.toLowerCase() : "";
+        String ussdCode = "";
+        if (op.contains("banglalink") || op.contains("bl")) {
+            ussdCode = "*511#";
+        } else if (op.contains("grameen") || op.contains("gp") || op.contains("robi") || op.contains("airtel")) {
+            ussdCode = "*2#";
+        } else if (op.contains("teletalk")) {
+            ussdCode = "*551#";
+        }
+
+        if (ussdCode.isEmpty()) return;
+
+        try {
+            TelephonyManager subTm = tm.createForSubscriptionId(subId);
+            subTm.sendUssdRequest(ussdCode, new TelephonyManager.UssdResponseCallback() {
+                @Override
+                public void onReceiveUssdResponse(TelephonyManager telephonyManager, String request, CharSequence returnMessage) {
+                    if (returnMessage != null) {
+                        String msg = returnMessage.toString();
+                        Matcher m = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(msg);
+                        if (m.find()) {
+                            String found = cleanPhoneNumber(m.group(1));
+                            if (isPhoneNumber(found)) {
+                                runOnUiThread(() -> {
+                                    applyDetectedNumber(slot, found);
+                                    Toast.makeText(MainActivity.this, "SIM " + (slot + 1) + " Network Detected: " + found, Toast.LENGTH_SHORT).show();
+                                });
+                            }
+                        }
+                    }
+                }
+
+                @Override
+                public void onReceiveUssdResponseFailed(TelephonyManager telephonyManager, String request, int failureCode) {
+                }
+            }, new Handler(Looper.getMainLooper()));
+        } catch (Exception ignored) {}
+    }
+
+    private void applyDetectedNumber(int slot, String number) {
+        if (!isPhoneNumber(number)) return;
+        if (slot == 0) {
+            sim1Input.setText(number);
+            prefs.edit().putString("sim1_number", number).putString("sim1_name", number).apply();
+        } else if (slot == 1) {
+            sim2Input.setText(number);
+            prefs.edit().putString("sim2_number", number).putString("sim2_name", number).apply();
+        }
+        lockSimInputs();
+        if (MqttService.instance != null) {
+            MqttService.instance.sendSinglePing();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQ_SIM_DETECT) {
+            autoDetectSims(true);
         }
     }
 
@@ -824,16 +1054,17 @@ public class MainActivity extends AppCompatActivity {
 
     private String cleanPhoneNumber(String num) {
         if (num == null) return "";
-        String clean = num.replaceAll("[^0-9+]", "");
-        if (clean.startsWith("+880")) clean = clean.substring(3);
-        if (clean.startsWith("880")) clean = clean.substring(2);
+        String clean = num.replaceAll("[^0-9]", "");
+        if (clean.startsWith("8801") && clean.length() == 13) {
+            clean = clean.substring(2);
+        }
         return clean;
     }
 
     private boolean isPhoneNumber(String str) {
         if (str == null) return false;
-        String clean = str.replaceAll("[^0-9]", "");
-        return (clean.startsWith("01") && clean.length() == 11) || (clean.startsWith("8801") && clean.length() == 13);
+        String clean = cleanPhoneNumber(str);
+        return clean.startsWith("01") && clean.length() == 11;
     }
 
     private void updateSimHint(TextInputEditText input, String op) {
