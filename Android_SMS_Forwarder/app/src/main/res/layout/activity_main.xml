@@ -943,7 +943,20 @@
 
     </FrameLayout>
 
-    <!-- AMOLED Black Saver Overlay (Pulsing sleep overlay to prevent battery drain) -->
+    <!-- Bottom Navigation Bar (4 Modern Tabs) -->
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNavigation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="#FFFFFF"
+        app:elevation="8dp"
+        app:itemIconTint="@color/bottom_nav_color"
+        app:itemTextColor="@color/bottom_nav_color"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/bottom_nav_menu" />
+
+    <!-- AMOLED Black Saver Overlay (Pure pitch black immersive overlay to prevent battery drain) -->
     <FrameLayout
         android:id="@+id/layoutBlackSaverOverlay"
         android:layout_width="match_parent"
@@ -951,7 +964,8 @@
         android:background="#000000"
         android:visibility="gone"
         android:clickable="true"
-        android:focusable="true">
+        android:focusable="true"
+        android:elevation="30dp">
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -984,18 +998,5 @@
                 android:textSize="12sp"/>
         </LinearLayout>
     </FrameLayout>
-
-    <!-- Bottom Navigation Bar (4 Modern Tabs) -->
-    <com.google.android.material.bottomnavigation.BottomNavigationView
-        android:id="@+id/bottomNavigation"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:background="#FFFFFF"
-        app:elevation="8dp"
-        app:itemIconTint="@color/bottom_nav_color"
-        app:itemTextColor="@color/bottom_nav_color"
-        app:labelVisibilityMode="labeled"
-        app:menu="@menu/bottom_nav_menu" />
 
 </RelativeLayout>

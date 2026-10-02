@@ -1636,7 +1636,7 @@ try:
                             "is_active": True
                         }
                         save_device_config(saved_devices)
-                    elif incoming_custom and incoming_custom != dev_model and saved_devices[dev_id].get("custom_name") != incoming_custom:
+                    elif incoming_custom and (sys_data.get("has_custom_name") or incoming_custom != dev_model) and saved_devices[dev_id].get("custom_name") != incoming_custom:
                         saved_devices[dev_id]["custom_name"] = incoming_custom
                         save_device_config(saved_devices)
                         
@@ -1672,6 +1672,7 @@ try:
                         save_device_config(saved_devices)
                         if dev_id in connected_devices:
                             connected_devices[dev_id]["custom_name"] = incoming_custom
+                            connected_devices[dev_id]["phones"] = None
                         print(f"[Device Sync] Live updated custom name for {dev_id}: {incoming_custom}")
                 elif sys_data.get("type") == "offline":
                     dev_id = sys_data.get("device_id")

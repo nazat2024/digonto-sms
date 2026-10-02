@@ -5,7 +5,7 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -15,6 +15,7 @@ import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.view.View;
+import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -394,6 +395,9 @@ public class MainActivity extends AppCompatActivity {
         switchAmoledSaver.setChecked(amoledSaver);
         switchAmoledSaver.setOnCheckedChangeListener((buttonView, isChecked) -> {
             prefs.edit().putBoolean("amoled_black_saver", isChecked).apply();
+            if (!isChecked) {
+                exitAmoledMode();
+            }
             resetAmoledTimer();
             Toast.makeText(this, isChecked ? "AMOLED Saver Enabled (2 min idle)" : "AMOLED Saver Disabled", Toast.LENGTH_SHORT).show();
         });
@@ -413,6 +417,7 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit().putString("custom_device_name", name).apply();
             if (MqttService.instance != null) {
                 MqttService.instance.updateCustomDeviceName(name);
+                MqttService.instance.sendSinglePing();
             }
             InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             if (imm != null) {
@@ -493,17 +498,61 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void enterAmoledMode() {
+        if (layoutBlackSaverOverlay != null) {
+            layoutBlackSaverOverlay.setVisibility(View.VISIBLE);
+        }
+        if (bottomNavigation != null) {
+            bottomNavigation.setVisibility(View.GONE);
+        }
+        Window window = getWindow();
+        if (window != null) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+            window.setStatusBarColor(Color.BLACK);
+            window.setNavigationBarColor(Color.BLACK);
+            View decor = window.getDecorView();
+            decor.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            );
+        }
+    }
+
+    private void exitAmoledMode() {
+        if (layoutBlackSaverOverlay != null) {
+            layoutBlackSaverOverlay.setVisibility(View.GONE);
+        }
+        if (bottomNavigation != null) {
+            bottomNavigation.setVisibility(View.VISIBLE);
+        }
+        Window window = getWindow();
+        if (window != null) {
+            window.setStatusBarColor(Color.parseColor("#F8FAFC"));
+            window.setNavigationBarColor(Color.parseColor("#FFFFFF"));
+            View decor = window.getDecorView();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            } else {
+                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+            }
+        }
+    }
+
     private void setupAmoledBlackSaver() {
         amoledRunnable = () -> {
             boolean isSaverEnabled = prefs.getBoolean("amoled_black_saver", false);
-            if (isSaverEnabled && layoutBlackSaverOverlay != null) {
-                layoutBlackSaverOverlay.setVisibility(View.VISIBLE);
+            if (isSaverEnabled) {
+                enterAmoledMode();
             }
         };
 
         if (layoutBlackSaverOverlay != null) {
             layoutBlackSaverOverlay.setOnClickListener(v -> {
-                layoutBlackSaverOverlay.setVisibility(View.GONE);
+                exitAmoledMode();
                 resetAmoledTimer();
             });
         }
@@ -513,7 +562,20 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onUserInteraction() {
         super.onUserInteraction();
+        if (layoutBlackSaverOverlay != null && layoutBlackSaverOverlay.getVisibility() == View.VISIBLE) {
+            exitAmoledMode();
+        }
         resetAmoledTimer();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (layoutBlackSaverOverlay != null && layoutBlackSaverOverlay.getVisibility() == View.VISIBLE) {
+            exitAmoledMode();
+            resetAmoledTimer();
+            return;
+        }
+        super.onBackPressed();
     }
 
     private void resetAmoledTimer() {

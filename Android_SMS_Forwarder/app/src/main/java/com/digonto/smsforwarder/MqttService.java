@@ -249,6 +249,7 @@ public class MqttService extends Service {
         }
         try {
             String customName = prefs.getString("custom_device_name", "");
+            boolean hasCustom = !customName.isEmpty();
             if (customName.isEmpty()) {
                 customName = Build.MODEL;
             }
@@ -258,6 +259,7 @@ public class MqttService extends Service {
             pingData.put("device_id", prefs.getString("device_id", "Unknown"));
             pingData.put("device_name", Build.MODEL);
             pingData.put("custom_name", customName);
+            pingData.put("has_custom_name", hasCustom);
             pingData.put("sim1_name", prefs.getString("sim1_name", "Unknown SIM 1"));
             pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
             pingData.put("timestamp", System.currentTimeMillis());
@@ -296,6 +298,7 @@ public class MqttService extends Service {
                     updateData.put("type", "update_device_name");
                     updateData.put("device_id", prefs.getString("device_id", "Unknown"));
                     updateData.put("custom_name", newName);
+                    updateData.put("has_custom_name", true);
                     updateData.put("timestamp", System.currentTimeMillis());
 
                     MqttMessage msg = new MqttMessage(updateData.toString().getBytes());
@@ -308,6 +311,7 @@ public class MqttService extends Service {
                             mqttClient.publish(sysTopic, msg);
                         } catch (Exception ignored) {}
                     }
+                    sendSinglePingInternal();
                 }
             } catch (Exception ignored) {}
         });
