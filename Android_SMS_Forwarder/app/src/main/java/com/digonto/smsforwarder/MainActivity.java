@@ -320,16 +320,15 @@ public class MainActivity extends AppCompatActivity {
                 imm.hideSoftInputFromWindow(pairingCodeInput.getWindowToken(), 0);
             }
 
-            // Dynamically subscribe immediately without restarting service!
+            // Start service and connect
+            startMqttService();
             if (MqttService.instance != null) {
                 MqttService.instance.subscribeToCode(code);
                 MqttService.instance.sendSinglePing();
-            } else {
-                startMqttService();
             }
 
             loadChips();
-            Toast.makeText(this, "Desktop added & connected!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Desktop added!", Toast.LENGTH_SHORT).show();
             updateConnectionStatusLive();
         });
 
@@ -582,7 +581,8 @@ public class MainActivity extends AppCompatActivity {
      * Individual LED Badge: 🟢 Live, 🔴 Offline, 🟡 Waiting per desktop!
      */
     private void updateSingleChipState(Chip chip, String code) {
-        long lastPong = MqttService.lastPongReceivedTimes.containsKey(code) ? MqttService.lastPongReceivedTimes.get(code) : 0;
+        Long lp = MqttService.lastPongReceivedTimes.get(code);
+        long lastPong = lp != null ? lp : 0;
         long timeSinceLastPong = System.currentTimeMillis() - lastPong;
 
         if (timeSinceLastPong < 10000 && lastPong > 0) {
@@ -633,7 +633,8 @@ public class MainActivity extends AppCompatActivity {
         if (MqttService.isConnectedToBroker) {
             int onlineCount = 0;
             for (String code : codes) {
-                long lastPong = MqttService.lastPongReceivedTimes.containsKey(code) ? MqttService.lastPongReceivedTimes.get(code) : 0;
+                Long lp = MqttService.lastPongReceivedTimes.get(code);
+                long lastPong = lp != null ? lp : 0;
                 long timeSinceLastPong = System.currentTimeMillis() - lastPong;
                 if (timeSinceLastPong < 10000 && lastPong > 0) {
                     onlineCount++;

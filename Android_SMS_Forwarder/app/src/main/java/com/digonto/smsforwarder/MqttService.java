@@ -19,7 +19,6 @@ import androidx.core.app.NotificationCompat;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
-import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.json.JSONObject;
@@ -42,17 +41,15 @@ public class MqttService extends Service {
     private MqttClient mqttClient;
     private SharedPreferences prefs;
 
-    // High performance single-thread background executors (Zero Thread-Leak / Zero Hang)
+    // Dedicated background thread executors so the UI NEVER hangs or freezes!
+    private ExecutorService netExecutor;
     private ScheduledExecutorService pingExecutor;
     private ExecutorService smsExecutor;
 
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
 
-    // Static reference to publish SMS easily from SmsReceiver and MainActivity
     public static MqttService instance;
-
-    // Status tracking for MainActivity
     public static boolean isConnectedToBroker = false;
     public static ConcurrentHashMap<String, Long> lastPongReceivedTimes = new ConcurrentHashMap<>();
 
@@ -66,7 +63,9 @@ public class MqttService extends Service {
             prefs.edit().putString("device_id", UUID.randomUUID().toString()).apply();
         }
 
+        netExecutor = Executors.newSingleThreadExecutor();
         smsExecutor = Executors.newSingleThreadExecutor();
+        pingExecutor = Executors.newSingleThreadScheduledExecutor();
 
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -119,15 +118,21 @@ public class MqttService extends Service {
         return START_STICKY;
     }
 
-    public synchronized void connectToMqtt(Set<String> pairingCodes) {
-        new Thread(() -> {
+    public void connectToMqtt(Set<String> pairingCodes) {
+        if (netExecutor == null || netExecutor.isShutdown()) {
+            netExecutor = Executors.newSingleThreadExecutor();
+        }
+
+        netExecutor.execute(() -> {
             try {
                 if (mqttClient != null && mqttClient.isConnected()) {
-                    // Already connected to broker! Dynamically ensure all codes are subscribed!
                     for (String code : pairingCodes) {
-                        subscribeToCode(code);
+                        try {
+                            String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                            mqttClient.subscribe(sysTopic);
+                        } catch (Exception ignored) {}
                     }
-                    sendSinglePing();
+                    sendSinglePingInternal();
                     return;
                 }
 
@@ -137,26 +142,26 @@ public class MqttService extends Service {
                 MqttConnectOptions options = new MqttConnectOptions();
                 options.setCleanSession(true);
                 options.setAutomaticReconnect(true);
-                options.setConnectionTimeout(15);
-                options.setKeepAliveInterval(30);
+                options.setConnectionTimeout(10);
+                options.setKeepAliveInterval(25);
 
                 mqttClient.setCallback(new org.eclipse.paho.client.mqttv3.MqttCallbackExtended() {
                     @Override
                     public void connectComplete(boolean reconnect, String serverURI) {
                         isConnectedToBroker = true;
-                        try {
-                            Set<String> currentCodes = prefs.getStringSet("pairing_codes", new HashSet<>());
-                            for (String code : currentCodes) {
-                                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
-                                mqttClient.subscribe(sysTopic);
-                                Log.d(TAG, "Subscribed on connect: " + sysTopic);
-                            }
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error subscribing on connectComplete", e);
+                        if (netExecutor != null && !netExecutor.isShutdown()) {
+                            netExecutor.execute(() -> {
+                                try {
+                                    Set<String> currentCodes = prefs.getStringSet("pairing_codes", new HashSet<>());
+                                    for (String code : currentCodes) {
+                                        String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                                        mqttClient.subscribe(sysTopic);
+                                        Log.d(TAG, "Subscribed on connect: " + sysTopic);
+                                    }
+                                } catch (Exception ignored) {}
+                                sendSinglePingInternal();
+                            });
                         }
-
-                        // Send ping immediately upon connection
-                        sendSinglePing();
                     }
 
                     @Override
@@ -191,38 +196,54 @@ public class MqttService extends Service {
             } catch (Exception e) {
                 isConnectedToBroker = false;
                 Log.e(TAG, "MQTT Connection error", e);
-                // Retry connection in 5 seconds
                 if (pingExecutor != null && !pingExecutor.isShutdown()) {
                     pingExecutor.schedule(() -> connectToMqtt(pairingCodes), 5, TimeUnit.SECONDS);
                 }
             }
-        }).start();
+        });
     }
 
     public void subscribeToCode(String code) {
-        if (mqttClient != null && mqttClient.isConnected()) {
-            try {
-                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
-                mqttClient.subscribe(sysTopic);
-                Log.d(TAG, "Dynamically subscribed to sysTopic: " + sysTopic);
-            } catch (Exception e) {
-                Log.e(TAG, "Error dynamically subscribing: " + code, e);
-            }
+        if (netExecutor == null || netExecutor.isShutdown()) {
+            netExecutor = Executors.newSingleThreadExecutor();
         }
+        netExecutor.execute(() -> {
+            if (mqttClient != null && mqttClient.isConnected()) {
+                try {
+                    String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                    mqttClient.subscribe(sysTopic);
+                    Log.d(TAG, "Dynamically subscribed to sysTopic: " + sysTopic);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error dynamically subscribing: " + code, e);
+                }
+            }
+        });
     }
 
     public void unsubscribeFromCode(String code) {
-        if (mqttClient != null && mqttClient.isConnected()) {
-            try {
-                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
-                mqttClient.unsubscribe(sysTopic);
-                lastPongReceivedTimes.remove(code);
-                Log.d(TAG, "Unsubscribed from sysTopic: " + sysTopic);
-            } catch (Exception ignored) {}
+        if (netExecutor == null || netExecutor.isShutdown()) {
+            netExecutor = Executors.newSingleThreadExecutor();
         }
+        netExecutor.execute(() -> {
+            if (mqttClient != null && mqttClient.isConnected()) {
+                try {
+                    String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                    mqttClient.unsubscribe(sysTopic);
+                    lastPongReceivedTimes.remove(code);
+                    Log.d(TAG, "Unsubscribed from sysTopic: " + sysTopic);
+                } catch (Exception ignored) {}
+            }
+        });
     }
 
     public void sendSinglePing() {
+        if (netExecutor == null || netExecutor.isShutdown()) {
+            netExecutor = Executors.newSingleThreadExecutor();
+        }
+        netExecutor.execute(this::sendSinglePingInternal);
+    }
+
+    private void sendSinglePingInternal() {
         if (mqttClient == null || !mqttClient.isConnected()) {
             return;
         }
@@ -259,16 +280,16 @@ public class MqttService extends Service {
             pingExecutor.shutdownNow();
         }
         pingExecutor = Executors.newSingleThreadScheduledExecutor();
-        // High-speed 2000ms ping loop on dedicated single daemon thread (Zero Thread Leak!)
-        pingExecutor.scheduleAtFixedRate(this::sendSinglePing, 0, 2000, TimeUnit.MILLISECONDS);
+        // 2000ms periodic ping loop dispatched via netExecutor
+        pingExecutor.scheduleAtFixedRate(this::sendSinglePing, 1000, 2000, TimeUnit.MILLISECONDS);
     }
 
-    /**
-     * Broadcasts updated custom device name immediately to all connected desktop software.
-     */
     public void updateCustomDeviceName(String newName) {
         prefs.edit().putString("custom_device_name", newName).apply();
-        new Thread(() -> {
+        if (netExecutor == null || netExecutor.isShutdown()) {
+            netExecutor = Executors.newSingleThreadExecutor();
+        }
+        netExecutor.execute(() -> {
             try {
                 if (mqttClient != null && mqttClient.isConnected()) {
                     JSONObject updateData = new JSONObject();
@@ -289,12 +310,9 @@ public class MqttService extends Service {
                     }
                 }
             } catch (Exception ignored) {}
-        }).start();
+        });
     }
 
-    /**
-     * VIP Express Lane: Instant OTP / SMS forwarding with highest execution priority!
-     */
     public void publishSms(long logId, String phone, String smsBody, String simName) {
         if (smsExecutor == null || smsExecutor.isShutdown()) {
             smsExecutor = Executors.newSingleThreadExecutor();
@@ -380,6 +398,9 @@ public class MqttService extends Service {
     public void onDestroy() {
         super.onDestroy();
         instance = null;
+        if (netExecutor != null) {
+            netExecutor.shutdownNow();
+        }
         if (pingExecutor != null) {
             pingExecutor.shutdownNow();
         }
