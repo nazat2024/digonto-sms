@@ -277,6 +277,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         btnAutoDetectSim.setOnClickListener(v -> autoDetectSims(true));
+        tvSim1Operator.setOnClickListener(v -> triggerSimUssdForSlot(0));
+        tvSim2Operator.setOnClickListener(v -> triggerSimUssdForSlot(1));
 
         btnSaveSim.setOnClickListener(v -> {
             if (isSimLocked) {
@@ -732,25 +734,44 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ==================== SIM AUTO DETECT & LOCK (4-LAYER HYBRID ENGINE) ====================
+    // ==================== SIM AUTO DETECT & LOCK (LIVE HARDWARE & USSD ENGINE) ====================
     private static final int PERMISSION_REQ_SIM_DETECT = 555;
+
+    private String getSimCardIdentifier(SubscriptionInfo info) {
+        if (info == null) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(info.getSubscriptionId());
+        try {
+            if (info.getIccId() != null && !info.getIccId().isEmpty()) {
+                sb.append("_").append(info.getIccId());
+            }
+        } catch (Exception ignored) {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                sb.append("_").append(info.getCardId());
+            } catch (Exception ignored) {}
+        }
+        if (info.getCarrierName() != null) {
+            sb.append("_").append(info.getCarrierName().toString().trim());
+        }
+        return sb.toString();
+    }
 
     private void autoDetectSims(boolean showToast) {
         try {
             boolean hasPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
-            boolean hasSms = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
             boolean hasCall = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED;
 
-            if (!hasPhone || !hasSms || !hasCall) {
-                ActivityCompat.requestPermissions(this, new String[]{
-                        Manifest.permission.READ_PHONE_STATE,
-                        Manifest.permission.READ_SMS,
-                        Manifest.permission.CALL_PHONE,
-                        Manifest.permission.READ_PHONE_NUMBERS
-                }, PERMISSION_REQ_SIM_DETECT);
+            if (!hasPhone || !hasCall) {
                 if (showToast) {
-                    Toast.makeText(this, "Please allow permissions to detect SIM numbers", Toast.LENGTH_SHORT).show();
+                    ActivityCompat.requestPermissions(this, new String[]{
+                            Manifest.permission.READ_PHONE_STATE,
+                            Manifest.permission.CALL_PHONE,
+                            Manifest.permission.READ_PHONE_NUMBERS
+                    }, PERMISSION_REQ_SIM_DETECT);
+                    Toast.makeText(this, "Please allow Phone & Call permissions to detect live SIM numbers", Toast.LENGTH_SHORT).show();
                 }
+                return;
             }
 
             SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
@@ -760,64 +781,101 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-                return;
-            }
-
             List<SubscriptionInfo> subList = sm.getActiveSubscriptionInfoList();
             if (subList == null || subList.isEmpty()) {
+                tvSim1Operator.setText("No SIM 1");
+                tvSim2Operator.setText("No SIM 2");
+                sim1Input.setText("");
+                sim2Input.setText("");
+                prefs.edit()
+                        .remove("sim1_number").remove("sim1_name").remove("sim1_operator").remove("sim1_id")
+                        .remove("sim2_number").remove("sim2_name").remove("sim2_operator").remove("sim2_id")
+                        .apply();
+                unlockSimInputs();
                 if (showToast) Toast.makeText(this, "No active SIM cards detected", Toast.LENGTH_SHORT).show();
                 return;
             }
 
-            boolean anyDetected = false;
+            boolean slot0Found = false;
+            boolean slot1Found = false;
 
             for (SubscriptionInfo info : subList) {
                 int slot = info.getSimSlotIndex();
-                int subId = info.getSubscriptionId();
-                String carrier = cleanCarrierName(info.getCarrierName() != null ? info.getCarrierName().toString().trim() : "");
-
-                if (slot == 0) {
-                    tvSim1Operator.setText("📶 " + carrier);
-                    updateSimHint(sim1Input, carrier);
-                    prefs.edit().putString("sim1_operator", carrier).apply();
-                } else if (slot == 1) {
-                    tvSim2Operator.setText("📶 " + carrier);
-                    updateSimHint(sim2Input, carrier);
-                    prefs.edit().putString("sim2_operator", carrier).apply();
-                }
-
-                // Layer 1: System Telephony/Subscription API
-                String detectedNum = extractNumberFromSubscription(sm, tm, info);
-
-                // Layer 2: SMS Inbox Deep Scan (Filtered by this SIM's subId)
-                if (detectedNum.isEmpty()) {
-                    detectedNum = scanNumberFromSmsInbox(subId, carrier);
-                }
-
-                // Layer 3: Local App SMS DB Scan
-                if (detectedNum.isEmpty()) {
-                    detectedNum = scanNumberFromAppSmsDb(carrier);
-                }
-
-                if (!detectedNum.isEmpty()) {
-                    applyDetectedNumber(slot, detectedNum);
-                    anyDetected = true;
-                } else {
-                    // Layer 4: Silent Network USSD Request (*511# for Banglalink, *2# for GP/Robi/Airtel, *551# for Teletalk)
-                    tryNetworkUssdDetection(tm, subId, slot, carrier);
-                }
+                if (slot == 0) slot0Found = true;
+                if (slot == 1) slot1Found = true;
+                processSingleSimSlot(sm, tm, info, slot, showToast);
             }
 
-            if (showToast && anyDetected) {
-                Toast.makeText(this, "SIM Numbers Auto-Detected & Saved!", Toast.LENGTH_SHORT).show();
-            } else if (showToast) {
-                Toast.makeText(this, "Detecting via network... Please wait", Toast.LENGTH_SHORT).show();
+            // Invalidate slots where physical SIM was removed
+            if (!slot0Found) {
+                tvSim1Operator.setText("No SIM 1");
+                sim1Input.setText("");
+                prefs.edit().remove("sim1_number").remove("sim1_name").remove("sim1_operator").remove("sim1_id").apply();
+            }
+            if (!slot1Found) {
+                tvSim2Operator.setText("No SIM 2");
+                sim2Input.setText("");
+                prefs.edit().remove("sim2_number").remove("sim2_name").remove("sim2_operator").remove("sim2_id").apply();
             }
 
         } catch (Exception e) {
             if (showToast) Toast.makeText(this, "Detection Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void processSingleSimSlot(SubscriptionManager sm, TelephonyManager tm, SubscriptionInfo info, int slot, boolean showToast) {
+        int subId = info.getSubscriptionId();
+        String carrier = cleanCarrierName(info.getCarrierName() != null ? info.getCarrierName().toString().trim() : "");
+        String currentSimId = getSimCardIdentifier(info);
+
+        String keySimId = (slot == 0) ? "sim1_id" : "sim2_id";
+        String keySimNumber = (slot == 0) ? "sim1_number" : "sim2_number";
+        String keySimName = (slot == 0) ? "sim1_name" : "sim2_name";
+        String keySimOp = (slot == 0) ? "sim1_operator" : "sim2_operator";
+        TextInputEditText targetInput = (slot == 0) ? sim1Input : sim2Input;
+        TextView targetTvOp = (slot == 0) ? tvSim1Operator : tvSim2Operator;
+
+        targetTvOp.setText("📶 " + carrier + " (Tap to query)");
+        updateSimHint(targetInput, carrier);
+        prefs.edit().putString(keySimOp, carrier).apply();
+
+        String savedSimId = prefs.getString(keySimId, "");
+        if (!savedSimId.isEmpty() && !savedSimId.equals(currentSimId)) {
+            // Physical SIM was SWAPPED or REPLACED!
+            // Instantly clear old number so removed SIM number is NEVER retained!
+            prefs.edit()
+                    .remove(keySimNumber)
+                    .remove(keySimName)
+                    .putString(keySimId, currentSimId)
+                    .apply();
+            targetInput.setText("");
+            unlockSimInputs();
+            if (showToast) {
+                Toast.makeText(this, "SIM " + (slot + 1) + " changed! Old number wiped.", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            prefs.edit().putString(keySimId, currentSimId).apply();
+        }
+
+        // Check if current slot already has a valid saved number for this exact SIM
+        String currentSavedNum = prefs.getString(keySimNumber, "");
+        if (isPhoneNumber(currentSavedNum)) {
+            targetInput.setText(currentSavedNum);
+            return;
+        }
+
+        // Layer 1: Query live hardware chip / EF_MSISDN (Zero SMS history)
+        String detectedNum = extractNumberFromSubscription(sm, tm, info);
+        if (!detectedNum.isEmpty()) {
+            applyDetectedNumber(slot, detectedNum);
+            if (showToast) {
+                Toast.makeText(this, "SIM " + (slot + 1) + " Hardware Detected: " + detectedNum, Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        // Layer 2: Query Live Carrier Network via USSD (*511# for BL, *2# for GP/Robi/Airtel, *551# for Teletalk)
+        requestNetworkUssd(tm, subId, slot, carrier, showToast);
     }
 
     private String extractNumberFromSubscription(SubscriptionManager sm, TelephonyManager tm, SubscriptionInfo info) {
@@ -841,135 +899,32 @@ public class MainActivity extends AppCompatActivity {
         return isPhoneNumber(num) ? cleanPhoneNumber(num) : "";
     }
 
-    private String scanNumberFromSmsInbox(int targetSubId, String operatorName) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            return "";
-        }
-        Cursor cursor = null;
-        try {
-            Uri uri = Uri.parse("content://sms");
-            String[] projection = new String[]{"_id", "body", "address", "sub_id"};
-            String sortOrder = "date DESC LIMIT 200";
-            cursor = getContentResolver().query(uri, projection, null, null, sortOrder);
-            if (cursor != null && cursor.moveToFirst()) {
-                int bodyIdx = cursor.getColumnIndex("body");
-                int addrIdx = cursor.getColumnIndex("address");
-                int subIdIdx = cursor.getColumnIndex("sub_id");
-
-                Map<String, Integer> candidateScores = new HashMap<>();
-
-                do {
-                    int subId = subIdIdx != -1 ? cursor.getInt(subIdIdx) : -1;
-                    if (targetSubId != -1 && subId != -1 && subId != targetSubId) {
-                        continue;
-                    }
-
-                    String body = bodyIdx != -1 ? cursor.getString(bodyIdx) : "";
-                    String addr = addrIdx != -1 ? cursor.getString(addrIdx) : "";
-
-                    if (body == null || body.isEmpty()) continue;
-
-                    Matcher matcher = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(body);
-                    while (matcher.find()) {
-                        String match = cleanPhoneNumber(matcher.group(1));
-                        if (isPhoneNumber(match)) {
-                            int score = 1;
-                            String addrLower = (addr != null ? addr.toLowerCase() : "");
-                            String bodyLower = body.toLowerCase();
-                            String op = operatorName != null ? operatorName.toLowerCase() : "";
-
-                            if ((op.contains("grameen") || op.contains("gp")) && (match.startsWith("017") || match.startsWith("013"))) score += 12;
-                            else if ((op.contains("banglalink") || op.contains("bl")) && (match.startsWith("019") || match.startsWith("014"))) score += 12;
-                            else if (op.contains("robi") && match.startsWith("018")) score += 12;
-                            else if (op.contains("airtel") && match.startsWith("016")) score += 12;
-                            else if (op.contains("teletalk") && match.startsWith("015")) score += 12;
-
-                            if (addrLower.contains("121") || addrLower.contains("gp") || addrLower.contains("banglalink")
-                                    || addrLower.contains("robi") || addrLower.contains("airtel") || addrLower.contains("teletalk")
-                                    || addrLower.contains("bkash") || addrLower.contains("nagad") || addrLower.contains("rocket")
-                                    || addrLower.contains("flexi") || addrLower.contains("recharge") || addrLower.contains("billpay")
-                                    || addrLower.contains("16216")) {
-                                score += 20;
-                            }
-
-                            if (bodyLower.contains("recharge") || bodyLower.contains("রিচার্জ")
-                                    || bodyLower.contains("account") || bodyLower.contains("balance")
-                                    || bodyLower.contains("নাম্বার") || bodyLower.contains("number")
-                                    || bodyLower.contains("cash in") || bodyLower.contains("successful")) {
-                                score += 10;
-                            }
-
-                            candidateScores.put(match, candidateScores.getOrDefault(match, 0) + score);
-                        }
-                    }
-                } while (cursor.moveToNext());
-
-                String bestNum = "";
-                int highest = 0;
-                for (Map.Entry<String, Integer> entry : candidateScores.entrySet()) {
-                    if (entry.getValue() > highest) {
-                        highest = entry.getValue();
-                        bestNum = entry.getKey();
-                    }
-                }
-
-                if (highest >= 10) {
-                    return bestNum;
-                }
+    private void requestNetworkUssd(TelephonyManager tm, int subId, int slot, String carrier, boolean userFeedback) {
+        String ussdCode = getCarrierUssdCode(carrier);
+        if (ussdCode.isEmpty()) {
+            if (userFeedback) {
+                Toast.makeText(this, "Please enter SIM " + (slot + 1) + " number manually.", Toast.LENGTH_SHORT).show();
             }
-        } catch (Exception ignored) {
-        } finally {
-            if (cursor != null) cursor.close();
+            return;
         }
-        return "";
-    }
 
-    private String scanNumberFromAppSmsDb(String operatorName) {
-        try {
-            SmsLogDbHelper db = SmsLogDbHelper.getInstance(this);
-            List<SmsLog> logs = db.getAllLogs();
-            if (logs != null) {
-                for (SmsLog log : logs) {
-                    String body = log.getBody();
-                    if (body != null) {
-                        Matcher m = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(body);
-                        while (m.find()) {
-                            String match = cleanPhoneNumber(m.group(1));
-                            if (isPhoneNumber(match)) {
-                                String op = operatorName != null ? operatorName.toLowerCase() : "";
-                                if ((op.contains("grameen") || op.contains("gp")) && (match.startsWith("017") || match.startsWith("013"))) return match;
-                                if ((op.contains("banglalink") || op.contains("bl")) && (match.startsWith("019") || match.startsWith("014"))) return match;
-                                if (op.contains("robi") && match.startsWith("018")) return match;
-                                if (op.contains("airtel") && match.startsWith("016")) return match;
-                                if (op.contains("teletalk") && match.startsWith("015")) return match;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-        return "";
-    }
-
-    private void tryNetworkUssdDetection(TelephonyManager tm, int subId, int slot, String carrier) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            if (userFeedback) {
+                promptDirectUssdDial(slot, carrier, ussdCode);
+            }
             return;
         }
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            if (userFeedback) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CALL_PHONE}, PERMISSION_REQ_SIM_DETECT);
+            }
             return;
         }
 
-        String op = carrier != null ? carrier.toLowerCase() : "";
-        String ussdCode = "";
-        if (op.contains("banglalink") || op.contains("bl")) {
-            ussdCode = "*511#";
-        } else if (op.contains("grameen") || op.contains("gp") || op.contains("robi") || op.contains("airtel")) {
-            ussdCode = "*2#";
-        } else if (op.contains("teletalk")) {
-            ussdCode = "*551#";
+        if (userFeedback) {
+            Toast.makeText(this, "Contacting " + carrier + " tower (" + ussdCode + ")...", Toast.LENGTH_SHORT).show();
         }
-
-        if (ussdCode.isEmpty()) return;
 
         try {
             TelephonyManager subTm = tm.createForSubscriptionId(subId);
@@ -984,18 +939,85 @@ public class MainActivity extends AppCompatActivity {
                             if (isPhoneNumber(found)) {
                                 runOnUiThread(() -> {
                                     applyDetectedNumber(slot, found);
-                                    Toast.makeText(MainActivity.this, "SIM " + (slot + 1) + " Network Detected: " + found, Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(MainActivity.this, "SIM " + (slot + 1) + " Network Verified: " + found, Toast.LENGTH_LONG).show();
                                 });
+                                return;
                             }
                         }
+                    }
+                    if (userFeedback) {
+                        runOnUiThread(() -> promptDirectUssdDial(slot, carrier, ussdCode));
                     }
                 }
 
                 @Override
                 public void onReceiveUssdResponseFailed(TelephonyManager telephonyManager, String request, int failureCode) {
+                    if (userFeedback) {
+                        runOnUiThread(() -> promptDirectUssdDial(slot, carrier, ussdCode));
+                    }
                 }
             }, new Handler(Looper.getMainLooper()));
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            if (userFeedback) {
+                promptDirectUssdDial(slot, carrier, ussdCode);
+            }
+        }
+    }
+
+    private void promptDirectUssdDial(int slot, String carrier, String ussdCode) {
+        new AlertDialog.Builder(this)
+                .setTitle("Verify SIM " + (slot + 1) + " (" + carrier + ")")
+                .setMessage("To view your active mobile number, query " + carrier + " network using code " + ussdCode + ".\n\nTap 'Dial Now' to proceed.")
+                .setPositiveButton("Dial Now", (dialog, which) -> {
+                    try {
+                        Uri uri = Uri.parse("tel:" + Uri.encode(ussdCode));
+                        Intent intent = new Intent(Intent.ACTION_CALL, uri);
+                        intent.putExtra("com.android.phone.extra.slot", slot);
+                        intent.putExtra("simSlot", slot);
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "Dial failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private String getCarrierUssdCode(String carrier) {
+        if (carrier == null) return "";
+        String l = carrier.toLowerCase();
+        if (l.contains("banglalink") || l.contains("bl")) return "*511#";
+        if (l.contains("grameen") || l.contains("gp")) return "*2#";
+        if (l.contains("robi")) return "*2#";
+        if (l.contains("airtel")) return "*2#";
+        if (l.contains("teletalk")) return "*551#";
+        return "";
+    }
+
+    private void triggerSimUssdForSlot(int targetSlot) {
+        try {
+            SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+            TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+            if (sm == null || tm == null) return;
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_PHONE_STATE, Manifest.permission.CALL_PHONE}, PERMISSION_REQ_SIM_DETECT);
+                return;
+            }
+            List<SubscriptionInfo> subList = sm.getActiveSubscriptionInfoList();
+            if (subList != null) {
+                for (SubscriptionInfo info : subList) {
+                    if (info.getSimSlotIndex() == targetSlot) {
+                        String carrier = cleanCarrierName(info.getCarrierName() != null ? info.getCarrierName().toString().trim() : "");
+                        requestNetworkUssd(tm, info.getSubscriptionId(), targetSlot, carrier, true);
+                        return;
+                    }
+                }
+            }
+            Toast.makeText(this, "SIM " + (targetSlot + 1) + " not inserted", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void applyDetectedNumber(int slot, String number) {
@@ -1104,6 +1126,7 @@ public class MainActivity extends AppCompatActivity {
             if (MqttService.instance != null) {
                 MqttService.instance.sendSinglePing();
             }
+            autoDetectSims(false);
         }
         resetAmoledTimer();
         // If message tab is open, refresh logs
