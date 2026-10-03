@@ -60,17 +60,36 @@ public class SmsLogDbHelper extends SQLiteOpenHelper {
     }
 
     public long insertLog(String sender, String body, String simName, int status) {
+        return insertLogWithTimestamp(sender, body, simName, status, System.currentTimeMillis());
+    }
+
+    public long insertLogWithTimestamp(String sender, String body, String simName, int status, long timestamp) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();
         values.put(COL_SENDER, sender);
         values.put(COL_BODY, body);
         values.put(COL_SIM_NAME, simName);
         values.put(COL_STATUS, status);
-        values.put(COL_TIMESTAMP, System.currentTimeMillis());
+        values.put(COL_TIMESTAMP, timestamp > 0 ? timestamp : System.currentTimeMillis());
         
         long id = db.insert(TABLE_NAME, null, values);
         Log.d("SmsLogDb", "Inserted log: ID " + id);
         return id;
+    }
+
+    public boolean logExists(String sender, String body) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = null;
+        try {
+            cursor = db.query(TABLE_NAME, new String[]{COL_ID},
+                    COL_SENDER + " = ? AND " + COL_BODY + " = ?",
+                    new String[]{sender, body}, null, null, null);
+            return (cursor != null && cursor.moveToFirst());
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (cursor != null) cursor.close();
+        }
     }
 
     public void updateStatus(long id, int newStatus) {

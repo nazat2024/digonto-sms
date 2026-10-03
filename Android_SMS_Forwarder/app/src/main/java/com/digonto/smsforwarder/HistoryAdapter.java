@@ -47,25 +47,35 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
             
             // Set SIM Info
             String simInfo = (log.getSimName() != null && !log.getSimName().isEmpty()) ? log.getSimName() : "Unknown SIM";
-            holder.tvDestination.setText(simInfo + " ➔ Forwarded to Desktop");
 
             if (log.getStatus() == SmsLog.STATUS_SUCCESS) {
                 holder.tvStatus.setText("Success");
                 holder.tvStatus.setTextColor(Color.parseColor("#10B981")); // Green
+                holder.tvDestination.setText(simInfo + " ➔ Forwarded to Desktop");
+                holder.btnRetry.setText("Resend");
             } else if (log.getStatus() == SmsLog.STATUS_FAILED) {
                 holder.tvStatus.setText("Failed");
                 holder.tvStatus.setTextColor(Color.parseColor("#EF4444")); // Red
+                holder.tvDestination.setText(simInfo + " ➔ Failed to Forward");
+                holder.btnRetry.setText("Retry");
+            } else if (log.getStatus() == SmsLog.STATUS_LOCAL) {
+                holder.tvStatus.setText("Received");
+                holder.tvStatus.setTextColor(Color.parseColor("#10B981")); // Green
+                holder.tvDestination.setText(simInfo + " (Saved Locally)");
+                holder.btnRetry.setText("Forward");
             } else {
                 holder.tvStatus.setText("Sending...");
                 holder.tvStatus.setTextColor(Color.parseColor("#3B82F6")); // Blue
+                holder.tvDestination.setText(simInfo + " ➔ Forwarding...");
+                holder.btnRetry.setText("Retry");
             }
             
-            // Button always visible so user can resend
+            // Button always visible so user can send/resend
             holder.btnRetry.setVisibility(View.VISIBLE);
 
             holder.btnRetry.setOnClickListener(v -> {
                 if (MqttService.instance != null) {
-                    holder.tvStatus.setText("Retrying...");
+                    holder.tvStatus.setText("Sending...");
                     holder.tvStatus.setTextColor(Color.parseColor("#F59E0B")); // Orange
                     holder.btnRetry.setVisibility(View.GONE);
                     
@@ -74,9 +84,9 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
                     
                     // Attempt to publish again
                     MqttService.instance.publishSms(log.getId(), log.getSender(), log.getBody(), log.getSimName());
-                    Toast.makeText(context, "Retrying SMS...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, "Forwarding SMS to Desktop...", Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(context, "Service not running. Please reconnect.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, "Desktop not connected. Add pairing code on Home tab.", Toast.LENGTH_SHORT).show();
                 }
             });
         } catch (Exception e) {

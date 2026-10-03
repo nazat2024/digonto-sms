@@ -2,8 +2,10 @@ package com.digonto.smsforwarder;
 
 import android.Manifest;
 import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -95,15 +97,33 @@ public class MainActivity extends AppCompatActivity {
     private Handler statusPollHandler;
     private Runnable statusPollRunnable;
 
+    public static MainActivity instance;
+    private BroadcastReceiver newSmsReceiver;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        instance = this;
 
         // Permissions check fallback
         if (!hasAllPermissions()) {
             startActivity(new Intent(this, PermissionsActivity.class));
             finish();
             return;
+        }
+
+        // Register dynamic receiver for real-time live SMS updates
+        newSmsReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                notifyNewSmsReceived();
+            }
+        };
+        IntentFilter filter = new IntentFilter("com.digonto.smsforwarder.SMS_RECEIVED_EVENT");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(newSmsReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(newSmsReceiver, filter);
         }
 
         setContentView(R.layout.activity_main);
@@ -376,7 +396,17 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    public void notifyNewSmsReceived() {
+        runOnUiThread(() -> {
+            loadHistoryTab();
+            if (rvHistoryTab != null && historyAdapter != null && historyAdapter.getItemCount() > 0) {
+                rvHistoryTab.scrollToPosition(0);
+            }
+        });
+    }
+
     private void loadHistoryTab() {
+        syncRecentInboxSms();
         if (historyAdapter != null) {
             List<SmsLog> logs = SmsLogDbHelper.getInstance(this).getAllLogs();
             historyAdapter.updateData(logs);
@@ -388,6 +418,64 @@ public class MainActivity extends AppCompatActivity {
                 rvHistoryTab.setVisibility(View.VISIBLE);
             }
         }
+    }
+
+    private void syncRecentInboxSms() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://sms/inbox");
+            String[] projection = new String[]{"_id", "address", "body", "date", "sub_id"};
+            String sortOrder = "date DESC LIMIT 30";
+            cursor = getContentResolver().query(uri, projection, null, null, sortOrder);
+            if (cursor != null && cursor.moveToFirst()) {
+                int addrIdx = cursor.getColumnIndex("address");
+                int bodyIdx = cursor.getColumnIndex("body");
+                int dateIdx = cursor.getColumnIndex("date");
+                int subIdIdx = cursor.getColumnIndex("sub_id");
+
+                SmsLogDbHelper db = SmsLogDbHelper.getInstance(this);
+
+                do {
+                    String address = addrIdx != -1 ? cursor.getString(addrIdx) : "Unknown";
+                    String body = bodyIdx != -1 ? cursor.getString(bodyIdx) : "";
+                    long date = dateIdx != -1 ? cursor.getLong(dateIdx) : System.currentTimeMillis();
+                    int subId = subIdIdx != -1 ? cursor.getInt(subIdIdx) : -1;
+
+                    if (body != null && !body.trim().isEmpty() && !db.logExists(address, body)) {
+                        String simName = resolveSimNameForSubId(subId);
+                        db.insertLogWithTimestamp(address, body, simName, SmsLog.STATUS_LOCAL, date);
+                    }
+                } while (cursor.moveToNext());
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+    }
+
+    private String resolveSimNameForSubId(int subId) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 && subId != -1) {
+                SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+                if (sm != null && ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+                    SubscriptionInfo info = sm.getActiveSubscriptionInfo(subId);
+                    if (info != null) {
+                        int slot = info.getSimSlotIndex();
+                        if (slot == 0) {
+                            String n1 = prefs.getString("sim1_number", "");
+                            return !n1.isEmpty() ? n1 : prefs.getString("sim1_operator", "SIM 1");
+                        } else if (slot == 1) {
+                            String n2 = prefs.getString("sim2_number", "");
+                            return !n2.isEmpty() ? n2 : prefs.getString("sim2_operator", "SIM 2");
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return "SIM 1";
     }
 
     // ==================== TAB 4: SETTING SETUP ====================
@@ -1138,6 +1226,14 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (instance == this) {
+            instance = null;
+        }
+        if (newSmsReceiver != null) {
+            try {
+                unregisterReceiver(newSmsReceiver);
+            } catch (Exception ignored) {}
+        }
         if (statusPollHandler != null && statusPollRunnable != null) {
             statusPollHandler.removeCallbacks(statusPollRunnable);
         }

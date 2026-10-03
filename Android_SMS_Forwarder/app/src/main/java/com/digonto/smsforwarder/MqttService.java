@@ -368,11 +368,17 @@ public class MqttService extends Service {
                 if (logId != -1) {
                     int status = atLeastOneSuccess ? SmsLog.STATUS_SUCCESS : SmsLog.STATUS_FAILED;
                     SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, status);
+                    if (MainActivity.instance != null) {
+                        MainActivity.instance.notifyNewSmsReceived();
+                    }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error processing VIP SMS publishing", e);
                 if (logId != -1) {
                     SmsLogDbHelper.getInstance(getApplicationContext()).updateStatus(logId, SmsLog.STATUS_FAILED);
+                    if (MainActivity.instance != null) {
+                        MainActivity.instance.notifyNewSmsReceived();
+                    }
                 }
             }
         });
