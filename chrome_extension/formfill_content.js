@@ -863,18 +863,14 @@ async function fillPrintApplicationPage(e) {
             }
         }
 
-        // 5. Fill Application Id if present
-        const appIdVal = (e.bgd_no || e.web_file_no || e.application_id || e.temp_app_id || "").trim();
-        if (appIdVal) {
-            const appInp = findPrintAppIdInput();
-            if (appInp && (!appInp.value || appInp.value.trim() === "")) {
-                appInp.value = appIdVal;
-                appInp.dispatchEvent(new Event("input", { bubbles: true }));
-                appInp.dispatchEvent(new Event("change", { bubbles: true }));
-                appInp.dispatchEvent(new Event("blur", { bubbles: true }));
-                try { if (window.jQuery) window.jQuery(appInp).trigger("change"); } catch(e) {}
-                console.log("IV Autofill: Filled Application ID on PrintApplication:", appIdVal);
-            }
+        // 5. DO NOT fill Application ID on PrintApplication (Reprint Form) page per user requirement
+        // Ensure Application ID field remains completely empty
+        const appInp = findPrintAppIdInput();
+        if (appInp) {
+            appInp.value = "";
+            appInp.dispatchEvent(new Event("input", { bubbles: true }));
+            appInp.dispatchEvent(new Event("change", { bubbles: true }));
+            console.log("IV Autofill: Skipped Application ID on PrintApplication page per user request.");
         }
 
         // Dismiss datepicker again after all fields are filled

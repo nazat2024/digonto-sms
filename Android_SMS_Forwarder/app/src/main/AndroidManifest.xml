@@ -46,6 +46,7 @@
             android:name=".MqttService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="remoteMessaging|dataSync" />
 
         <receiver android:name=".SmsReceiver"

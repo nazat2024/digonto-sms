@@ -15,6 +15,7 @@ import time
 import threading
 import webbrowser
 from datetime import datetime
+import re
 
 # Windows console UTF-8
 if sys.platform == "win32":
@@ -227,6 +228,13 @@ class SmoothScrollableFrame(ctk.CTkScrollableFrame):
                 self._parent_canvas.configure(yscrollincrement=1)
             except Exception:
                 pass
+
+    def scroll_to_top(self):
+        try:
+            if hasattr(self, "_parent_canvas"):
+                self._parent_canvas.yview_moveto(0)
+        except Exception:
+            pass
 
     def _mouse_wheel_all(self, event):
         if self._check_if_valid_scroll(event.widget):
@@ -994,6 +1002,52 @@ class IVACApp(ctk.CTk):
         except Exception as e:
             print(f"Build tab {tab_name} error: {e}")
 
+    def _reset_tab_scroll(self, tab_name=None):
+        if not tab_name:
+            try:
+                tab_name = self.tabview.get()
+            except Exception:
+                return
+
+        def _do_reset():
+            try:
+                if tab_name == "👥 Profiles":
+                    if hasattr(self, "_profiles_canvas") and self._profiles_canvas.winfo_exists():
+                        self._profiles_canvas.yview_moveto(0)
+                        if hasattr(self, "_profiles_scrollbar") and self._profiles_scrollbar.winfo_exists():
+                            self._profiles_scrollbar.set(0.0, 0.0)
+                elif tab_name in ("🧩 Extension", "🔌 Extension"):
+                    if hasattr(self, "_ext_main_scroll") and hasattr(self._ext_main_scroll, "_parent_canvas"):
+                        if self._ext_main_scroll.winfo_exists():
+                            self._ext_main_scroll._parent_canvas.yview_moveto(0)
+                    if hasattr(self, "_ext_canvas") and self._ext_canvas.winfo_exists():
+                        self._ext_canvas.yview_moveto(0)
+                elif tab_name == "⚙️ Settings":
+                    if hasattr(self, "_settings_main_scroll") and hasattr(self._settings_main_scroll, "_parent_canvas"):
+                        if self._settings_main_scroll.winfo_exists():
+                            self._settings_main_scroll._parent_canvas.yview_moveto(0)
+                elif tab_name == "💳 Payment":
+                    if hasattr(self, "rocket_list_frame") and hasattr(self.rocket_list_frame, "_parent_canvas"):
+                        if self.rocket_list_frame.winfo_exists():
+                            self.rocket_list_frame._parent_canvas.yview_moveto(0)
+                elif tab_name == "📨 Recent OTPs":
+                    if hasattr(self, "otp_list_frame") and hasattr(self.otp_list_frame, "_parent_canvas"):
+                        if self.otp_list_frame.winfo_exists():
+                            self.otp_list_frame._parent_canvas.yview_moveto(0)
+                elif tab_name == "🏠 Home":
+                    if hasattr(self, "device_list_frame") and hasattr(self.device_list_frame, "_parent_canvas"):
+                        if self.device_list_frame.winfo_exists():
+                            self.device_list_frame._parent_canvas.yview_moveto(0)
+            except Exception:
+                pass
+
+        _do_reset()
+        self.after(10, _do_reset)
+        self.after(30, _do_reset)
+        self.after(80, _do_reset)
+        self.after(150, _do_reset)
+        self.after(300, _do_reset)
+
     def _on_tab_changed(self):
         selected = self.tabview.get()
         if not hasattr(self, '_loaded_tabs'):
@@ -1014,9 +1068,13 @@ class IVACApp(ctk.CTk):
                 if hasattr(self, "_refresh_extension_profiles_list"):
                     self._refresh_extension_profiles_list()
 
+        # Always scroll to top so tabs never open from the bottom
+        self._reset_tab_scroll(selected)
+
     def select_tab(self, name: str):
         self.tabview.set(name)
         self._on_tab_changed()
+        self._reset_tab_scroll(name)
 
     # ===== HOME TAB =====
     def _build_home_tab(self):
@@ -1080,6 +1138,196 @@ class IVACApp(ctk.CTk):
         
         # Start ultra-fast background poller (decoupled from GUI thread)
         self._start_background_poller()
+        self.after(15, lambda: self._reset_tab_scroll("🏠 Home"))
+
+    # ===== SEARCH PLACEHOLDER & OTPS HELPERS =====
+    def _attach_tk_placeholder(self, entry, text, normal_fg, placeholder_fg="#64748b"):
+        entry._placeholder_text = text
+        entry._has_placeholder = False
+        
+        def on_in(e):
+            if getattr(entry, "_has_placeholder", False):
+                entry.delete(0, "end")
+                entry.configure(fg=normal_fg)
+                entry._has_placeholder = False
+                
+        def on_out(e):
+            if not entry.get().strip():
+                entry.delete(0, "end")
+                entry.insert(0, text)
+                entry.configure(fg=placeholder_fg)
+                entry._has_placeholder = True
+                
+        entry.bind("<FocusIn>", on_in, add="+")
+        entry.bind("<FocusOut>", on_out, add="+")
+        entry.delete(0, "end")
+        entry.insert(0, text)
+        entry.configure(fg=placeholder_fg)
+        entry._has_placeholder = True
+
+    def _normalize_phone(self, phone: str) -> str:
+        """Strip country code +88 / 88, dashes, spaces and return standard 11-digit Bangladeshi number"""
+        if not phone:
+            return ""
+        digits = re.sub(r'\D', '', str(phone))
+        if digits.startswith("880") and len(digits) == 13:
+            digits = "0" + digits[3:]
+        elif digits.startswith("88") and len(digits) == 12:
+            digits = digits[2:]
+        return digits
+
+    def _get_profile_info_for_phone(self, phone: str) -> dict:
+        """Find matching Chrome profile name and label from config.json for a phone number"""
+        norm_phone = self._normalize_phone(phone)
+        if not norm_phone:
+            return {"found": False, "name": "", "chrome_profile": ""}
+            
+        profiles = self.config.get("profiles", [])
+        matched_names = []
+        matched_chromes = []
+        
+        for p in profiles:
+            p_phone = self._normalize_phone(p.get("phone", ""))
+            if p_phone and p_phone == norm_phone:
+                name = (p.get("name") or "").strip()
+                chrome = (p.get("chrome_profile") or "").strip()
+                if name and name not in matched_names:
+                    matched_names.append(name)
+                if chrome and chrome not in matched_chromes:
+                    matched_chromes.append(chrome)
+                    
+        if matched_names:
+            return {
+                "found": True,
+                "name": ", ".join(matched_names),
+                "chrome_profile": ", ".join(matched_chromes)
+            }
+        return {"found": False, "name": "", "chrome_profile": ""}
+
+    def _classify_otp(self, otp_item: dict) -> str:
+        """Classify OTP item into 'IVAC' or 'PAYMENT'"""
+        source = (otp_item.get("source") or "").upper().strip()
+        raw_sms = (otp_item.get("raw_sms") or "").lower()
+        
+        if source in ("R", "B", "N"):
+            return "PAYMENT"
+        if source == "IV":
+            return "IVAC"
+            
+        if any(w in raw_sms for w in ("bkash", "rocket", "nagad", "dgpay", "payment", "transaction", "dbbl", "card", "bill")):
+            return "PAYMENT"
+        if any(w in raw_sms for w in ("ivac", "visa", "embassy", "prompted", "high commission", "security code for ivac")):
+            return "IVAC"
+            
+        return "IVAC"
+
+    def _update_otp_filter_pills(self):
+        cat = getattr(self, "_otp_filter_category", "ALL")
+        active_color = THEME["accent_blue"]
+        active_hover = "#1d4ed8"
+        inactive_color = THEME["btn_secondary"]
+        inactive_hover = THEME["btn_secondary_hover"]
+        
+        if hasattr(self, "btn_otp_filter_all") and self.btn_otp_filter_all.winfo_exists():
+            self.btn_otp_filter_all.configure(
+                fg_color=active_color if cat == "ALL" else inactive_color,
+                hover_color=active_hover if cat == "ALL" else inactive_hover,
+                text_color="white" if cat == "ALL" else THEME["text_primary"]
+            )
+        if hasattr(self, "btn_otp_filter_ivac") and self.btn_otp_filter_ivac.winfo_exists():
+            self.btn_otp_filter_ivac.configure(
+                fg_color="#0284c7" if cat == "IVAC" else inactive_color,
+                hover_color="#0369a1" if cat == "IVAC" else inactive_hover,
+                text_color="white" if cat == "IVAC" else THEME["text_primary"]
+            )
+        if hasattr(self, "btn_otp_filter_payment") and self.btn_otp_filter_payment.winfo_exists():
+            self.btn_otp_filter_payment.configure(
+                fg_color="#d97706" if cat == "PAYMENT" else inactive_color,
+                hover_color="#b45309" if cat == "PAYMENT" else inactive_hover,
+                text_color="white" if cat == "PAYMENT" else THEME["text_primary"]
+            )
+
+    def _render_filtered_otps(self):
+        if not hasattr(self, 'otp_list_frame') or not self.otp_list_frame.winfo_exists():
+            return
+            
+        all_otps = getattr(self, "_raw_otps_cache", [])
+        
+        # 1. Update live count numbers on buttons
+        total_all = len(all_otps)
+        total_ivac = len([o for o in all_otps if self._classify_otp(o) == "IVAC"])
+        total_payment = len([o for o in all_otps if self._classify_otp(o) == "PAYMENT"])
+        
+        if hasattr(self, "btn_otp_filter_all") and self.btn_otp_filter_all.winfo_exists():
+            self.btn_otp_filter_all.configure(text=f"● All OTP ({total_all})")
+        if hasattr(self, "btn_otp_filter_ivac") and self.btn_otp_filter_ivac.winfo_exists():
+            self.btn_otp_filter_ivac.configure(text=f"★ IVAC OTP ({total_ivac})")
+        if hasattr(self, "btn_otp_filter_payment") and self.btn_otp_filter_payment.winfo_exists():
+            self.btn_otp_filter_payment.configure(text=f"৳ Payment OTP ({total_payment})")
+            
+        # 2. Filter by category
+        cat = getattr(self, "_otp_filter_category", "ALL")
+        if cat == "IVAC":
+            filtered = [o for o in all_otps if self._classify_otp(o) == "IVAC"]
+        elif cat == "PAYMENT":
+            filtered = [o for o in all_otps if self._classify_otp(o) == "PAYMENT"]
+        else:
+            filtered = list(all_otps)
+            
+        # 3. Filter by search query
+        query = getattr(self, "_otp_search_query", "").strip().lower()
+        if query:
+            search_results = []
+            for o in filtered:
+                phone = (o.get("phone") or "").lower()
+                otp_str = (o.get("otp_string") or "").lower()
+                display = (o.get("display") or "").lower()
+                raw_sms = (o.get("raw_sms") or "").lower()
+                prof_info = self._get_profile_info_for_phone(phone)
+                prof_name = prof_info.get("name", "").lower()
+                chrome_prof = prof_info.get("chrome_profile", "").lower()
+                
+                if (query in phone or
+                    query in prof_name or
+                    query in chrome_prof or
+                    query in otp_str or
+                    query in display or
+                    query in raw_sms):
+                    search_results.append(o)
+            filtered = search_results
+            
+        # 4. Header counter
+        if hasattr(self, "otp_count_label") and self.otp_count_label.winfo_exists():
+            if query or cat != "ALL":
+                self.otp_count_label.configure(text=f"{len(filtered)}/{total_all} টি")
+            else:
+                self.otp_count_label.configure(text=f"{total_all} টি")
+                
+        # 5. Populate rows
+        for widget in self.otp_list_frame.winfo_children():
+            widget.destroy()
+            
+        if filtered:
+            for otp in filtered:
+                self._add_otp_row(otp)
+        else:
+            if query:
+                msg = f"কোনো ফলাফল পাওয়া যায়নি:\n\"{query}\""
+            elif cat == "IVAC":
+                msg = "এই মুহূর্তে কোনো IVAC পোর্টাল OTP নেই"
+            elif cat == "PAYMENT":
+                msg = "এই মুহূর্তে কোনো Payment (bKash/Nagad/Rocket) OTP নেই"
+            else:
+                msg = "কোনো OTP আসেনি...\nSMS Forwarder অ্যাপটি ওপেন করে SMS পাঠাতে দিন"
+                
+            self.otp_placeholder = ctk.CTkLabel(
+                self.otp_list_frame,
+                text=msg,
+                font=ctk.CTkFont(size=12),
+                text_color="#64748b",
+                justify="center"
+            )
+            self.otp_placeholder.pack(pady=35)
 
     # ===== RECENT OTPS TAB =====
     def _build_otps_tab(self):
@@ -1091,18 +1339,18 @@ class IVACApp(ctk.CTk):
         otp_card = ctk.CTkFrame(tab, fg_color=THEME["bg_card"], corner_radius=10, border_width=1, border_color=THEME["border_color"])
         otp_card.pack(fill="both", expand=True, padx=5, pady=5)
         
+        # Row 1: Header Bar (Title + Reset Button + Count Label)
         otp_header = ctk.CTkFrame(otp_card, fg_color="transparent")
-        otp_header.pack(fill="x", padx=15, pady=(10, 5))
+        otp_header.pack(fill="x", padx=15, pady=(10, 4))
         
         ctk.CTkLabel(
-            otp_header, text="📨 Recent OTPs",
+            otp_header, text="⚡ Recent OTPs",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=THEME["text_primary"]
         ).pack(side="left")
         
-        # Reset Button for GUI
         ctk.CTkButton(
-            otp_header, text="🗑️ Reset Data", width=80, height=24,
+            otp_header, text="✕ Reset Data", width=84, height=24,
             font=ctk.CTkFont(size=11, weight="bold"), fg_color=THEME["danger"], hover_color=THEME["danger_hover"],
             command=self._clear_all_data
         ).pack(side="left", padx=15)
@@ -1114,20 +1362,94 @@ class IVACApp(ctk.CTk):
         )
         self.otp_count_label.pack(side="right", padx=10)
         
+        # Row 2: Filter Pills + Search Bar Toolbar
+        toolbar = ctk.CTkFrame(otp_card, fg_color=THEME["bg_subcard"], corner_radius=8, border_width=1, border_color=THEME["border_color"])
+        toolbar.pack(fill="x", padx=12, pady=(2, 8))
+        
+        # Left: Filter Buttons
+        pills_frame = ctk.CTkFrame(toolbar, fg_color="transparent")
+        pills_frame.pack(side="left", padx=8, pady=6)
+        
+        if not hasattr(self, "_otp_filter_category"):
+            self._otp_filter_category = "ALL"
+            
+        def select_filter(cat):
+            self._otp_filter_category = cat
+            self._update_otp_filter_pills()
+            self._render_filtered_otps()
+            
+        self.btn_otp_filter_all = ctk.CTkButton(
+            pills_frame, text="● All OTP (0)", width=95, height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: select_filter("ALL")
+        )
+        self.btn_otp_filter_all.pack(side="left", padx=(0, 5))
+        
+        self.btn_otp_filter_ivac = ctk.CTkButton(
+            pills_frame, text="★ IVAC OTP (0)", width=105, height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: select_filter("IVAC")
+        )
+        self.btn_otp_filter_ivac.pack(side="left", padx=(0, 5))
+        
+        self.btn_otp_filter_payment = ctk.CTkButton(
+            pills_frame, text="৳ Payment OTP (0)", width=115, height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: select_filter("PAYMENT")
+        )
+        self.btn_otp_filter_payment.pack(side="left", padx=(0, 5))
+        
+        # Right: Search Box
+        search_frame = ctk.CTkFrame(toolbar, fg_color="transparent")
+        search_frame.pack(side="right", padx=8, pady=6)
+        
+        ctk.CTkLabel(
+            search_frame, text="Search:",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME["text_secondary"]
+        ).pack(side="left", padx=(0, 6))
+        
+        def on_search_change(*args):
+            self._otp_search_query = self.otp_search_entry.get().strip().lower()
+            self._render_filtered_otps()
+            
+        self.otp_search_entry = ctk.CTkEntry(
+            search_frame,
+            placeholder_text="নম্বর, নাম বা Profile সার্চ...",
+            width=230, height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color=THEME["entry_bg"], border_color=THEME["entry_border"],
+            text_color=THEME["entry_text"]
+        )
+        self.otp_search_entry.pack(side="left", padx=(0, 4))
+        self.otp_search_entry.bind("<KeyRelease>", on_search_change)
+        
+        def clear_search():
+            self.otp_search_entry.delete(0, "end")
+            self.otp_search_entry._activate_placeholder()
+            self._otp_search_query = ""
+            self._render_filtered_otps()
+            self.otp_search_entry.focus_set()
+            
+        self.btn_clear_otp_search = ctk.CTkButton(
+            search_frame, text="✕", width=28, height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#334155", hover_color="#475569",
+            command=clear_search
+        )
+        self.btn_clear_otp_search.pack(side="left")
+        
+        self._update_otp_filter_pills()
+        
         # OTP Scrollable list
         self.otp_list_frame = SmoothScrollableFrame(
             otp_card, fg_color="transparent", corner_radius=5, scroll_speed=60
         )
         self.otp_list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         
-        self.otp_placeholder = ctk.CTkLabel(
-            self.otp_list_frame,
-            text="⏳ কোনো OTP আসেনি...\nSMS Forwarder অ্যাপটি ওপেন করে SMS পাঠাতে দিন",
-            font=ctk.CTkFont(size=12),
-            text_color="#495670",
-            justify="center"
-        )
-        self.otp_placeholder.pack(pady=40)
+        self._raw_otps_cache = getattr(self, "_raw_otps_cache", [])
+        self._render_filtered_otps()
+        self.after(15, lambda: self._reset_tab_scroll("📨 Recent OTPs"))
         
     def _refresh_ip(self):
         self.server_info_label.configure(text=f"Port: 5000  |  SMS Endpoint: POST http://{get_local_ip()}:5000/api/sms")
@@ -1154,6 +1476,8 @@ class IVACApp(ctk.CTk):
                 try:
                     requests.post("http://127.0.0.1:5000/api/clear", timeout=2)
                     self._last_otp_state_key = None
+                    self._raw_otps_cache = []
+                    self.after(50, self._render_filtered_otps)
                 except Exception:
                     pass
             threading.Thread(target=clear_task, daemon=True).start()
@@ -1279,27 +1603,8 @@ class IVACApp(ctk.CTk):
                 
                 if current_otp_state_key != getattr(self, '_last_otp_state_key', None):
                     self._last_otp_state_key = current_otp_state_key
-                    self._current_otps_cache = otps
-                    
-                    for widget in self.otp_list_frame.winfo_children():
-                        widget.destroy()
-                    
-                    if otps:
-                        if hasattr(self, 'otp_count_label') and self.otp_count_label.winfo_exists():
-                            self.otp_count_label.configure(text=f"{len(otps)} টি")
-                        for otp in otps:
-                            self._add_otp_row(otp)
-                    else:
-                        if hasattr(self, 'otp_count_label') and self.otp_count_label.winfo_exists():
-                            self.otp_count_label.configure(text="0 টি")
-                        self.otp_placeholder = ctk.CTkLabel(
-                            self.otp_list_frame,
-                            text="⏳ কোনো OTP আসেনি...\nSMS Forwarder অ্যাপটি ওপেন করে SMS পাঠাতে দিন",
-                            font=ctk.CTkFont(size=12),
-                            text_color="#495670",
-                            justify="center"
-                        )
-                        self.otp_placeholder.pack(pady=30)
+                    self._raw_otps_cache = otps
+                    self._render_filtered_otps()
             
             if hasattr(self, 'server_status_label') and self.server_status_label.winfo_exists():
                 self.server_status_label.configure(text="🟢 Running", text_color="#64ffda")
@@ -1333,6 +1638,8 @@ class IVACApp(ctk.CTk):
         otp_str = otp_data.get("otp_string", "")
         history = otp_data.get("history", [])
         timestamp = otp_data.get("timestamp", "")
+        cat = self._classify_otp(otp_data)
+        prof_info = self._get_profile_info_for_phone(phone)
         
         if not hasattr(self, '_expanded_phones'):
             self._expanded_phones = set()
@@ -1363,13 +1670,13 @@ class IVACApp(ctk.CTk):
             else:
                 self._expanded_phones.add(p)
             self._last_otp_state_key = None
-            self._refresh_otps()
+            self._render_filtered_otps()
 
         if has_history:
             arrow_icon = "▲" if is_expanded else "▼"
             hist_count = len(history)
             toggle_btn = ctk.CTkButton(
-                left_frame, text=f"{arrow_icon} ({hist_count})", width=48, height=22,
+                left_frame, text=f"{arrow_icon} ({hist_count})", width=46, height=22,
                 font=ctk.CTkFont(size=10, weight="bold"),
                 fg_color=THEME["accent_blue"] if is_expanded else THEME["btn_secondary"],
                 hover_color=THEME["accent_hover"] if is_expanded else THEME["btn_secondary_hover"],
@@ -1382,25 +1689,54 @@ class IVACApp(ctk.CTk):
                 left_frame, text="  ",
                 font=ctk.CTkFont(size=10)
             ).pack(side="left", padx=(0, 4))
+            
+        # Category Badge (★ IVAC vs ৳ Payment)
+        if cat == "IVAC":
+            cat_badge = ctk.CTkFrame(left_frame, fg_color="#083344", corner_radius=4, border_width=1, border_color="#06b6d4")
+            cat_badge.pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(cat_badge, text=" ★ IVAC ", font=ctk.CTkFont(size=9, weight="bold"), text_color="#67e8f9").pack(side="left", padx=2, pady=1)
+        else:
+            cat_badge = ctk.CTkFrame(left_frame, fg_color="#451a03", corner_radius=4, border_width=1, border_color="#f59e0b")
+            cat_badge.pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(cat_badge, text=" ৳ Payment ", font=ctk.CTkFont(size=9, weight="bold"), text_color="#fcd34d").pack(side="left", padx=2, pady=1)
         
+        # Phone Label
         ctk.CTkLabel(
-            left_frame, text=f"{icon}  📱 {phone}",
+            left_frame, text=f"{icon} {phone}",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=THEME["text_primary"]
-        ).pack(side="left")
+        ).pack(side="left", padx=(0, 6))
+        
+        # Profile & Chrome Profile Badges
+        if prof_info.get("found"):
+            p_name = prof_info.get("name", "")
+            c_prof = prof_info.get("chrome_profile", "")
+            
+            p_badge = ctk.CTkFrame(left_frame, fg_color="#1e293b", corner_radius=4, border_width=1, border_color="#3b82f6")
+            p_badge.pack(side="left", padx=(0, 4))
+            ctk.CTkLabel(p_badge, text=f" {p_name} ", font=ctk.CTkFont(size=10, weight="bold"), text_color="#93c5fd").pack(side="left", padx=3, pady=1)
+            
+            if c_prof:
+                c_badge = ctk.CTkFrame(left_frame, fg_color="#064e3b", corner_radius=4, border_width=1, border_color="#10b981")
+                c_badge.pack(side="left", padx=(0, 6))
+                ctk.CTkLabel(c_badge, text=f" {c_prof} ", font=ctk.CTkFont(size=10, weight="bold"), text_color="#6ee7b7").pack(side="left", padx=3, pady=1)
+        else:
+            unassigned_badge = ctk.CTkFrame(left_frame, fg_color="#1e293b", corner_radius=4, border_width=1, border_color="#475569")
+            unassigned_badge.pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(unassigned_badge, text=" Unassigned ", font=ctk.CTkFont(size=9), text_color="#94a3b8").pack(side="left", padx=3, pady=1)
         
         ctk.CTkLabel(
-            left_frame, text=f" [{status_text}]",
+            left_frame, text=f"[{status_text}]",
             font=ctk.CTkFont(size=10, weight="bold"),
             text_color=status_color
-        ).pack(side="left", padx=(4, 0))
+        ).pack(side="left", padx=(0, 4))
         
         if timestamp:
             ctk.CTkLabel(
-                left_frame, text=f" • {timestamp}",
+                left_frame, text=f"• {timestamp}",
                 font=ctk.CTkFont(size=9),
                 text_color=THEME["text_muted"]
-            ).pack(side="left", padx=(4, 0))
+            ).pack(side="left")
         
         # Right frame
         right_frame = ctk.CTkFrame(main_row, fg_color="transparent")
@@ -1454,9 +1790,16 @@ class IVACApp(ctk.CTk):
                 h_raw = item.get("raw_sms", "")
                 h_status = "Used" if h_used else "Unused"
                 h_color = THEME["text_muted"] if h_used else THEME["accent_emerald"]
+                h_cat = self._classify_otp(item)
                 
                 h_left = ctk.CTkFrame(h_row, fg_color="transparent")
                 h_left.pack(side="left", padx=8)
+                
+                # History category tag
+                if h_cat == "IVAC":
+                    ctk.CTkLabel(h_left, text="[IVAC]", font=ctk.CTkFont(size=9, weight="bold"), text_color="#06b6d4").pack(side="left", padx=(0, 4))
+                else:
+                    ctk.CTkLabel(h_left, text="[Pay]", font=ctk.CTkFont(size=9, weight="bold"), text_color="#f59e0b").pack(side="left", padx=(0, 4))
                 
                 ctk.CTkLabel(
                     h_left, text=f"⏱️ {h_time}",
@@ -1518,10 +1861,27 @@ class IVACApp(ctk.CTk):
             current = self._device_rows[dev_id].get("dev_name", "Device")
             
         new_name = simpledialog.askstring("Rename Device", "Enter new name for mobile:", initialvalue=current)
-        if new_name:
+        if new_name is not None:
+            new_name = new_name.strip()
+            if not new_name:
+                return
+            
+            # 1. Immediate 0ms visual feedback in the desktop UI
+            if hasattr(self, '_device_rows') and dev_id in self._device_rows:
+                row_info = self._device_rows[dev_id]
+                row_info["dev_name"] = new_name
+                status_icon = "🟢" if "🟢" in row_info.get("display_text", "") else "⚪"
+                new_disp = f"  {status_icon}  {new_name}"
+                row_info["display_text"] = new_disp
+                try:
+                    row_info["name_label"].configure(text=new_disp)
+                except Exception:
+                    pass
+            
+            # 2. Persist to server and mobile
             def update_task():
                 try:
-                    requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "custom_name": new_name}, timeout=1)
+                    requests.post("http://127.0.0.1:5000/api/device/update", json={"device_id": dev_id, "custom_name": new_name}, timeout=2)
                 except Exception:
                     pass
             threading.Thread(target=update_task, daemon=True).start()
@@ -1637,7 +1997,7 @@ class IVACApp(ctk.CTk):
             return btn
             
         _make_hdr_btn(btn_box, "🔄 রিলোড", THEME["btn_secondary"], THEME["btn_secondary_hover"], self._refresh_profiles_tab, fg=THEME["btn_secondary_text"])
-        _make_hdr_btn(btn_box, "➕ নতুন প্রোফাইল", THEME["accent_blue"], "#1d4ed8", self._open_add_profile_dialog)
+        _make_hdr_btn(btn_box, "➕ নতুন প্রোফাইল", THEME["accent_blue"], "#1d4ed8", self._switch_to_extension_for_new_profile)
         _make_hdr_btn(btn_box, "🚀 সব ওপেন করুন", THEME["accent_emerald"], THEME["accent_hover"], self._launch_all_profiles)
         
         # Sub Bar: Search Bar + Select All
@@ -1647,7 +2007,7 @@ class IVACApp(ctk.CTk):
         search_wrap = tk.Frame(sub_bar, bg=THEME["bg_card"], highlightbackground=THEME["border_color"], highlightthickness=1)
         search_wrap.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
-        tk.Label(search_wrap, text="🔍", font=("Segoe UI", 10), fg=THEME["text_secondary"], bg=THEME["bg_card"]).pack(side="left", padx=(8, 4))
+        tk.Label(search_wrap, text="Search:", font=("Segoe UI", 9, "bold"), fg=THEME["text_accent"], bg=THEME["bg_card"]).pack(side="left", padx=(10, 4))
         
         self.search_entry = tk.Entry(
             search_wrap,
@@ -1657,6 +2017,7 @@ class IVACApp(ctk.CTk):
             relief="flat", bd=0
         )
         self.search_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
+        self._attach_tk_placeholder(self.search_entry, "প্রোফাইল বা নাম সার্চ করুন...", THEME["entry_text"])
         self.search_entry.bind("<KeyRelease>", lambda *_: self._filter_profiles_search())
         
         self._all_selected_state = True
@@ -1746,6 +2107,7 @@ class IVACApp(ctk.CTk):
         self._bind_profiles_wheel = _bind_profiles_wheel
         
         self._build_profile_cards()
+        self.after(15, lambda: self._reset_tab_scroll("👥 Profiles"))
 
     def _build_profile_cards(self):
         import tkinter as tk
@@ -1776,6 +2138,16 @@ class IVACApp(ctk.CTk):
                 self._on_profiles_configure()
             return
             
+        # Preserve scroll position ONLY during active on-row reordering
+        reordering = getattr(self, "_reordering_profile", False)
+        self._reordering_profile = False
+        saved_y = 0.0
+        if reordering and hasattr(self, "_profiles_canvas") and self._profiles_canvas.winfo_exists():
+            try:
+                saved_y = self._profiles_canvas.yview()[0]
+            except Exception:
+                saved_y = 0.0
+
         # Fast Synchronous Direct Render - Instant response for all profiles!
         for i, p in enumerate(all_profiles):
             self._create_fast_profile_row(self._profiles_container, p, i)
@@ -1783,8 +2155,19 @@ class IVACApp(ctk.CTk):
         if hasattr(self, "_on_profiles_configure"):
             self._on_profiles_configure()
             
+        if saved_y > 0 and hasattr(self, "_profiles_canvas") and self._profiles_canvas.winfo_exists():
+            try:
+                self._profiles_canvas.yview_moveto(saved_y)
+            except Exception:
+                pass
+        elif not reordering and hasattr(self, "_profiles_canvas") and self._profiles_canvas.winfo_exists():
+            try:
+                self._profiles_canvas.yview_moveto(0)
+            except Exception:
+                pass
+
         if hasattr(self, "search_entry") and self.search_entry.winfo_exists():
-            if self.search_entry.get().strip():
+            if not getattr(self.search_entry, "_has_placeholder", False) and self.search_entry.get().strip():
                 self._filter_profiles_search()
 
     def _create_fast_profile_row(self, parent, p, index):
@@ -1841,10 +2224,51 @@ class IVACApp(ctk.CTk):
             lbl.bind("<Button-1>", lambda e: cmd())
             return lbl
             
+        all_profiles = self.config.get("profiles", [])
+        total_p = len(all_profiles)
+        is_first = (index == 0)
+        is_last = (index >= total_p - 1)
+
         btn_hide = make_btn(row, "Hide", THEME["danger"], THEME["danger_hover"], lambda: self._delete_profile(index))
         btn_open = make_btn(row, "Open", THEME["accent_emerald"], THEME["accent_hover"], lambda: self._launch_profile(p))
         btn_edit = make_btn(row, "Edit", THEME["btn_edit_bg"], THEME["btn_edit_hover"], lambda: self._open_edit_profile_dialog(p, index))
-        
+
+        # Reorder Down Button (▼)
+        down_bg = THEME["btn_secondary"] if not is_last else THEME["bg_card"]
+        down_fg = THEME["text_primary"] if not is_last else THEME["text_muted"]
+        down_cursor = "hand2" if not is_last else "arrow"
+        btn_down = tk.Label(
+            row, text="▼",
+            font=("Segoe UI", 9, "bold"),
+            bg=down_bg, fg=down_fg,
+            padx=8, pady=3,
+            cursor=down_cursor, relief="flat"
+        )
+        btn_down.pack(side="right", padx=(2, 6))
+        if not is_last:
+            btn_down.bind("<Enter>", lambda e: btn_down.configure(bg=THEME["btn_secondary_hover"]))
+            btn_down.bind("<Leave>", lambda e: btn_down.configure(bg=down_bg))
+            btn_down.bind("<Button-1>", lambda e: self._move_profile_down(index))
+            btn_down.bind("<Button-3>", lambda e: self._move_profile_to_bottom(index))
+
+        # Reorder Up Button (▲)
+        up_bg = THEME["btn_secondary"] if not is_first else THEME["bg_card"]
+        up_fg = THEME["text_primary"] if not is_first else THEME["text_muted"]
+        up_cursor = "hand2" if not is_first else "arrow"
+        btn_up = tk.Label(
+            row, text="▲",
+            font=("Segoe UI", 9, "bold"),
+            bg=up_bg, fg=up_fg,
+            padx=8, pady=3,
+            cursor=up_cursor, relief="flat"
+        )
+        btn_up.pack(side="right", padx=2)
+        if not is_first:
+            btn_up.bind("<Enter>", lambda e: btn_up.configure(bg=THEME["btn_secondary_hover"]))
+            btn_up.bind("<Leave>", lambda e: btn_up.configure(bg=up_bg))
+            btn_up.bind("<Button-1>", lambda e: self._move_profile_up(index))
+            btn_up.bind("<Button-3>", lambda e: self._move_profile_to_top(index))
+
         # Center Info Column
         info = tk.Frame(row, bg=THEME["bg_card"])
         info.pack(side="left", fill="x", expand=True, padx=4)
@@ -1861,7 +2285,7 @@ class IVACApp(ctk.CTk):
         l2.pack(anchor="w")
         
         if hasattr(self, "_bind_profiles_wheel"):
-            for elem in (row, accent, cb, btn_hide, btn_open, btn_edit, info, l1, l2):
+            for elem in (row, accent, cb, btn_hide, btn_open, btn_edit, btn_down, btn_up, info, l1, l2):
                 self._bind_profiles_wheel(elem)
                 
         item_record = {
@@ -1880,7 +2304,8 @@ class IVACApp(ctk.CTk):
             
         query = ""
         if hasattr(self, "search_entry") and self.search_entry.winfo_exists():
-            query = self.search_entry.get().strip().lower()
+            if not getattr(self.search_entry, "_has_placeholder", False):
+                query = self.search_entry.get().strip().lower()
             
         count = 0
         for item in self._profile_row_items:
@@ -1953,6 +2378,223 @@ class IVACApp(ctk.CTk):
                     self._refresh_extension_profiles_list()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to hide profile: {e}")
+
+    def _move_profile_up(self, index):
+        profiles = self.config.get("profiles", [])
+        if index <= 0 or index >= len(profiles):
+            return
+        profiles[index - 1], profiles[index] = profiles[index], profiles[index - 1]
+        self._save_config()
+        self._reordering_profile = True
+        self._build_profile_cards()
+        if hasattr(self, "_refresh_extension_profiles_list"):
+            self._refresh_extension_profiles_list()
+
+    def _move_profile_down(self, index):
+        profiles = self.config.get("profiles", [])
+        if index < 0 or index >= len(profiles) - 1:
+            return
+        profiles[index], profiles[index + 1] = profiles[index + 1], profiles[index]
+        self._save_config()
+        self._reordering_profile = True
+        self._build_profile_cards()
+        if hasattr(self, "_refresh_extension_profiles_list"):
+            self._refresh_extension_profiles_list()
+
+    def _move_profile_to_top(self, index):
+        profiles = self.config.get("profiles", [])
+        if index <= 0 or index >= len(profiles):
+            return
+        item = profiles.pop(index)
+        profiles.insert(0, item)
+        self._save_config()
+        self._build_profile_cards()
+        if hasattr(self, "_profiles_canvas") and self._profiles_canvas.winfo_exists():
+            self._profiles_canvas.yview_moveto(0)
+        if hasattr(self, "_refresh_extension_profiles_list"):
+            self._refresh_extension_profiles_list()
+
+    def _move_profile_to_bottom(self, index):
+        profiles = self.config.get("profiles", [])
+        if index < 0 or index >= len(profiles) - 1:
+            return
+        item = profiles.pop(index)
+        profiles.append(item)
+        self._save_config()
+        self._build_profile_cards()
+        if hasattr(self, "_profiles_canvas") and self._profiles_canvas.winfo_exists():
+            self._profiles_canvas.yview_moveto(1.0)
+        if hasattr(self, "_refresh_extension_profiles_list"):
+            self._refresh_extension_profiles_list()
+
+    def _open_reorder_profiles_dialog(self):
+        profiles = list(self.config.get("profiles", []))
+        if not profiles:
+            messagebox.showinfo("তথ্য", "ক্রম পরিবর্তনের জন্য কোনো প্রোফাইল নেই।")
+            return
+            
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("↕️ প্রোফাইলের ক্রম সাজান (Reorder Profiles)")
+        dialog.geometry("620x540")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        dialog.update_idletasks()
+        try:
+            x = self.winfo_x() + (self.winfo_width() // 2) - 310
+            y = self.winfo_y() + (self.winfo_height() // 2) - 270
+            dialog.geometry(f"620x540+{max(0, x)}+{max(0, y)}")
+        except Exception:
+            pass
+
+        hdr = ctk.CTkFrame(dialog, fg_color="transparent")
+        hdr.pack(fill="x", padx=20, pady=(15, 8))
+        
+        ctk.CTkLabel(
+            hdr, text="↕️ প্রোফাইল সমূহের ক্রম সাজান",
+            font=ctk.CTkFont(size=15, weight="bold")
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            hdr, text=f"মোট: {len(profiles)} টি প্রোফাইল",
+            font=ctk.CTkFont(size=12), text_color="#94a3b8"
+        ).pack(side="right")
+        
+        hint_lbl = ctk.CTkLabel(
+            dialog, text="💡 তালিকা থেকে যেকোনো প্রোফাইল সিলেক্ট করে ডানের বাটনগুলো দিয়ে সহজে উপরে-নিচে নিয়ে যান:",
+            font=ctk.CTkFont(size=11), text_color="#38bdf8", anchor="w"
+        )
+        hint_lbl.pack(fill="x", padx=20, pady=(0, 8))
+
+        body = ctk.CTkFrame(dialog, fg_color="#1e293b", corner_radius=10)
+        body.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        
+        list_frame = tk.Frame(body, bg="#1e293b")
+        list_frame.pack(side="left", fill="both", expand=True, padx=(10, 5), pady=10)
+        
+        scrollbar = tk.Scrollbar(list_frame, orient="vertical")
+        listbox = tk.Listbox(
+            list_frame,
+            yscrollcommand=scrollbar.set,
+            font=("Segoe UI", 10),
+            bg="#0f172a", fg="#f8fafc",
+            selectbackground="#0284c7", selectforeground="#ffffff",
+            activestyle="none", highlightthickness=1,
+            highlightbackground="#334155", relief="flat", bd=0
+        )
+        scrollbar.config(command=listbox.yview)
+        scrollbar.pack(side="right", fill="y")
+        listbox.pack(side="left", fill="both", expand=True)
+
+        working_profiles = list(profiles)
+
+        def refresh_listbox(select_idx=0):
+            listbox.delete(0, tk.END)
+            for idx, p in enumerate(working_profiles):
+                p_name = p.get("name", f"Profile {idx + 1}")
+                c_dir = p.get("chrome_profile", "")
+                ph = p.get("phone", "")
+                details = f"({c_dir})" if c_dir else ""
+                if ph: details += f" • {ph}"
+                listbox.insert(tk.END, f"  {idx + 1:02d}.  {p_name}   {details}")
+            if 0 <= select_idx < len(working_profiles):
+                listbox.selection_set(select_idx)
+                listbox.activate(select_idx)
+                listbox.see(select_idx)
+
+        refresh_listbox(0)
+
+        btn_col = ctk.CTkFrame(body, fg_color="transparent", width=170)
+        btn_col.pack(side="right", fill="y", padx=(5, 10), pady=10)
+
+        def move_top():
+            sel = listbox.curselection()
+            if not sel: return
+            idx = sel[0]
+            if idx > 0:
+                item = working_profiles.pop(idx)
+                working_profiles.insert(0, item)
+                refresh_listbox(0)
+
+        def move_up():
+            sel = listbox.curselection()
+            if not sel: return
+            idx = sel[0]
+            if idx > 0:
+                working_profiles[idx - 1], working_profiles[idx] = working_profiles[idx], working_profiles[idx - 1]
+                refresh_listbox(idx - 1)
+
+        def move_down():
+            sel = listbox.curselection()
+            if not sel: return
+            idx = sel[0]
+            if idx < len(working_profiles) - 1:
+                working_profiles[idx], working_profiles[idx + 1] = working_profiles[idx + 1], working_profiles[idx]
+                refresh_listbox(idx + 1)
+
+        def move_bottom():
+            sel = listbox.curselection()
+            if not sel: return
+            idx = sel[0]
+            if idx < len(working_profiles) - 1:
+                item = working_profiles.pop(idx)
+                working_profiles.append(item)
+                refresh_listbox(len(working_profiles) - 1)
+
+        def sort_az():
+            working_profiles.sort(key=lambda x: str(x.get("name", "")).strip().lower())
+            refresh_listbox(0)
+
+        def sort_dir():
+            def _key(x):
+                d = str(x.get("chrome_profile", "")).strip().lower().replace("profile ", "")
+                return int(d) if d.isdigit() else 999999
+            working_profiles.sort(key=_key)
+            refresh_listbox(0)
+
+        ctk.CTkButton(btn_col, text="🔝 একদম শীর্ষে", fg_color="#0284c7", hover_color="#0369a1", height=32, command=move_top).pack(fill="x", pady=3)
+        ctk.CTkButton(btn_col, text="⬆️ উপরে নিন", fg_color="#059669", hover_color="#047857", height=34, font=ctk.CTkFont(weight="bold"), command=move_up).pack(fill="x", pady=3)
+        ctk.CTkButton(btn_col, text="⬇️ নিচে নিন", fg_color="#059669", hover_color="#047857", height=34, font=ctk.CTkFont(weight="bold"), command=move_down).pack(fill="x", pady=3)
+        ctk.CTkButton(btn_col, text="🔚 একদম শেষে", fg_color="#0284c7", hover_color="#0369a1", height=32, command=move_bottom).pack(fill="x", pady=3)
+        
+        sep = tk.Frame(btn_col, height=1, bg="#475569")
+        sep.pack(fill="x", pady=10)
+
+        ctk.CTkButton(btn_col, text="🔤 নামানুসারে (A-Z)", fg_color="#334155", hover_color="#475569", height=28, font=ctk.CTkFont(size=11), command=sort_az).pack(fill="x", pady=3)
+        ctk.CTkButton(btn_col, text="🔢 প্রোফাইল নং (1-N)", fg_color="#334155", hover_color="#475569", height=28, font=ctk.CTkFont(size=11), command=sort_dir).pack(fill="x", pady=3)
+
+        bottom_bar = ctk.CTkFrame(dialog, fg_color="transparent")
+        bottom_bar.pack(fill="x", padx=20, pady=(0, 15))
+
+        def on_save():
+            self.config["profiles"] = working_profiles
+            self._save_config()
+            self._build_profile_cards()
+            if hasattr(self, "_refresh_extension_profiles_list"):
+                self._refresh_extension_profiles_list()
+            dialog.destroy()
+
+        ctk.CTkButton(
+            bottom_bar, text="💾 ক্রম সংরক্ষণ করুন",
+            fg_color="#059669", hover_color="#047857",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=38, width=170,
+            command=on_save
+        ).pack(side="right", padx=(10, 0))
+
+        ctk.CTkButton(
+            bottom_bar, text="বাতিল",
+            fg_color="#475569", hover_color="#64748b",
+            font=ctk.CTkFont(size=12),
+            height=38, width=100,
+            command=dialog.destroy
+        ).pack(side="right")
+
+    def _switch_to_extension_for_new_profile(self):
+        self.select_tab("🧩 Extension")
+        if hasattr(self, "entry_chrome_profile_name") and self.entry_chrome_profile_name.winfo_exists():
+            self.after(50, lambda: (self.entry_chrome_profile_name.focus_set(), self._reset_tab_scroll("🧩 Extension")))
                 
     def _open_add_profile_dialog(self):
         dialog = ctk.CTkToplevel(self)
@@ -2413,6 +3055,7 @@ class IVACApp(ctk.CTk):
         self.rocket_list_frame.pack(fill="x", padx=15, pady=(0, 15))
         
         self._refresh_rocket_list()
+        self.after(15, lambda: self._reset_tab_scroll("💳 Payment"))
 
     # ===== SETTINGS TAB =====
     def _build_settings_tab(self):
@@ -2425,6 +3068,7 @@ class IVACApp(ctk.CTk):
         scale_pct = int(round(current_scale * 100))
 
         scroll = SmoothScrollableFrame(tab, fg_color="transparent", scroll_speed=55)
+        self._settings_main_scroll = scroll
         scroll.pack(fill="both", expand=True, padx=5, pady=5)
 
         # -------------------------------------------------------------
@@ -2854,6 +3498,7 @@ class IVACApp(ctk.CTk):
             text_color=THEME["text_secondary"],
             justify="left"
         ).pack(anchor="w", padx=15, pady=(0, 10))
+        self.after(15, lambda: self._reset_tab_scroll("⚙️ Settings"))
     
     # ===== EXTENSION TAB =====
     def _build_extension_tab(self):
@@ -3055,7 +3700,7 @@ class IVACApp(ctk.CTk):
         ext_search_wrap = tk.Frame(update_card, bg=THEME["entry_bg"], highlightbackground=THEME["entry_border"], highlightthickness=1)
         ext_search_wrap.pack(fill="x", padx=15, pady=(0, 8))
         
-        tk.Label(ext_search_wrap, text="🔍", font=("Segoe UI", 10), fg=THEME["text_muted"], bg=THEME["entry_bg"]).pack(side="left", padx=(8, 4))
+        tk.Label(ext_search_wrap, text="Search:", font=("Segoe UI", 9, "bold"), fg=THEME["text_accent"], bg=THEME["entry_bg"]).pack(side="left", padx=(10, 4))
         
         self.ext_search_entry = tk.Entry(
             ext_search_wrap,
@@ -3065,6 +3710,7 @@ class IVACApp(ctk.CTk):
             relief="flat", bd=0
         )
         self.ext_search_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
+        self._attach_tk_placeholder(self.ext_search_entry, "Chrome Profile সার্চ করুন...", THEME["entry_text"])
         self.ext_search_entry.bind("<KeyRelease>", lambda *_: self._filter_extension_profiles_search())
         
         # Native High-Speed Scroll Container for Chrome Profiles (Zero-lag, 0.4ms init)
@@ -3127,18 +3773,7 @@ class IVACApp(ctk.CTk):
         self._ext_canvas.bind("<Configure>", _on_canvas_configure)
         
         def _on_ext_mousewheel(e):
-            if not hasattr(self, "_ext_canvas") or not self._ext_canvas.winfo_exists():
-                return "break"
-            bbox = self._ext_canvas.bbox("all")
-            if bbox and (bbox[3] - bbox[1]) <= self._ext_canvas.winfo_height():
-                self._ext_canvas.yview_moveto(0)
-                return "break"
-                
-            y_view = self._ext_canvas.yview()
-            if y_view[0] <= 0.001 and y_view[1] >= 0.999:
-                self._ext_canvas.yview_moveto(0)
-                return "break"
-                
+            # Calculate scroll step
             if hasattr(e, "num") and e.num == 4:
                 step = -2
             elif hasattr(e, "num") and e.num == 5:
@@ -3148,14 +3783,61 @@ class IVACApp(ctk.CTk):
             else:
                 step = -int(e.delta / 40) or (-1 if e.delta > 0 else 1)
                 
-            # Prevent scrolling past top or bottom
-            if step < 0 and y_view[0] <= 0.0:
-                self._ext_canvas.yview_moveto(0)
-                return "break"
-            if step > 0 and y_view[1] >= 1.0:
+            # Check outer page scroll status
+            has_outer = (hasattr(self, "_ext_main_scroll") and 
+                         hasattr(self._ext_main_scroll, "_parent_canvas") and 
+                         self._ext_main_scroll._parent_canvas.winfo_exists())
+            
+            outer_y = self._ext_main_scroll._parent_canvas.yview() if has_outer else (0.0, 1.0)
+            outer_can_scroll_down = has_outer and (outer_y[1] < 0.992)
+            outer_can_scroll_up = has_outer and (outer_y[0] > 0.005)
+            
+            # Check inner profile canvas status
+            has_inner = hasattr(self, "_ext_canvas") and self._ext_canvas.winfo_exists()
+            if not has_inner:
+                if has_outer:
+                    outer_step = -int(e.delta / 2) or (-1 if e.delta > 0 else 1)
+                    self._ext_main_scroll._parent_canvas.yview("scroll", outer_step, "units")
                 return "break"
                 
-            self._ext_canvas.yview_scroll(step, "units")
+            inner_y = self._ext_canvas.yview()
+            bbox = self._ext_canvas.bbox("all")
+            inner_content_fits = bbox and ((bbox[3] - bbox[1]) <= self._ext_canvas.winfo_height())
+            inner_can_scroll_down = not inner_content_fits and (inner_y[1] < 0.995)
+            inner_can_scroll_up = not inner_content_fits and (inner_y[0] > 0.005)
+            
+            # 1. SCROLLING DOWN (moving view downwards)
+            if step > 0:
+                # If outer tab page is NOT scrolled to bottom yet, scroll outer down first
+                # so that the Chrome Profiles section comes 100% fully onto the screen!
+                if outer_can_scroll_down:
+                    outer_step = -int(e.delta / 2) or 1
+                    self._ext_main_scroll._parent_canvas.yview("scroll", outer_step, "units")
+                    return "break"
+                # Outer tab page is already at the bottom (Chrome Profiles section is fully visible):
+                # Now scroll the inner Chrome Profiles list down!
+                if inner_can_scroll_down:
+                    self._ext_canvas.yview_scroll(step, "units")
+                    return "break"
+                return "break"
+                
+            # 2. SCROLLING UP (moving view upwards)
+            if step < 0:
+                # If inner Chrome Profiles list is scrolled down, scroll inner list back UP to top first!
+                if inner_can_scroll_up:
+                    self._ext_canvas.yview_scroll(step, "units")
+                    if self._ext_canvas.yview()[0] <= 0.0:
+                        self._ext_canvas.yview_moveto(0)
+                    return "break"
+                # Inner list is already at the top: now scroll the outer tab page back UP!
+                if outer_can_scroll_up:
+                    outer_step = -int(e.delta / 2) or -1
+                    self._ext_main_scroll._parent_canvas.yview("scroll", outer_step, "units")
+                    if self._ext_main_scroll._parent_canvas.yview()[0] <= 0.0:
+                        self._ext_main_scroll._parent_canvas.yview_moveto(0)
+                    return "break"
+                return "break"
+                
             return "break"
             
         self._on_ext_mousewheel = _on_ext_mousewheel
@@ -3178,6 +3860,7 @@ class IVACApp(ctk.CTk):
         self._bind_ext_wheel = _bind_ext_wheel
         
         self._refresh_extension_profiles_list()
+        self.after(15, lambda: self._reset_tab_scroll("🧩 Extension"))
 
     def _refresh_extension_profiles_list(self, force: bool = False):
         if not hasattr(self, "_ext_profiles_container") or not self._ext_profiles_container.winfo_exists():
@@ -3316,7 +3999,7 @@ class IVACApp(ctk.CTk):
                 _render_row(s)
                 
             if hasattr(self, "ext_search_entry") and self.ext_search_entry.winfo_exists():
-                if self.ext_search_entry.get().strip():
+                if not getattr(self.ext_search_entry, "_has_placeholder", False) and self.ext_search_entry.get().strip():
                     self._filter_extension_profiles_search()
 
             if hasattr(self, "_on_ext_configure"):
@@ -3344,7 +4027,8 @@ class IVACApp(ctk.CTk):
             
         query = ""
         if hasattr(self, "ext_search_entry") and self.ext_search_entry.winfo_exists():
-            query = self.ext_search_entry.get().strip().lower()
+            if not getattr(self.ext_search_entry, "_has_placeholder", False):
+                query = self.ext_search_entry.get().strip().lower()
             
         count = 0
         for item in self._ext_profile_row_items:
@@ -3721,9 +4405,9 @@ class IVACApp(ctk.CTk):
 
                 # If still not responding after 6s, start in-process fallback
                 try:
-                    from sms_server import socketio, app
+                    from sms_server import run_production_server
                     threading.Thread(
-                        target=lambda: socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True, log_output=False),
+                        target=lambda: run_production_server(host="0.0.0.0", port=5000, threads=32),
                         daemon=True
                     ).start()
                 except Exception as ex:
@@ -3751,16 +4435,13 @@ def main():
     import sys
     if "--run-server" in sys.argv:
         try:
-            from sms_server import socketio, app
-            socketio.run(
-                app, host="0.0.0.0", port=5000,
-                debug=False, allow_unsafe_werkzeug=True, log_output=False
-            )
+            from sms_server import run_production_server
+            run_production_server(host="0.0.0.0", port=5000, threads=32)
         except Exception as e:
             import traceback, os
             log_path = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill", "server_error.log")
             with open(log_path, "a") as f:
-                f.write(traceback.format_exc() + "\\n")
+                f.write(traceback.format_exc() + "\n")
         return
 
     app = IVACApp()

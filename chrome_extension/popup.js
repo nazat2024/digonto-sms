@@ -175,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let preferredDates = [];
     let slotBookingEnabled = true;
+    let slotFallbackEnabled = true;
 
     let currentPhone = "";
     let webfiles = [];
@@ -342,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.get([
         'ext_enabled', 'ivac_phone', 'ivac_password',
         'saved_webfiles', 'webfile_enabled', 'webfile_mode',
-        'rocket_accounts', 'active_rocket_id', 'payment_enabled', 'payment_mode', 'payment_link', 'payment_methods', 'slot_booking_enabled', 'preferred_dates'
+        'rocket_accounts', 'active_rocket_id', 'payment_enabled', 'payment_mode', 'payment_link', 'payment_methods', 'slot_booking_enabled', 'preferred_dates', 'slot_fallback_enabled'
     ], (result) => {
         if (result.ext_enabled !== undefined) {
             extToggle.checked = result.ext_enabled;
@@ -421,6 +422,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (result.preferred_dates) {
             preferredDates = result.preferred_dates;
         }
+        if (result.slot_fallback_enabled !== undefined) {
+            slotFallbackEnabled = result.slot_fallback_enabled;
+        }
         
         const isMainOn = result.ext_enabled !== undefined ? result.ext_enabled : true;
         if (!isMainOn) {
@@ -445,6 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateModeBtn();
         updatePaymentModeBtn();
+        updateSlotModeBtn();
         renderWebfiles();
         renderRocketAccounts();
         renderPreferredDates();
@@ -514,6 +519,21 @@ document.addEventListener('DOMContentLoaded', () => {
             paymentModeBtn.textContent = "Manual";
             paymentModeBtn.classList.add('manual');
             paymentModeBtn.title = "Manual মোড: dgpay পেজে Rocket সিলেক্ট করবে না, আপনি নিজে সিলেক্ট করতে পারবেন";
+        }
+    }
+
+    function updateSlotModeBtn() {
+        if (!slotModeBtn) return;
+        if (slotFallbackEnabled) {
+            slotModeBtn.textContent = 'All Date';
+            slotModeBtn.classList.remove('manual');
+            slotModeBtn.classList.remove('manual-mode');
+            slotModeBtn.title = "All Date: পছন্দের তারিখ না পেলে অন্যান্য তারিখও ট্রাই করবে";
+        } else {
+            slotModeBtn.textContent = 'Only Favorite';
+            slotModeBtn.classList.add('manual');
+            slotModeBtn.classList.add('manual-mode');
+            slotModeBtn.title = "Only Favorite: শুধুমাত্র পছন্দের তারিখগুলোই ট্রাই করবে";
         }
     }
 
@@ -917,6 +937,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     passInput.value = changes.ivac_password.newValue || '';
                 }
             }
+            if (changes.slot_fallback_enabled) {
+                slotFallbackEnabled = changes.slot_fallback_enabled.newValue !== false;
+                updateSlotModeBtn();
+            }
         }
     });
 
@@ -930,14 +954,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (slotModeBtn) {
         slotModeBtn.addEventListener('click', () => {
-            chrome.storage.local.get(['slot_fallback_enabled'], (res) => {
-                const current = res.slot_fallback_enabled !== undefined ? res.slot_fallback_enabled : true;
-                const nextVal = !current;
-                chrome.storage.local.set({ slot_fallback_enabled: nextVal }, () => {
-                    slotModeBtn.textContent = nextVal ? 'All Date' : 'Only Favorite';
-                    slotModeBtn.classList.toggle('manual', !nextVal);
-                    slotModeBtn.classList.toggle('manual-mode', !nextVal);
-                });
+            slotFallbackEnabled = !slotFallbackEnabled;
+            chrome.storage.local.set({ slot_fallback_enabled: slotFallbackEnabled }, () => {
+                updateSlotModeBtn();
             });
         });
     }

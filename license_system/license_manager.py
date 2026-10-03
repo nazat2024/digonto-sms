@@ -11,6 +11,7 @@ import requests
 from datetime import datetime
 import uuid
 import re
+from typing import Optional, Any, Dict, List
 
 from license_system.hwid import generate_hwid, get_legacy_hwid, get_all_candidate_legacy_hwids
 from license_system.crypto import encrypt_data, decrypt_data
@@ -729,7 +730,7 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
         print(f"Payment tracking error: {e}")
         return None
 
-def update_payment_stage(payment_id: str, stage: str, status: str = None, amount: float = None):
+def update_payment_stage(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None):
     """ইতিমধ্যে তৈরি করা একটি পেমেন্ট রেকর্ডের স্টেজ এবং স্ট্যাটাস লোকাল, ফায়ারবেস ও Turso ডাটাবেজে আপডেট করে।"""
     if not os.path.exists(LICENSE_FILE) or not payment_id:
         return False
@@ -943,7 +944,7 @@ def insert_turso_payment_async(payment_data: dict):
     threading.Thread(target=_insert_turso_payment_worker, args=(payment_data,), daemon=True).start()
 
 
-def _update_turso_payment_worker(payment_id: str, stage: str, status: str = None, amount: float = None):
+def _update_turso_payment_worker(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None):
     """Background worker thread to update payment record stage/status in Turso Database"""
     try:
         sql = """
@@ -987,7 +988,7 @@ def _update_turso_payment_worker(payment_id: str, stage: str, status: str = None
         print(f"[Turso Payment Update Error] {e}")
 
 
-def update_turso_payment_async(payment_id: str, stage: str, status: str = None, amount: float = None):
+def update_turso_payment_async(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None):
     """Dispatches Turso payment stage update to a non-blocking daemon thread"""
     threading.Thread(target=_update_turso_payment_worker, args=(payment_id, stage, status, amount), daemon=True).start()
 
@@ -995,7 +996,7 @@ def update_turso_payment_async(payment_id: str, stage: str, status: str = None, 
 
 _activity_dedup_cache = {}
 
-def record_activity(event_type: str, profile_id: str = "default", profile_label: str = "Profile", title: str = "", details: str = "", amount: float = 0, status: str = "info", metadata: dict = None, off_source: str = "popup"):
+def record_activity(event_type: str, profile_id: str = "default", profile_label: str = "Profile", title: str = "", details: str = "", amount: float = 0, status: str = "info", metadata: Optional[dict] = None, off_source: str = "popup"):
     """Records manual off events into Turso Database (0 Firebase writes) and broadcasts live via MQTT"""
     # 1. Ignore normal browser close or background unload (prevent false positives!)
     if off_source == "browser_unload":

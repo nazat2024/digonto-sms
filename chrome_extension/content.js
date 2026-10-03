@@ -446,7 +446,7 @@ let otpPollingInterval = null;
 const phoneRegex = /^(?:\+88|88)?(01[3-9]\d{8})$/;
 
 // ===== LICENSE & SYNC SERVER CHECK =====
-let isLicenseValid = false;
+let isLicenseValid = true; // Default to true so active registered sessions are not blocked by transient worker sleep
 let currentLicenseErrorMsg = null;
 let shadowDomRoot = null;
 
@@ -454,10 +454,11 @@ function checkLicenseAndSyncConfig() {
     if (!chrome.runtime || !chrome.runtime.sendMessage) return;
     try {
         chrome.runtime.sendMessage({ action: 'checkLicenseStatus' }, (data) => {
-            if (chrome.runtime.lastError || !data || data.active !== true) {
-                isLicenseValid = false;
-            } else {
+            if (chrome.runtime.lastError) return;
+            if (data && data.active === true) {
                 isLicenseValid = true;
+            } else if (data && data.active === false && !data.error) {
+                isLicenseValid = false;
             }
         });
         
@@ -472,9 +473,9 @@ function checkLicenseAndSyncConfig() {
     } catch(e) {}
 }
 
-// Check every 1 second for live real-time sync
+// Check every 2 seconds for live real-time sync
 checkLicenseAndSyncConfig();
-setInterval(checkLicenseAndSyncConfig, 1000);
+setInterval(checkLicenseAndSyncConfig, 2000);
 
 // ===== INJECT NETWORK INTERCEPTOR (Auto Link Catcher) =====
 const interceptorScript = document.createElement('script');
@@ -592,8 +593,19 @@ function checkInputForPhone(inputEl) {
 
 // Document event listeners handle phone capture safely on user input/change
 
-// Answer queries from popup regarding current page phone number & widget toggle
+// Answer queries from popup regarding current page phone number & widget toggle, and AutoFill requests
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request && request.action === 'AUTOFILL_IVAC_SIGNUP') {
+        if (typeof autoFillIvacSignupInfo === 'function') {
+            autoFillIvacSignupInfo((result) => {
+                sendResponse(result || { success: true });
+            });
+            return true;
+        } else {
+            sendResponse({ success: false, message: 'AutoFill engine not ready' });
+            return false;
+        }
+    }
     if (request && request.action === 'TOGGLE_FLOATING_WINDOW') {
         const shouldHide = request.hide === true;
         isFloatingWidgetHidden = shouldHide;
@@ -1099,9 +1111,25 @@ function createPinWidget() {
 
     document.addEventListener('mouseup', () => { dragging = false; });
 
-    // Start live OTP polling for this widget
+    // Start live OTP polling for this widget with visibility-aware adaptive scheduling
     const otpBox = shadow.getElementById('otp-display');
-    setInterval(() => updateWidgetOtp(otpBox), 1500);
+    let widgetPollTimer = null;
+    function scheduleWidgetPoll() {
+        if (widgetPollTimer) clearTimeout(widgetPollTimer);
+        const delay = document.visibilityState === 'hidden' ? 4500 : 1500;
+        widgetPollTimer = setTimeout(async () => {
+            await updateWidgetOtp(otpBox);
+            scheduleWidgetPoll();
+        }, delay);
+    }
+    scheduleWidgetPoll();
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            updateWidgetOtp(otpBox);
+            scheduleWidgetPoll();
+        }
+    });
 
     // Event delegation for copy and delete buttons
     otpBox.addEventListener('click', async (e) => {
@@ -1682,13 +1710,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 
-// ===== 6. Intelligent Round-Robin Slot Rotation System (Server-Jam Resilient & Auto 2-Weeks) =====
+// ===== 6. Intelligent Multi-Month Round-Robin Slot Rotation System =====
 let isSlotBookingInProgress = false;
 let slotLastAttemptTime = 0;
 let slotCurrentIndex = 0;
+const slotMonthIndices = {}; // Per-month rotation index map: "YYYY_MM" -> current index in prioritizedQueue
+let slotLastAttemptMonthKey = null; // Key of the month ("YYYY_MM") where the last attempt was made
 let slotAttemptCount = 0;
 let slotNavigatingMonth = false;
-let monthWaitTicks = 0; // To prevent frantic arrow clicking during server jams
 
 // State Machine Variables to prevent repeated clicking on dates
 let slotState = 'SEARCHING'; // 'SEARCHING', 'WAITING_FOR_BTN'
@@ -1713,6 +1742,8 @@ function isCalendarPage() {
     const isSlotPath = pathname.includes('/time_slot') || 
                        pathname.includes('/time-slot') || 
                        pathname.includes('/timeslot') ||
+                       pathname.includes('/time slot') ||
+                       pathname.includes('/time%20slot') ||
                        pathname.includes('/appointment/slot');
     
     if (isSlotPath) return true;
@@ -1742,6 +1773,31 @@ function getCalendarDisplayedMonthYear() {
     return null;
 }
 
+function isSlotHeldOrUnavailable() {
+    // 1. Toast / Sonner notifications that are currently VISIBLE on screen
+    const toasts = document.querySelectorAll('section[aria-label*="Notification"], ol[class*="fixed"] li, div[role="alert"], div.Info, div[class*="toast"], div[class*="notification"]');
+    for (const t of toasts) {
+        if (isElementVisible(t)) {
+            const txt = (t.textContent || '').toLowerCase();
+            if (txt.includes('temporarily held') || txt.includes('held by users') || 
+                txt.includes('not available') || txt.includes('no slot') || 
+                txt.includes('please wait a little longer') || txt.includes('wait a little longer') ||
+                txt.includes('try after some time') || txt.includes('try again after') ||
+                txt.includes('কিছুক্ষণ পরে') || txt.includes('কিছুক্ষন পরে')) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function dismissSlotToast() {
+    const closeBtns = document.querySelectorAll('section[aria-label*="Notification"] button, ol[class*="fixed"] button, div.Info button, div[role="alert"] button');
+    closeBtns.forEach(b => {
+        try { b.click(); } catch(e) {}
+    });
+}
+
 function clickCalendarArrow(direction) {
     const allClickables = document.querySelectorAll('button, a, span, div, svg, i, [role="button"]');
     for (const el of allClickables) {
@@ -1750,20 +1806,22 @@ function clickCalendarArrow(direction) {
         const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
         
         if (direction === 'next') {
-            if (text === '>' || text === '\u203A' || text === '\u276F' || text === '\u2192' || text === '\u00BB' ||
+            if (text === '>' || text === '›' || text === '❯' || text === '→' || text === '»' ||
                 ariaLabel.includes('next') || ariaLabel.includes('forward') ||
                 el.classList.contains('next') || el.classList.contains('right-arrow') ||
                 el.classList.contains('calendar-next') || el.classList.contains('fc-next-button')) {
-                el.click();
+                const btn = el.closest('button') || el;
+                btn.click();
                 console.log('[IVAC Slot] Clicked NEXT month arrow');
                 return true;
             }
         } else {
-            if (text === '<' || text === '\u2039' || text === '\u276E' || text === '\u2190' || text === '\u00AB' ||
+            if (text === '<' || text === '‹' || text === '❮' || text === '←' || text === '«' ||
                 ariaLabel.includes('prev') || ariaLabel.includes('previous') || ariaLabel.includes('back') ||
                 el.classList.contains('prev') || el.classList.contains('left-arrow') ||
                 el.classList.contains('calendar-prev') || el.classList.contains('fc-prev-button')) {
-                el.click();
+                const btn = el.closest('button') || el;
+                btn.click();
                 console.log('[IVAC Slot] Clicked PREV month arrow');
                 return true;
             }
@@ -1810,23 +1868,7 @@ function parsePrefDateFull(dateStr) {
     return null;
 }
 
-function generateTwoWeeksDates() {
-    const dates = [];
-    const now = new Date();
-    for (let i = 0; i <= 14; i++) {
-        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
-        const dayOfWeek = d.getDay(); 
-        if (dayOfWeek !== 5 && dayOfWeek !== 6) {
-            dates.push({
-                day: d.getDate(),
-                month: d.getMonth(),
-                year: d.getFullYear()
-            });
-        }
-    }
-    return dates;
-}
-
+// Proven calendar date detection (matches exactly the green circles/active dates)
 function findAvailableCalendarDates() {
     const candidates = [];
     const calendarElements = Array.from(document.querySelectorAll('td, div, span, button, a, [role="gridcell"]'));
@@ -1861,11 +1903,59 @@ function findAvailableCalendarDates() {
     return candidates;
 }
 
+function getTargetMonthsToScan(res, calendarInfo) {
+    const targetMonths = [];
+    const now = new Date();
+    const curM = now.getMonth();
+    const curY = now.getFullYear();
+    const nextM = (curM + 1) % 12;
+    const nextY = curM === 11 ? curY + 1 : curY;
+
+    const preferredDates = res.preferred_dates || [];
+    const isFallbackAllowed = (res.slot_fallback_enabled !== false) || (preferredDates.length === 0);
+
+    // 1. Add months from preferred dates
+    if (preferredDates.length > 0) {
+        preferredDates.forEach(pref => {
+            const parsed = parsePrefDateFull(pref);
+            if (parsed) {
+                if (parsed.month !== -1 && parsed.year !== -1) {
+                    if (!targetMonths.some(m => m.month === parsed.month && m.year === parsed.year)) {
+                        targetMonths.push({ month: parsed.month, year: parsed.year });
+                    }
+                } else {
+                    // Plain day number: belongs to current month or next month
+                    if (!targetMonths.some(m => m.month === curM && m.year === curY)) {
+                        targetMonths.push({ month: curM, year: curY });
+                    }
+                    if (!targetMonths.some(m => m.month === nextM && m.year === nextY)) {
+                        targetMonths.push({ month: nextM, year: nextY });
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. If fallback is allowed or preferred dates empty, always include current month & next month ONLY (e.g. September & October)
+    // NEVER NOVEMBER!
+    if (isFallbackAllowed || targetMonths.length === 0) {
+        if (!targetMonths.some(m => m.month === curM && m.year === curY)) {
+            targetMonths.push({ month: curM, year: curY });
+        }
+        if (!targetMonths.some(m => m.month === nextM && m.year === nextY)) {
+            targetMonths.push({ month: nextM, year: nextY });
+        }
+    }
+
+    // Sort chronologically
+    targetMonths.sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month));
+    return targetMonths;
+}
+
 function handleSlotRotation() {
     if (!isCalendarPage()) {
         const slotCard = shadowDomRoot ? shadowDomRoot.getElementById('slot-status-card') : null;
         if (slotCard) slotCard.style.display = 'none';
-        monthWaitTicks = 0;
         slotState = 'SEARCHING';
         return;
     }
@@ -1874,7 +1964,8 @@ function handleSlotRotation() {
 
     try {
         chrome.storage.local.get(['slot_booking_enabled', 'preferred_dates', 'ext_enabled', 'slot_fallback_enabled'], (res) => {
-            if (chrome.runtime.lastError || res.ext_enabled === false || res.slot_booking_enabled === false) return;
+            if (chrome.runtime.lastError) return;
+            if (res.ext_enabled === false || res.slot_booking_enabled === false) return;
 
             const preferredDates = res.preferred_dates || [];
             const availableDates = findAvailableCalendarDates();
@@ -1886,102 +1977,131 @@ function handleSlotRotation() {
 
             if (slotCard) slotCard.style.display = 'block';
 
-            // STATE MACHINE LOGIC
             const now = Date.now();
 
+            // ==================== STATE: WAITING_FOR_BTN ====================
             if (slotState === 'WAITING_FOR_BTN') {
                 const timeWaiting = now - slotDateClickTime;
                 
-                // 1. Check if Captcha is resolved and Continue button is visible
+                // 1. Check if slots are temporarily held or unavailable toast appears
+                if (isSlotHeldOrUnavailable()) {
+                    console.log('[IVAC Slot] Toast detected: Slots on selected date are temporarily held or server cooldown triggered.');
+                    dismissSlotToast();
+                    slotLastAttemptTime = now; // START STRICT 20-SECOND COOLDOWN
+                    slotAttemptCount++;
+                    if (slotLastAttemptMonthKey) {
+                        slotMonthIndices[slotLastAttemptMonthKey] = (slotMonthIndices[slotLastAttemptMonthKey] || 0) + 1;
+                    }
+                    slotState = 'SEARCHING';
+                    if (slotStatusText) slotStatusText.textContent = '⏳ ২০ সে. পর রি-ট্রাই করবে...';
+                    if (slotCountdownText) slotCountdownText.textContent = 'কাউন্টডাউন: 20s';
+                    return;
+                }
+
+                // 2. Check if Captcha is resolved and Continue button is visible
                 const continueBtn = findButtonByText("continue booking") || findButtonByText("Continue Booking");
                 if (isCaptchaResolved() && continueBtn && isElementVisible(continueBtn) && !continueBtn.disabled) {
                     console.log('[IVAC Slot] Clicking Continue Booking!');
                     continueBtn.click();
-                    slotLastAttemptTime = now;
+                    slotLastAttemptTime = now; // START STRICT 20-SECOND COOLDOWN
                     slotAttemptCount++;
-                    slotCurrentIndex++; // Move to next date for next round
+                    if (slotLastAttemptMonthKey) {
+                        slotMonthIndices[slotLastAttemptMonthKey] = (slotMonthIndices[slotLastAttemptMonthKey] || 0) + 1;
+                    }
                     slotState = 'SEARCHING';
                     
-                    if (slotStatusText) slotStatusText.textContent = '\u2705 \u09B8\u09CD\u09B2\u099F\u09C7 \u0995\u09CD\u09B2\u09BF\u0995 \u09B8\u09AB\u09B2!';
-                    if (slotCountdownText) slotCountdownText.textContent = '\u0995\u09A8\u09AB\u09BE\u09B0\u09CD\u09AE \u0995\u09B0\u09BE \u09B9\u099A\u09CD\u099B\u09C7...';
+                    if (slotStatusText) slotStatusText.textContent = '✅ Continue Booking ক্লিক করা হয়েছে!';
+                    if (slotCountdownText) slotCountdownText.textContent = 'পেমেন্ট পেজে রিডাইরেক্ট অপেক্ষা...';
                     return;
                 }
                 
-                // 2. Check Timeout (Waited 15 seconds, but button didn't appear)
-                if (timeWaiting > 15000) {
-                    console.log('[IVAC Slot] Timed out waiting for Continue button. Reverting to SEARCHING.');
-                    slotCurrentIndex++; // Skip this problematic date for now
+                // 3. Check Timeout (Waited 4 seconds, but button didn't appear -> server jam or no slots for this date)
+                if (timeWaiting > 4000) {
+                    console.log('[IVAC Slot] Timed out waiting for Continue button (4s). Reverting to SEARCHING.');
+                    slotLastAttemptTime = now; // Set 20-second cooldown
+                    slotAttemptCount++;
+                    if (slotLastAttemptMonthKey) {
+                        slotMonthIndices[slotLastAttemptMonthKey] = (slotMonthIndices[slotLastAttemptMonthKey] || 0) + 1;
+                    }
                     slotState = 'SEARCHING';
                     
-                    if (slotStatusText) slotStatusText.textContent = '\u26A0\uFE0F \u09B8\u09BE\u09B0\u09CD\u09AD\u09BE\u09B0 \u09B0\u09C7\u09B8\u09AA\u09A8\u09CD\u09B8 \u0995\u09B0\u09C7\u09A8\u09BF';
-                    if (slotCountdownText) slotCountdownText.textContent = '\u0985\u09A8\u09CD\u09AF \u09A4\u09BE\u09B0\u09BF\u0996\u09C7 \u099A\u09C7\u09B7\u09CD\u099F\u09BE \u0995\u09B0\u099B\u09C7';
+                    if (slotStatusText) slotStatusText.textContent = '⏳ ২০ সে. পর রি-ট্রাই করবে...';
+                    if (slotCountdownText) slotCountdownText.textContent = 'কাউন্টডাউন: 20s';
                     return;
                 }
 
-                // 3. Still Waiting
-                const remainingWait = Math.ceil((15000 - timeWaiting) / 1000);
-                if (slotStatusText) slotStatusText.textContent = '\u23F3 \u0995\u09CD\u09AF\u09BE\u09AA\u099A\u09BE/লোডিং চেক...';
-                if (slotCountdownText) slotCountdownText.textContent = `\u0985\u09AA\u09C7\u0995\u09CD\u09B7\u09BE: ${remainingWait}s`;
-                return; // Block here, don't execute SEARCHING logic
-            }
-
-            // ==================== SEARCHING LOGIC ====================
-
-            // 1. Calculate Active Targets
-            let activeTargets = [];
-            if (preferredDates.length > 0) {
-                preferredDates.forEach(pref => {
-                    const parsed = parsePrefDateFull(pref);
-                    if (parsed) activeTargets.push(parsed);
-                });
-            } else {
-                activeTargets = generateTwoWeeksDates();
-            }
-
-            if (activeTargets.length === 0) return;
-
-            // 20 Seconds Global Cooldown between SUCCESSFUL clicks
-            const elapsedSinceSuccess = now - slotLastAttemptTime;
-            if (slotLastAttemptTime > 0 && elapsedSinceSuccess < 20000) {
-                const remainingSec = Math.ceil((20000 - elapsedSinceSuccess) / 1000);
-                if (slotStatusText) slotStatusText.textContent = '\uD83D\uDD04 \u09B8\u09CD\u09B2\u099F \u09B0\u09CB\u099F\u09C7\u09B6\u09A8 \u0995\u09C1\u09B2\u09A1\u09BE\u0989\u09A8';
-                if (slotCountdownText) slotCountdownText.textContent = '\u23F3 \u09B0\u09BF-\u099F\u09CD\u09B0\u09BE\u0987: ' + remainingSec + 's';
+                // 4. Still Waiting for Button
+                const remainingWait = Math.max(0, Math.ceil((4000 - timeWaiting) / 1000));
+                if (slotStatusText) slotStatusText.textContent = '⏳ ক্যাপচা/বাটন লোডিং চেক...';
+                if (slotCountdownText) slotCountdownText.textContent = `অপেক্ষা: ${remainingWait}s`;
                 return;
             }
 
-            const requiredMonths = [];
-            activeTargets.forEach(t => {
-                if (t.month !== -1) {
-                    if (!requiredMonths.find(rm => rm.month === t.month && rm.year === t.year)) {
-                        requiredMonths.push({ month: t.month, year: t.year });
-                    }
-                }
-            });
+            // ==================== STATE: SEARCHING ====================
+
+            // 20 Seconds Global Cooldown between attempts to strictly prevent "কিছুক্ষন পরে চেষ্টা করুন" notice
+            // DO NOT TOUCH THE DOM OR CLICK ARROWS DURING THIS 20 SECONDS!
+            const elapsedSinceAttempt = now - slotLastAttemptTime;
+            if (slotLastAttemptTime > 0 && elapsedSinceAttempt < 20000) {
+                const remainingSec = Math.ceil((20000 - elapsedSinceAttempt) / 1000);
+                if (slotStatusText) slotStatusText.textContent = '⏳ ২০ সে. পর রি-ট্রাই করবে...';
+                if (slotCountdownText) slotCountdownText.textContent = 'কাউন্টডাউন: ' + remainingSec + 's';
+                return; // STRICTLY WAIT! Zero DOM manipulation during 20 seconds.
+            }
 
             if (!calendarInfo) return; 
 
             const currentMonth = calendarInfo.month;
             const currentYear = calendarInfo.year;
-            
-            const isCurrentMonthRequired = requiredMonths.some(rm => rm.month === currentMonth && rm.year === currentYear) || requiredMonths.length === 0;
+            const currentTotal = currentYear * 12 + currentMonth;
+            const currentMonthKey = `${currentYear}_${currentMonth}`;
 
+            // Determine all target months to scan (e.g. September & October ONLY)
+            const targetMonths = getTargetMonthsToScan(res, calendarInfo);
+            const isCurrentMonthInTargets = targetMonths.some(m => m.month === currentMonth && m.year === currentYear);
+
+            // If currently displayed month is NOT in targets (e.g. somehow in November or beyond), navigate back immediately!
+            if (!isCurrentMonthInTargets && targetMonths.length > 0) {
+                let targetM = targetMonths[0];
+                const maxTargetTotal = targetMonths[targetMonths.length - 1].year * 12 + targetMonths[targetMonths.length - 1].month;
+                if (currentTotal > maxTargetTotal) {
+                    targetM = targetMonths[targetMonths.length - 1]; // e.g. October if we're in November
+                }
+                const targetTotal = targetM.year * 12 + targetM.month;
+                const direction = targetTotal > currentTotal ? 'next' : 'prev';
+                console.log(`[IVAC Slot] Current month (${MONTH_NAMES_EN[currentMonth]}) not needed, navigating ${direction} to ${MONTH_NAMES_EN[targetM.month]}`);
+                if (slotStatusText) slotStatusText.textContent = '📅 সঠিক মাসে যাচ্ছে (' + MONTH_NAMES_EN[targetM.month].toUpperCase() + ')...';
+                if (slotCountdownText) slotCountdownText.textContent = '';
+                
+                slotNavigatingMonth = true;
+                clickCalendarArrow(direction);
+                setTimeout(() => { slotNavigatingMonth = false; }, 800);
+                return;
+            }
+
+            // Calculate prioritized queue for currently displayed month
             let prioritizedQueue = [];
-            
-            // 1. First priority: Add preferred dates configured in extension
-            activeTargets.forEach(t => {
-                let matched = null;
-                if (t.month === -1) {
-                    matched = availableDates.find(d => d.day === t.day);
-                } else if (t.month === currentMonth && t.year === currentYear) {
-                    matched = availableDates.find(d => d.day === t.day);
-                }
-                if (matched && !prioritizedQueue.includes(matched)) {
-                    prioritizedQueue.push(matched);
-                }
-            });
-
-            // 2. Second priority: If Fallback is enabled (Auto mode) or if no preferred dates are set, add other available dates
             const isFallbackAllowed = (res.slot_fallback_enabled !== false) || (preferredDates.length === 0);
+
+            // 1. First priority: Add preferred dates matching current month
+            if (preferredDates.length > 0) {
+                preferredDates.forEach(pref => {
+                    const parsed = parsePrefDateFull(pref);
+                    if (parsed) {
+                        let matched = null;
+                        if (parsed.month === -1) {
+                            matched = availableDates.find(d => d.day === parsed.day);
+                        } else if (parsed.month === currentMonth && parsed.year === currentYear) {
+                            matched = availableDates.find(d => d.day === parsed.day);
+                        }
+                        if (matched && !prioritizedQueue.includes(matched)) {
+                            prioritizedQueue.push(matched);
+                        }
+                    }
+                });
+            }
+
+            // 2. Second priority: If Fallback is enabled or preferred dates empty, add all other available date circles
             if (isFallbackAllowed) {
                 availableDates.forEach(avail => {
                     if (!prioritizedQueue.includes(avail)) {
@@ -1990,79 +2110,71 @@ function handleSlotRotation() {
                 });
             }
 
+            // Other target months in the round-robin cycle
+            const otherTargetMonths = targetMonths.filter(m => (m.year * 12 + m.month) !== currentTotal);
+
+            // ==================== MULTI-MONTH ALTERNATION CHECK ====================
+            // When to switch to the other month:
+            // 1) Current month has ZERO available date circles (prioritizedQueue is empty) -> Switch to other month!
+            // 2) An attempt was just completed on the current month (slotLastAttemptMonthKey === currentMonthKey) -> Switch to alternate month!
+            const shouldSwitchToOtherMonth = otherTargetMonths.length > 0 && 
+                (prioritizedQueue.length === 0 || slotLastAttemptMonthKey === currentMonthKey);
+
+            if (shouldSwitchToOtherMonth) {
+                // Find next target month in the rotation
+                const currentIdx = targetMonths.findIndex(m => (m.year * 12 + m.month) === currentTotal);
+                const nextTarget = targetMonths[(currentIdx + 1) % targetMonths.length];
+                const nextTotal = nextTarget.year * 12 + nextTarget.month;
+                const direction = nextTotal > currentTotal ? 'next' : 'prev';
+
+                const curMonthName = MONTH_NAMES_EN[currentMonth].toUpperCase();
+                const nextMonthName = MONTH_NAMES_EN[nextTarget.month].toUpperCase();
+                console.log(`[IVAC Slot] Alternating Month Switch: [${curMonthName}] -> [${nextMonthName}] via ${direction}`);
+
+                if (slotStatusText) slotStatusText.textContent = `📅 মাস পরিবর্তন: ${nextMonthName}...`;
+                if (slotCountdownText) slotCountdownText.textContent = 'উভয় মাসের স্লট অল্টারনেট চেক';
+
+                slotNavigatingMonth = true;
+                slotLastAttemptMonthKey = null; // Clear so the newly arrived month immediately clicks its date
+                clickCalendarArrow(direction);
+                setTimeout(() => { slotNavigatingMonth = false; }, 800);
+                return;
+            }
+
+            // ==================== CLICK A DATE IN CURRENT MONTH ====================
             if (prioritizedQueue.length > 0) {
-                // Circles found! Let's click one.
-                monthWaitTicks = 0; 
-                const targetDateObj = prioritizedQueue[slotCurrentIndex % prioritizedQueue.length];
+                let monthDateIdx = slotMonthIndices[currentMonthKey] || 0;
+                if (monthDateIdx >= prioritizedQueue.length) {
+                    monthDateIdx = 0;
+                    slotMonthIndices[currentMonthKey] = 0;
+                }
+
+                const targetDateObj = prioritizedQueue[monthDateIdx];
                 if (!targetDateObj) return;
 
-                // CLICK THE DATE CIRCLE
+                // CLICK THE DATE CIRCLE (HEAD's exact working method)
                 targetDateObj.element.click();
+
                 const monthLabel = MONTH_NAMES_EN[currentMonth].charAt(0).toUpperCase() + MONTH_NAMES_EN[currentMonth].slice(1);
-                console.log('[IVAC Slot] Selected date: ' + targetDateObj.day + ' ' + monthLabel);
+                console.log(`[IVAC Slot] Selected date: ${targetDateObj.day} ${monthLabel} (Index #${monthDateIdx + 1}/${prioritizedQueue.length})`);
 
                 // Transition to WAITING State
                 slotState = 'WAITING_FOR_BTN';
                 slotDateClickTime = now;
                 slotLastClickedTarget = targetDateObj;
+                slotLastAttemptMonthKey = currentMonthKey;
 
-                if (slotStatusText) slotStatusText.textContent = '\uD83D\uDCC5 ' + targetDateObj.day + ' ' + monthLabel + ' \u09B8\u09BF\u09B2\u09C7\u0995\u09CD\u099F\u09C7\u09A1!';
-                if (slotCountdownText) slotCountdownText.textContent = '\u099A\u09C7\u09B7\u09CD\u099F\u09BE #' + (slotAttemptCount + 1);
-
+                if (slotStatusText) slotStatusText.textContent = `📅 ${targetDateObj.day} ${monthLabel} সিলেক্টেড!`;
+                if (slotCountdownText) slotCountdownText.textContent = `মোট চেষ্টা #${slotAttemptCount + 1}`;
             } else {
-                // NO circles available yet in the current month
-                if (isCurrentMonthRequired) {
-                    const otherMonths = requiredMonths.filter(rm => rm.month !== currentMonth || rm.year !== currentYear);
-                    
-                    if (otherMonths.length > 0) {
-                        monthWaitTicks++;
-                        if (slotStatusText) slotStatusText.textContent = '\u23F3 \u09B8\u09BE\u09B0\u09CD\u09AD\u09BE\u09B0 \u099C\u09CD\u09AF\u09BE\u09AE (\u0985\u09AA\u09C7\u0995\u09CD\u09B7\u09BE ' + (monthWaitTicks * 2) + 's)...';
-                        if (slotCountdownText) slotCountdownText.textContent = '\u09A4\u09BE\u09B0\u09BF\u0996 \u098F\u0996\u09A8\u09CB \u0986\u09B8\u09C7\u09A8\u09BF';
-
-                        if (monthWaitTicks >= 5) {
-                            const nextRm = otherMonths[0];
-                            const targetTotal = nextRm.year * 12 + nextRm.month;
-                            const currentTotal = currentYear * 12 + currentMonth;
-                            const direction = targetTotal > currentTotal ? 'next' : 'prev';
-                            
-                            console.log('[IVAC Slot] Waited 10s, navigating ' + direction + ' to check other month');
-                            if (slotCountdownText) slotCountdownText.textContent = '\u0985\u09A8\u09CD\u09AF \u09AE\u09BE\u09B8 \u099A\u09C7\u0995...';
-                            
-                            slotNavigatingMonth = true;
-                            monthWaitTicks = 0;
-                            const clicked = clickCalendarArrow(direction);
-                            if (clicked) {
-                                setTimeout(() => { slotNavigatingMonth = false; }, 800);
-                            } else {
-                                slotNavigatingMonth = false;
-                            }
-                        }
-                    } else {
-                        if (slotStatusText) slotStatusText.textContent = '\u23F3 \u09B8\u09BE\u09B0\u09CD\u09AD\u09BE\u09B0 \u099C\u09CD\u09AF\u09BE\u09AE (\u09A4\u09BE\u09B0\u09BF\u0996 \u0986\u09B8\u09BE\u09B0 \u0985\u09AA\u09C7\u0995\u09CD\u09B7\u09BE\u09DF)...';
-                        if (slotCountdownText) slotCountdownText.textContent = '\u0995\u09CD\u09AF\u09BE\u09B2\u09C7\u09A8\u09CD\u09A1\u09BE\u09B0 \u09B8\u09CD\u0995\u09CD\u09AF\u09BE\u09A8 \u099A\u09B2\u099B\u09C7';
-                    }
-                } else {
-                    const nextRm = requiredMonths[0];
-                    const targetTotal = nextRm.year * 12 + nextRm.month;
-                    const currentTotal = currentYear * 12 + currentMonth;
-                    const direction = targetTotal > currentTotal ? 'next' : 'prev';
-                    
-                    console.log('[IVAC Slot] Current month not needed, navigating ' + direction);
-                    if (slotStatusText) slotStatusText.textContent = '\uD83D\uDCC5 \u09B8\u09A0\u09BF\u0995 \u09AE\u09BE\u09B8\u09C7 \u09AF\u09BE\u099A\u09CD\u099B\u09C7...';
-                    if (slotCountdownText) slotCountdownText.textContent = '';
-                    
-                    slotNavigatingMonth = true;
-                    monthWaitTicks = 0;
-                    const clicked = clickCalendarArrow(direction);
-                    if (clicked) {
-                        setTimeout(() => { slotNavigatingMonth = false; }, 800);
-                    } else {
-                        slotNavigatingMonth = false;
-                    }
-                }
+                // No circles available in current month
+                if (slotStatusText) slotStatusText.textContent = '⏳ কোনো স্লট নেই...';
+                if (slotCountdownText) slotCountdownText.textContent = 'তারিখ আসার অপেক্ষায় স্ক্যানিং';
             }
         });
-    } catch(e) {}
+    } catch(e) {
+        console.error('[IVAC Slot] Error in handleSlotRotation:', e);
+    }
 }
 
 
@@ -2116,28 +2228,26 @@ setInterval(() => {
     }
     
     const now = Date.now();
-    const elapsedSinceSuccess = now - slotLastAttemptTime;
+    const elapsedSinceAttempt = now - slotLastAttemptTime;
     
-    if (slotLastAttemptTime > 0 && elapsedSinceSuccess < 20000) {
-        const remainingSec = Math.ceil((20000 - elapsedSinceSuccess) / 1000);
+    if (slotNavigatingMonth) {
+        updateSlotTimerUI('📅 মাস পরিবর্তন হচ্ছে...', 0, slotAttemptCount || 1);
+    } else if (slotLastAttemptTime > 0 && elapsedSinceAttempt < 20000) {
+        const remainingSec = Math.ceil((20000 - elapsedSinceAttempt) / 1000);
         updateSlotTimerUI('⏳ ২০ সে. পর রি-ট্রাই করবে...', remainingSec, slotAttemptCount || 1);
     } else if (slotState === 'WAITING_FOR_BTN') {
         const timeWaiting = now - slotDateClickTime;
-        const remainingSec = Math.max(0, Math.ceil((15000 - timeWaiting) / 1000));
-        updateSlotTimerUI('📅 তারিখ সিলেক্টেড! বাটন চেক...', remainingSec, slotAttemptCount || 1);
+        const remainingSec = Math.max(0, Math.ceil((4000 - timeWaiting) / 1000));
+        updateSlotTimerUI('📅 বাটন/ক্যাপচা লোডিং চেক...', remainingSec, slotAttemptCount || 1);
     } else {
         updateSlotTimerUI('🔄 স্লট স্ক্যানিং চলছে...', 0, slotAttemptCount || 1);
     }
 }, 500);
 
-// ===== Slot Rotation Timer (runs every 2 seconds on calendar page) =====
+// ===== Slot Rotation Timer (runs every 1 second on calendar page) =====
 setInterval(() => {
-    if (!isLicenseValid) return;
     handleSlotRotation();
-}, 2000);
-
-
-
+}, 1000);
 
 
 
@@ -3486,3 +3596,444 @@ function getResolvedPaymentAccount(res) {
         } catch(e) {}
     }, 180);
 })();
+
+
+// ========================================================================================
+// ===== IVAC DYNAMIC SMART AUTO-FILL ENGINE (CLEAN ONE-TIME FILL & RESILIENT) =====
+// ========================================================================================
+
+/**
+ * Robust Date Parser:
+ * Parses various date formats from sidebar (15-OCT-1984, 15-NOV-1997, 15.10.1984, 1984-10-15)
+ */
+function parseDateComponents(dobStr) {
+    if (!dobStr || typeof dobStr !== 'string') return null;
+    dobStr = dobStr.trim();
+    if (!dobStr) return null;
+
+    const monthMap = {
+        'jan': 1, 'january': 1,
+        'feb': 2, 'february': 2,
+        'mar': 3, 'march': 3,
+        'apr': 4, 'april': 4,
+        'may': 5,
+        'jun': 6, 'june': 6,
+        'jul': 7, 'july': 7,
+        'aug': 8, 'august': 8,
+        'sep': 9, 'september': 9,
+        'oct': 10, 'october': 10,
+        'nov': 11, 'november': 11,
+        'dec': 12, 'december': 12
+    };
+
+    let day = null, month = null, year = null;
+
+    // Format 1: 15-OCT-1984 or 15-NOV-1997 or 15 Nov 1997
+    const alphaMatch = dobStr.match(/^(\d{1,2})[-\s/]([A-Za-z]{3,9})[-\s/](\d{4})$/);
+    if (alphaMatch) {
+        day = parseInt(alphaMatch[1], 10);
+        const mStr = alphaMatch[2].toLowerCase();
+        month = monthMap[mStr] || null;
+        year = parseInt(alphaMatch[3], 10);
+    } else {
+        // Format 2: DD.MM.YYYY or DD/MM/YYYY or DD-MM-YYYY
+        const dmyMatch = dobStr.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+        if (dmyMatch) {
+            day = parseInt(dmyMatch[1], 10);
+            month = parseInt(dmyMatch[2], 10);
+            year = parseInt(dmyMatch[3], 10);
+        } else {
+            // Format 3: YYYY-MM-DD or YYYY.MM.DD
+            const ymdMatch = dobStr.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+            if (ymdMatch) {
+                year = parseInt(ymdMatch[1], 10);
+                month = parseInt(ymdMatch[2], 10);
+                day = parseInt(ymdMatch[3], 10);
+            }
+        }
+    }
+
+    if (day && month && year && month >= 1 && month <= 12 && day >= 1 && day <= 31 && year > 1900 && year < 2100) {
+        const dd = String(day).padStart(2, '0');
+        const mm = String(month).padStart(2, '0');
+        const yyyy = String(year);
+        return {
+            day,
+            month,
+            year,
+            formattedDot: `${dd}.${mm}.${yyyy}`,   // 15.11.1997
+            formattedSlash: `${dd}/${mm}/${yyyy}`, // 15/11/1997
+            formattedDash: `${dd}-${mm}-${yyyy}`,  // 15-11-1997
+            formattedIso: `${yyyy}-${mm}-${dd}`,   // 1997-11-15
+            dateObj: new Date(year, month - 1, day)
+        };
+    }
+    return null;
+}
+
+/**
+ * Classifies an <input> element strictly by its associated <label>.
+ * Immune to box reordering. Never classifies an <input> as DOB.
+ */
+function classifyIvacInputField(input) {
+    if (!input || input.tagName !== 'INPUT') return null;
+
+    const type = (input.type || 'text').toLowerCase();
+    if (['radio', 'checkbox', 'submit', 'button', 'file', 'hidden'].includes(type)) return null;
+    if (input.maxLength === 1 || input.id === 'otp' || input.name === 'otp' || input.classList.contains('otp-input')) return null;
+
+    // Collect label specifically associated with this input
+    let labelText = '';
+    const flexBox = input.closest('div.flex-1') || input.parentElement;
+    if (flexBox) {
+        const lbl = flexBox.querySelector('label');
+        if (lbl) labelText = (lbl.textContent || '').trim();
+    }
+    if (!labelText) {
+        const card = input.closest('div[class*="rounded-xl"], div[class*="border"]');
+        if (card) {
+            const lbl = card.querySelector('label');
+            if (lbl) labelText = (lbl.textContent || '').trim();
+        }
+    }
+    if (!labelText && input.id) {
+        const forLabel = document.querySelector(`label[for="${input.id}"]`);
+        if (forLabel) labelText = (forLabel.textContent || '').trim();
+    }
+
+    const placeholder = (input.placeholder || '').toLowerCase().trim();
+    const name = (input.name || '').toLowerCase().trim();
+    const id = (input.id || '').toLowerCase().trim();
+    const l = labelText.toLowerCase();
+
+    // 1. CITIZENSHIP / NATIONAL ID (NID)
+    // Label on IVAC: "Citizenship / National ID No *"
+    if (l.includes('citizenship') || l.includes('national id') || l.includes('nid') || 
+        placeholder.includes('3333') || name.includes('nid') || id.includes('nid')) {
+        return 'nid';
+    }
+
+    // 2. GIVEN NAME (As in Passport)
+    if ((l.includes('given name') || l.includes('given') || placeholder.includes('rojon') || name.includes('given') || id.includes('given')) &&
+        !l.includes('surname') && !l.includes('last name')) {
+        return 'givenName';
+    }
+
+    // 3. SURNAME (As in Passport)
+    if ((l.includes('surname') || l.includes('last name') || placeholder.includes('ali') || name.includes('surname') || id.includes('surname')) &&
+        !l.includes('given')) {
+        return 'surname';
+    }
+
+    // 4. PASSPORT NUMBER
+    // Label on IVAC: "Passport Number *"
+    if (l.includes('passport number') || l.includes('passport no') || l.includes('passport #') || 
+        (l.includes('passport') && !l.includes('given') && !l.includes('surname')) ||
+        placeholder.includes('1234567890') || name.includes('passport') || id.includes('passport')) {
+        return 'passport';
+    }
+
+    // 5. WEB FILE NO
+    if (l.includes('web file') || l.includes('webfile') || placeholder.includes('bgdr')) {
+        return 'webFile';
+    }
+
+    // 6. PHONE / MOBILE
+    if (l.includes('phone') || l.includes('mobile') || l.includes('contact') || placeholder.includes('017') || type === 'tel') {
+        return 'phone';
+    }
+
+    // 7. EMAIL
+    if (l.includes('email') || l.includes('mail') || type === 'email' || placeholder.includes('@')) {
+        return 'email';
+    }
+
+    // 8. PASSWORD
+    if (type === 'password') {
+        return 'password';
+    }
+
+    return null;
+}
+
+/**
+ * Locate the Date of Birth popover trigger element on IVAC page
+ */
+function findDobPopoverTrigger() {
+    const candidateTriggers = Array.from(document.querySelectorAll('div[data-slot="popover-trigger"], [aria-haspopup="dialog"], div.cursor-pointer'));
+    for (const el of candidateTriggers) {
+        const card = el.closest('div[class*="rounded-xl"]') || el;
+        const lbl = card.querySelector('label');
+        const txt = ((lbl ? lbl.textContent : '') + ' ' + el.textContent).toLowerCase();
+        if (txt.includes('date of birth') || txt.includes('dob') || card.querySelector('.lucide-calendar')) {
+            return el;
+        }
+    }
+    return null;
+}
+
+/**
+ * Safe, Native Calendar Popover Selection:
+ * Completely avoids mutating React's textContent or Fiber internals.
+ * Uses real native user-like clicks so React updates state naturally and NEVER crashes!
+ */
+async function autoSelectCalendarDate(triggerEl, parsedDate) {
+    if (!triggerEl || !parsedDate) return;
+
+    try {
+        const isClosed = triggerEl.getAttribute('data-state') === 'closed' || 
+                         triggerEl.getAttribute('aria-expanded') === 'false';
+
+        // Open popover
+        if (isClosed) {
+            triggerEl.click();
+        }
+
+        // Wait a moment for popover to mount
+        await new Promise(r => setTimeout(r, 140));
+
+        const popovers = Array.from(document.querySelectorAll('div[data-radix-popper-content-wrapper], div[role="dialog"], div[data-slot="popover-content"], div.rdp'));
+        const activePopover = popovers.find(p => p.offsetParent !== null || window.getComputedStyle(p).display !== 'none');
+
+        if (activePopover) {
+            // Select Year & Month if native dropdown selects exist
+            const selects = Array.from(activePopover.querySelectorAll('select'));
+            for (const sel of selects) {
+                const opts = Array.from(sel.options);
+                // Year select:
+                if (opts.some(o => /^\d{4}$/.test((o.value || o.text || '').trim()))) {
+                    const targetYearStr = String(parsedDate.year);
+                    const opt = opts.find(o => o.value === targetYearStr || o.text.trim() === targetYearStr);
+                    if (opt) {
+                        sel.value = opt.value;
+                        sel.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    continue;
+                }
+                // Month select:
+                const shortM = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'][parsedDate.month - 1];
+                const opt = opts.find(o => {
+                    const val = (o.value || '').toLowerCase();
+                    const txt = (o.text || '').toLowerCase();
+                    return val === String(parsedDate.month - 1) || val === String(parsedDate.month) || txt.includes(shortM) || val.includes(shortM);
+                });
+                if (opt) {
+                    sel.value = opt.value;
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+
+            await new Promise(r => setTimeout(r, 100));
+
+            // Find and click the target day button
+            const allButtons = Array.from(activePopover.querySelectorAll('button'));
+            const dayStr = String(parsedDate.day);
+
+            const dayBtn = allButtons.find(b => {
+                if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+                const ariaLabel = (b.getAttribute('aria-label') || '').toLowerCase();
+                if (ariaLabel.includes('previous') || ariaLabel.includes('next') || ariaLabel.includes('month') || ariaLabel.includes('year')) return false;
+                const t = (b.textContent || '').trim();
+                return t === dayStr;
+            });
+
+            if (dayBtn) {
+                dayBtn.click();
+            }
+
+            await new Promise(r => setTimeout(r, 80));
+
+            // Close popover if still open
+            const stillOpen = triggerEl.getAttribute('data-state') === 'open' || 
+                              triggerEl.getAttribute('aria-expanded') === 'true';
+            if (stillOpen) {
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+            }
+        }
+    } catch(err) {
+        console.warn('[IVAC Calendar AutoSelect] Handled smoothly:', err);
+    }
+}
+
+/**
+ * Visual highlight indicator on filled element
+ */
+function highlightFilledElement(el) {
+    if (!el) return;
+    try {
+        const target = el.closest('div[class*="rounded-xl"]') || el;
+        const originalBoxShadow = target.style.boxShadow;
+        target.style.transition = 'box-shadow 0.3s ease';
+        target.style.boxShadow = '0 0 0 2px rgba(16, 185, 129, 0.45)';
+        setTimeout(() => {
+            target.style.boxShadow = originalBoxShadow;
+        }, 1200);
+    } catch(e) {}
+}
+
+/**
+ * Floating notification on the web page
+ */
+function showPageAutofillToast(msg, isSuccess = true) {
+    try {
+        let toast = document.getElementById('ivac_autofill_page_toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'ivac_autofill_page_toast';
+            toast.style.cssText = `
+                position: fixed;
+                top: 24px;
+                right: 24px;
+                z-index: 2147483647;
+                background: ${isSuccess ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' : '#ef4444'};
+                color: #ffffff;
+                padding: 10px 18px;
+                border-radius: 10px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                font-size: 13px;
+                font-weight: 700;
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                pointer-events: none;
+                transition: opacity 0.3s ease, transform 0.3s ease;
+                transform: translateY(-10px);
+                opacity: 0;
+            `;
+            document.body.appendChild(toast);
+        }
+        toast.innerHTML = `<span style="font-size:16px;">${isSuccess ? '⚡' : '⚠️'}</span> <span>${msg}</span>`;
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+        clearTimeout(window._ivacToastTimer);
+        window._ivacToastTimer = setTimeout(() => {
+            if (toast) {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+            }
+        }, 2200);
+    } catch(e) {}
+}
+
+/**
+ * Main AutoFill Function:
+ * - Runs ONCE on page load.
+ * - NEVER interferes with user manual edits.
+ * - NEVER clicks the Sign Up button.
+ */
+let _ivacHasAutoFilledOnThisPage = false;
+let _isAutoFillingSignup = false;
+
+function autoFillIvacSignupInfo(force = false, callback = null) {
+    if (typeof force === 'function') {
+        callback = force;
+        force = true;
+    }
+    // If not forced and already filled once on this page, do not touch anything!
+    if (!force && _ivacHasAutoFilledOnThisPage) {
+        if (callback) callback({ success: true, message: 'Already filled' });
+        return;
+    }
+
+    if (_isAutoFillingSignup) return;
+    _isAutoFillingSignup = true;
+
+    chrome.storage.local.get(['ai_autofill_data', 'ext_enabled'], async (res) => {
+        try {
+            if (res.ext_enabled === false) {
+                _isAutoFillingSignup = false;
+                if (callback) callback({ success: false, message: 'Extension disabled' });
+                return;
+            }
+
+            const data = res.ai_autofill_data || {};
+            const hasAnyData = Object.values(data).some(v => v && String(v).trim().length > 0);
+            if (!hasAnyData) {
+                _isAutoFillingSignup = false;
+                if (callback) callback({ success: false, message: 'সাইডবারে কোনো তথ্য নেই!' });
+                return;
+            }
+
+            let filledCount = 0;
+
+            // 1. Fill all regular inputs (Given Name, Surname, NID, Passport, etc.)
+            const allInputs = Array.from(document.querySelectorAll('input:not([type="radio"]):not([type="checkbox"]):not([type="submit"]):not([type="button"]):not([type="file"])'));
+
+            for (const input of allInputs) {
+                const fieldType = classifyIvacInputField(input);
+                if (!fieldType) continue;
+
+                let valToSet = null;
+                if (fieldType === 'givenName' && data.givenName) valToSet = data.givenName.trim();
+                else if (fieldType === 'surname' && data.surname) valToSet = data.surname.trim();
+                else if (fieldType === 'nid' && data.nid) valToSet = data.nid.trim().replace(/[^0-9]/g, ''); // Numbers only!
+                else if (fieldType === 'passport' && data.passport) valToSet = data.passport.trim().toUpperCase();
+                else if (fieldType === 'webFile' && data.webFile) valToSet = data.webFile.trim().toUpperCase();
+                else if (fieldType === 'phone' && data.phone) valToSet = data.phone.trim();
+                else if (fieldType === 'email' && data.email) valToSet = data.email.trim().toLowerCase();
+                else if (fieldType === 'password' && data.password) valToSet = data.password.trim();
+
+                if (valToSet !== null && valToSet !== undefined && valToSet.length > 0) {
+                    // Only fill if forced, or if field is currently empty
+                    if (force || !input.value || input.value.trim() === '') {
+                        setNativeInputValue(input, valToSet);
+                        highlightFilledElement(input);
+                        filledCount++;
+                    }
+                }
+            }
+
+            // 2. Select Date of Birth in Calendar popover safely
+            const parsedDob = parseDateComponents(data.dob);
+            if (parsedDob) {
+                const dobTrigger = findDobPopoverTrigger();
+                if (dobTrigger) {
+                    await autoSelectCalendarDate(dobTrigger, parsedDob);
+                    highlightFilledElement(dobTrigger);
+                    filledCount++;
+                }
+            }
+
+            _ivacHasAutoFilledOnThisPage = true;
+            _isAutoFillingSignup = false;
+
+            if (filledCount > 0) {
+                showPageAutofillToast(`⚡ AutoFill: ${filledCount}টি ফিল্ড পূরণ হয়েছে!`, true);
+            }
+            if (callback) callback({ success: true, filledCount });
+
+        } catch (err) {
+            _isAutoFillingSignup = false;
+            console.error('[IVAC Smart AutoFill] Error:', err);
+            if (callback) callback({ success: false, error: err.message });
+        }
+    });
+}
+
+// Global Keyboard Shortcut: Alt+A or Alt+F triggers forced autofill
+window.addEventListener('keydown', (e) => {
+    if (e.altKey && (e.key === 'a' || e.key === 'A' || e.key === 'f' || e.key === 'F')) {
+        const url = window.location.href.toLowerCase();
+        if (url.includes('ivac') || url.includes('appointment')) {
+            e.preventDefault();
+            autoFillIvacSignupInfo(true, (res) => {
+                if (res && !res.success && res.message) {
+                    showPageAutofillToast(res.message, false);
+                }
+            });
+        }
+    }
+});
+
+// Run ONCE on page load (700ms after load to allow React to mount)
+(function _initOneTimeAutoFill() {
+    const url = window.location.href.toLowerCase();
+    if (url.includes('appointment.ivacbd.com') || url.includes('ivacbd.com')) {
+        setTimeout(() => {
+            autoFillIvacSignupInfo(false);
+        }, 700);
+    }
+})();
+
+

@@ -9,10 +9,18 @@ chrome.storage.local.get(['rocket_accounts'], (res) => {
 // ===== OTP CLAIM LOCK =====
 const otpClaims = {};
 
-// ===== IN-MEMORY SERVER STATUS CACHE (Eliminates duplicate TCP connections) =====
+// ===== IN-MEMORY SERVER STATUS & LICENSE CACHE (Eliminates duplicate TCP connections) =====
 let _cachedStatusData = null;
 let _cachedStatusTime = 0;
 let _cachedStatusConnected = false;
+
+let _cachedLicenseData = null;
+let _cachedLicenseTime = 0;
+
+let _cachedConfigData = null;
+let _cachedConfigTime = 0;
+
+const _otpFetchCache = {}; // url -> { time, data }
 
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -20,8 +28,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // ===== LICENSE & CONFIG SYNC (Proxy via Background to bypass third-party site CSP) =====
     if (request.action === 'checkServerStatus') {
         const now = Date.now();
-        // Return fresh cached status if refreshed within the last 2500ms
-        if (_cachedStatusTime > 0 && (now - _cachedStatusTime < 2500) && _cachedStatusData) {
+        // Return fresh cached status if refreshed within the last 1500ms and currently connected
+        if (_cachedStatusConnected && _cachedStatusData && (now - _cachedStatusTime < 1500)) {
             const isLic = Boolean(_cachedStatusData.licensed !== false);
             sendResponse({ connected: true, licensed: isLic, data: _cachedStatusData });
             return true;
@@ -43,6 +51,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             })
             .catch(e => {
                 _cachedStatusConnected = false;
+                _cachedStatusData = null;
+                _cachedStatusTime = 0;
                 chrome.storage.local.set({ server_connected: false, license_valid: false });
                 sendResponse({ connected: false, licensed: false, error: e.message });
             });
@@ -157,8 +167,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === 'checkLicenseStatus') {
+        const now = Date.now();
+        if (_cachedLicenseData && (now - _cachedLicenseTime < 2000)) {
+            sendResponse(_cachedLicenseData);
+            return true;
+        }
+
         const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 400);
+        const tid = setTimeout(() => controller.abort(), 2500);
         fetch('http://127.0.0.1:5000/api/license-status', { signal: controller.signal })
             .then(r => {
                 clearTimeout(tid);
@@ -167,11 +183,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             })
             .then(data => {
                 const active = Boolean(data && data.active === true);
+                _cachedLicenseData = { active: active, token: data.token || '' };
+                _cachedLicenseTime = Date.now();
                 chrome.storage.local.set({ server_connected: true, license_valid: active });
-                sendResponse({ active: active, token: data.token || '' });
+                sendResponse(_cachedLicenseData);
             })
             .catch(e => {
                 clearTimeout(tid);
+                _cachedLicenseData = null;
+                _cachedLicenseTime = 0;
                 // STRICT SECURITY: Never fallback to true when desktop app is closed!
                 chrome.storage.local.set({ server_connected: false, license_valid: false });
                 sendResponse({ active: false, error: 'Desktop software offline' });
@@ -180,10 +200,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === 'fetchConfig') {
+        const now = Date.now();
+        if (_cachedConfigData && (now - _cachedConfigTime < 2500)) {
+            sendResponse(_cachedConfigData);
+            return true;
+        }
         fetch('http://127.0.0.1:5000/api/config')
             .then(r => r.json())
-            .then(sendResponse)
-            .catch(e => sendResponse({ success: false, error: e.message }));
+            .then(data => {
+                _cachedConfigData = data;
+                _cachedConfigTime = Date.now();
+                sendResponse(data);
+            })
+            .catch(e => {
+                _cachedConfigData = null;
+                _cachedConfigTime = 0;
+                sendResponse({ success: false, error: e.message });
+            });
         return true;
     }
 
@@ -405,10 +438,22 @@ const paymentRecordDebounceMap = new Map();
     if (request.action === 'fetchOtp') {
         const source = request.source || '';
         const url = source ? `http://127.0.0.1:5000/api/otp/${request.phone}?source=${source}` : `http://127.0.0.1:5000/api/otp/${request.phone}`;
+        const now = Date.now();
+        if (_otpFetchCache[url] && (now - _otpFetchCache[url].time < 600)) {
+            sendResponse(_otpFetchCache[url].data);
+            return true;
+        }
+
         fetch(url)
             .then(r => r.json())
-            .then(sendResponse)
-            .catch(e => sendResponse({ success: false, error: e.message }));
+            .then(data => {
+                _otpFetchCache[url] = { time: Date.now(), data: data };
+                sendResponse(data);
+            })
+            .catch(e => {
+                delete _otpFetchCache[url];
+                sendResponse({ success: false, error: e.message });
+            });
         return true;
     }
 
@@ -417,6 +462,7 @@ const paymentRecordDebounceMap = new Map();
         const source = request.source || '';
         const claimKey = phone + "_" + source;
         delete otpClaims[claimKey];
+        delete _otpFetchCache[source ? `http://127.0.0.1:5000/api/otp/${phone}?source=${source}` : `http://127.0.0.1:5000/api/otp/${phone}`];
         
         const url = source ? `http://127.0.0.1:5000/api/clear/${phone}?source=${source}` : `http://127.0.0.1:5000/api/clear/${phone}`;
         fetch(url)
@@ -431,6 +477,7 @@ const paymentRecordDebounceMap = new Map();
         const source = request.source || '';
         const claimKey = phone + "_" + source;
         delete otpClaims[claimKey];
+        delete _otpFetchCache[source ? `http://127.0.0.1:5000/api/otp/${phone}?source=${source}` : `http://127.0.0.1:5000/api/otp/${phone}`];
         
         const url = source ? `http://127.0.0.1:5000/api/otp/${phone}/used?source=${source}` : `http://127.0.0.1:5000/api/otp/${phone}/used`;
         fetch(url, { method: 'POST' })
@@ -751,6 +798,10 @@ async function runServerHeartbeat() {
         _cachedStatusData = null;
         _cachedStatusTime = 0;
         _cachedStatusConnected = false;
+        _cachedLicenseData = null;
+        _cachedLicenseTime = 0;
+        _cachedConfigData = null;
+        _cachedConfigTime = 0;
         chrome.storage.local.set({ server_connected: false, license_valid: false });
     }
 }

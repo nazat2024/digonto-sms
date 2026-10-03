@@ -7,6 +7,7 @@
 
 import os
 import sys
+import json
 import shutil
 import subprocess
 
@@ -85,10 +86,38 @@ def build():
     for imp in hidden_imports:
         cmd.extend(["--hidden-import", imp])
     
+    # Generate clean default configs for commercial distribution
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    clean_config_file = os.path.join(BUILD_DIR, "config.json")
+    with open(clean_config_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "profiles": [],
+            "sim_mapping": {
+                "P1_1": "",
+                "P1_2": "",
+                "P2_1": "",
+                "P2_2": ""
+            },
+            "rocket_accounts": [],
+            "chrome_bookmarks": [],
+            "chrome_extension_path": "C:\\IVAC_Chrome_Extension",
+            "active_profile": None
+        }, f, indent=2)
+
+    clean_sim_file = os.path.join(BUILD_DIR, "sim_mapping.json")
+    with open(clean_sim_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "P1_1": "",
+            "P1_2": "",
+            "P2_1": "",
+            "P2_2": ""
+        }, f, indent=2)
+
+    cmd.extend(["--add-data", f"{clean_config_file};."])
+    cmd.extend(["--add-data", f"{clean_sim_file};."])
+
     # Add additional files
     additional_files = [
-        "config.json",
-        "sim_mapping.json",
         "otp_parser.py",
         "sms_server.py",
         "chrome_profile_manager.py",

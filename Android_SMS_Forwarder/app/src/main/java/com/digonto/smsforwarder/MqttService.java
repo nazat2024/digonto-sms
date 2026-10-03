@@ -1,16 +1,24 @@
 package com.digonto.smsforwarder;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.Process;
+import android.os.SystemClock;
 import android.util.Base64;
 import android.util.Log;
 
@@ -29,11 +37,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 public class MqttService extends Service {
 
+    public static final String ACTION_ALARM_HEARTBEAT = "com.digonto.smsforwarder.ACTION_ALARM_HEARTBEAT";
     private static final String TAG = "MqttService";
     private static final String CHANNEL_ID = "SmsForwarderServiceChannel";
     private static final int NOTIFICATION_ID = 1;
@@ -43,15 +50,44 @@ public class MqttService extends Service {
 
     // Dedicated background thread executors so the UI NEVER hangs or freezes!
     private ExecutorService netExecutor;
-    private ScheduledExecutorService pingExecutor;
     private ExecutorService smsExecutor;
+    private HandlerThread pingThread;
+    private Handler pingHandler;
 
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
 
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private PendingIntent alarmPingIntent;
+
+    private final Object reconnectLock = new Object();
+    private boolean isReconnecting = false;
+
     public static MqttService instance;
     public static boolean isConnectedToBroker = false;
     public static ConcurrentHashMap<String, Long> lastPongReceivedTimes = new ConcurrentHashMap<>();
+
+    private final Runnable pingRunnable = new Runnable() {
+        @Override
+        public void run() {
+            ensureWakeLocks();
+            sendSinglePing();
+            if (pingHandler != null) {
+                pingHandler.postDelayed(this, 2000); // Precise 2000ms high-priority ping
+            }
+        }
+    };
+
+    private void ensureWakeLocks() {
+        try {
+            if (wakeLock != null && !wakeLock.isHeld()) {
+                wakeLock.acquire(10 * 60 * 1000L);
+            }
+            if (wifiLock != null && !wifiLock.isHeld()) {
+                wifiLock.acquire();
+            }
+        } catch (Exception ignored) {}
+    }
 
     @Override
     public void onCreate() {
@@ -65,14 +101,13 @@ public class MqttService extends Service {
 
         netExecutor = Executors.newSingleThreadExecutor();
         smsExecutor = Executors.newSingleThreadExecutor();
-        pingExecutor = Executors.newSingleThreadScheduledExecutor();
 
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
                 wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DigontoSMS:WakeLock");
                 wakeLock.setReferenceCounted(false);
-                wakeLock.acquire();
+                wakeLock.acquire(10 * 60 * 1000L);
             }
         } catch (Exception ignored) {}
 
@@ -86,10 +121,19 @@ public class MqttService extends Service {
         } catch (Exception ignored) {}
 
         createNotificationChannel();
+        registerNetworkCallback();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_ALARM_HEARTBEAT.equals(intent.getAction())) {
+            // Heartbeat woke up device via AlarmManager (Doze mode safe!)
+            ensureWakeLocks();
+            sendSinglePing();
+            scheduleNextAlarmPing();
+            return START_STICKY;
+        }
+
         Set<String> pairingCodes = prefs.getStringSet("pairing_codes", new HashSet<>());
 
         if (pairingCodes.isEmpty()) {
@@ -106,15 +150,16 @@ public class MqttService extends Service {
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("IVAC Master Pro Active")
-                .setContentText("Listening for SMS & live desktop sync...")
+                .setContentText("Connected & listening for SMS live...")
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setOngoing(true)
                 .build();
 
         startForeground(NOTIFICATION_ID, notification);
 
         connectToMqtt(pairingCodes);
+        scheduleNextAlarmPing();
         return START_STICKY;
     }
 
@@ -136,19 +181,22 @@ public class MqttService extends Service {
                     return;
                 }
 
-                String clientId = "andr_" + (System.currentTimeMillis() % 1000000);
+                String devId = prefs.getString("device_id", UUID.randomUUID().toString()).replace("-", "");
+                String clientId = "digonto_m_" + devId.substring(0, Math.min(devId.length(), 16));
+
                 mqttClient = new MqttClient("tcp://broker.emqx.io:1883", clientId, new MemoryPersistence());
 
                 MqttConnectOptions options = new MqttConnectOptions();
-                options.setCleanSession(true);
+                options.setCleanSession(false);
                 options.setAutomaticReconnect(true);
-                options.setConnectionTimeout(10);
-                options.setKeepAliveInterval(25);
+                options.setConnectionTimeout(8);
+                options.setKeepAliveInterval(20);
 
                 mqttClient.setCallback(new org.eclipse.paho.client.mqttv3.MqttCallbackExtended() {
                     @Override
                     public void connectComplete(boolean reconnect, String serverURI) {
                         isConnectedToBroker = true;
+                        Log.d(TAG, "MQTT Connected successfully. Reconnect=" + reconnect);
                         if (netExecutor != null && !netExecutor.isShutdown()) {
                             netExecutor.execute(() -> {
                                 try {
@@ -167,7 +215,13 @@ public class MqttService extends Service {
                     @Override
                     public void connectionLost(Throwable cause) {
                         isConnectedToBroker = false;
-                        Log.e(TAG, "MQTT Connection lost", cause);
+                        Log.e(TAG, "MQTT Connection lost, scheduling active reconnect...", cause);
+                        if (netExecutor != null && !netExecutor.isShutdown()) {
+                            netExecutor.execute(() -> {
+                                try { Thread.sleep(500); } catch (Exception ignored) {}
+                                triggerReconnect();
+                            });
+                        }
                     }
 
                     @Override
@@ -176,9 +230,20 @@ public class MqttService extends Service {
                         if (topic.endsWith("_sys")) {
                             try {
                                 JSONObject sysData = new JSONObject(payload);
-                                if (sysData.optString("type").equals("pong")) {
+                                String type = sysData.optString("type");
+                                if ("pong".equals(type)) {
                                     String code = topic.replace("digonto_ivac_sms_", "").replace("_sys", "");
                                     lastPongReceivedTimes.put(code, System.currentTimeMillis());
+                                } else if ("set_device_name".equals(type)) {
+                                    String targetDevId = sysData.optString("device_id");
+                                    String myDevId = prefs.getString("device_id", "");
+                                    if (targetDevId.equals(myDevId) || targetDevId.isEmpty()) {
+                                        String newName = sysData.optString("custom_name", "").trim();
+                                        if (!newName.isEmpty()) {
+                                            prefs.edit().putString("custom_device_name", newName).apply();
+                                            Log.i(TAG, "Device name updated from desktop: " + newName);
+                                        }
+                                    }
                                 }
                             } catch (Exception ignored) {}
                         }
@@ -192,15 +257,51 @@ public class MqttService extends Service {
                 isConnectedToBroker = true;
 
                 startPingLoop();
+                scheduleNextAlarmPing();
 
             } catch (Exception e) {
                 isConnectedToBroker = false;
                 Log.e(TAG, "MQTT Connection error", e);
-                if (pingExecutor != null && !pingExecutor.isShutdown()) {
-                    pingExecutor.schedule(() -> connectToMqtt(pairingCodes), 5, TimeUnit.SECONDS);
+                if (netExecutor != null && !netExecutor.isShutdown()) {
+                    netExecutor.execute(() -> {
+                        try { Thread.sleep(2000); } catch (Exception ignored) {}
+                        connectToMqtt(pairingCodes);
+                    });
                 }
             }
         });
+    }
+
+    public void triggerReconnect() {
+        synchronized (reconnectLock) {
+            if (isReconnecting) return;
+            isReconnecting = true;
+        }
+        if (netExecutor != null && !netExecutor.isShutdown()) {
+            netExecutor.execute(() -> {
+                try {
+                    Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
+                    if (!codes.isEmpty()) {
+                        if (mqttClient != null) {
+                            try {
+                                if (mqttClient.isConnected()) {
+                                    mqttClient.disconnectForcibly(300);
+                                }
+                            } catch (Exception ignored) {}
+                            try {
+                                mqttClient.close();
+                            } catch (Exception ignored) {}
+                            mqttClient = null;
+                        }
+                        connectToMqtt(codes);
+                    }
+                } finally {
+                    synchronized (reconnectLock) {
+                        isReconnecting = false;
+                    }
+                }
+            });
+        }
     }
 
     public void subscribeToCode(String code) {
@@ -245,6 +346,7 @@ public class MqttService extends Service {
 
     private void sendSinglePingInternal() {
         if (mqttClient == null || !mqttClient.isConnected()) {
+            triggerReconnect();
             return;
         }
         try {
@@ -278,12 +380,84 @@ public class MqttService extends Service {
     }
 
     private synchronized void startPingLoop() {
-        if (pingExecutor != null && !pingExecutor.isShutdown()) {
-            pingExecutor.shutdownNow();
+        if (pingHandler != null) {
+            pingHandler.removeCallbacksAndMessages(null);
         }
-        pingExecutor = Executors.newSingleThreadScheduledExecutor();
-        // 2000ms periodic ping loop dispatched via netExecutor
-        pingExecutor.scheduleAtFixedRate(this::sendSinglePing, 1000, 2000, TimeUnit.MILLISECONDS);
+        if (pingThread == null || !pingThread.isAlive()) {
+            pingThread = new HandlerThread("DigontoHighPriorityPing", Process.THREAD_PRIORITY_FOREGROUND);
+            pingThread.start();
+            pingHandler = new Handler(pingThread.getLooper());
+        }
+        pingHandler.post(pingRunnable);
+    }
+
+    private void scheduleNextAlarmPing() {
+        try {
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am != null) {
+                Intent intent = new Intent(this, MqttService.class);
+                intent.setAction(ACTION_ALARM_HEARTBEAT);
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    flags |= PendingIntent.FLAG_IMMUTABLE;
+                }
+                alarmPingIntent = PendingIntent.getService(this, 999, intent, flags);
+                long nextTrigger = SystemClock.elapsedRealtime() + 15000; // 15 seconds watchdog
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                } else {
+                    am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error scheduling alarm ping", e);
+        }
+    }
+
+    private void registerNetworkCallback() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                networkCallback = new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(Network network) {
+                        Log.d(TAG, "Network became available, ensuring MQTT connection...");
+                        triggerReconnect();
+                    }
+
+                    @Override
+                    public void onLost(Network network) {
+                        isConnectedToBroker = false;
+                    }
+                };
+                cm.registerDefaultNetworkCallback(networkCallback);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering network callback", e);
+        }
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        Log.d(TAG, "onTaskRemoved triggered - scheduling service revival");
+        try {
+            Intent restartServiceIntent = new Intent(getApplicationContext(), MqttService.class);
+            restartServiceIntent.setPackage(getPackageName());
+            int flags = PendingIntent.FLAG_ONE_SHOT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent restartPendingIntent = PendingIntent.getService(
+                    getApplicationContext(), 1, restartServiceIntent, flags
+            );
+            AlarmManager am = (AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+            if (am != null) {
+                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 1000, restartPendingIntent);
+            }
+        } catch (Exception ignored) {}
     }
 
     public void updateCustomDeviceName(String newName) {
@@ -397,8 +571,10 @@ public class MqttService extends Service {
             NotificationChannel serviceChannel = new NotificationChannel(
                     CHANNEL_ID,
                     "SMS Forwarder Service",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
             );
+            serviceChannel.setDescription("Permanent connection for SMS forwarder");
+            serviceChannel.setShowBadge(false);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(serviceChannel);
         }
@@ -408,11 +584,30 @@ public class MqttService extends Service {
     public void onDestroy() {
         super.onDestroy();
         instance = null;
+        if (networkCallback != null) {
+            try {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (cm != null) {
+                    cm.unregisterNetworkCallback(networkCallback);
+                }
+            } catch (Exception ignored) {}
+        }
+        if (alarmPingIntent != null) {
+            try {
+                AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                if (am != null) {
+                    am.cancel(alarmPingIntent);
+                }
+            } catch (Exception ignored) {}
+        }
+        if (pingHandler != null) {
+            pingHandler.removeCallbacksAndMessages(null);
+        }
+        if (pingThread != null) {
+            pingThread.quitSafely();
+        }
         if (netExecutor != null) {
             netExecutor.shutdownNow();
-        }
-        if (pingExecutor != null) {
-            pingExecutor.shutdownNow();
         }
         if (smsExecutor != null) {
             smsExecutor.shutdownNow();
@@ -425,15 +620,6 @@ public class MqttService extends Service {
         }
         if (mqttClient != null) {
             try {
-                if (mqttClient.isConnected()) {
-                    JSONObject offData = new JSONObject();
-                    offData.put("type", "offline");
-                    offData.put("device_id", prefs.getString("device_id", "Unknown"));
-                    Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
-                    for (String code : codes) {
-                        mqttClient.publish("digonto_ivac_sms_" + code + "_sys", new MqttMessage(offData.toString().getBytes()));
-                    }
-                }
                 mqttClient.disconnect();
             } catch (Exception ignored) {}
         }

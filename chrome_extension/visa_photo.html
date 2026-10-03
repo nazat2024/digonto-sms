@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Visa Photo Studio (2" × 2") - IVAC MASTER PRO</title>
+  <link rel="stylesheet" href="visa_photo.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/digonto_logo.png" alt="IVAC">
+      <div>
+        <b>IVAC MASTER PRO</b>
+        <small>Indian Visa Photo Studio (2" × 2" • 600 × 600 px)</small>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <span class="badge-tag">Portal Ready &lt; 500 KB</span>
+      <button id="closeBtn" class="ghost">✕ Close</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- UPLOAD CARD (Initial View) -->
+    <section id="uploadCard" class="card upload-card">
+      <div class="hero-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+          <circle cx="12" cy="13" r="4"></circle>
+        </svg>
+      </div>
+      <h1>Indian Visa Photo Studio</h1>
+      <p class="subtitle">যেকোনো ছবি আপলোড করলেই অটো ডিটেক্ট করে নিখুঁত সাদা ব্যাকগ্রাউন্ডসহ ২" × ২" ভিসা ছবি তৈরি হবে</p>
+      
+      <div class="feature-pills">
+        <span>✓ 2" × 2" (600 × 600 px)</span>
+        <span>✓ 100% Pure White BG</span>
+        <span>✓ &lt; 500 KB Size</span>
+        <span>✓ Indian Visa Portal Spec</span>
+      </div>
+
+      <div id="dropZone" class="drop">
+        <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp">
+        <div style="font-size: 36px; margin-bottom: 8px;">📷</div>
+        <strong>ছবি নির্বাচন করুন অথবা ড্রপ করুন</strong>
+        <span>সেলফি, টেবিল/কিবোর্ডে রাখা ছবি, বা পুরনো পাসপোর্ট ছবি • সর্বোচ্চ ২৫ MB</span>
+      </div>
+      <button id="chooseBtn" class="primary">Upload Photo (ছবি আপলোড)</button>
+      <p class="privacy">🔒 ছবিটি সম্পূর্ণভাবে আপনার কম্পিউটারে লোকাল এআই (Local AI) দ্বারা প্রসেস হয়। কোনো ক্লাউড সার্ভারে যায় না।</p>
+    </section>
+
+    <!-- EDITOR (Working View) -->
+    <section id="editor" class="editor hidden">
+      <div class="toolbar">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button id="newBtn" class="ghost">← নতুন ছবি আপলোড</button>
+          <button id="guideBtn" class="secondary" title="ইন্ডিয়ান ভিসা হেডলাইন গাইড দেখুন">👁️ Visa Guidelines</button>
+        </div>
+        <div id="status" class="status"></div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <span id="sizeBadge" class="size-badge">600 × 600 px</span>
+          <button id="downloadBtn" class="primary" disabled>⬇ Download Visa Photo</button>
+        </div>
+      </div>
+
+      <div id="warningBox" class="warnings hidden"></div>
+
+      <div class="workspace">
+        <!-- LEFT PANEL: Original Cropped View -->
+        <div class="panel">
+          <div class="panel-title">
+            <span>Original Uploaded / Cropped</span>
+            <small id="detectInfo">Face Detected ✓</small>
+          </div>
+          <div class="original-wrap">
+            <img id="originalPreview" alt="Original photo">
+            <span id="sourceLabel">Auto-cropped Region</span>
+          </div>
+
+          <div style="margin: 10px 0 6px 0;">
+            <button id="camCropBtn" class="cam-btn" type="button" title="CamScanner এর মতো ৪টি কোণা ধরে পারসপেক্টিভ ক্রপ করুন">📐 কর্নার ক্রপ (CamScanner Style)</button>
+          </div>
+          
+          <div class="tool-controls">
+            <div class="slider-group">
+              <label>🔍 Zoom: <span id="zoomVal">1.0x</span></label>
+              <input id="zoom" type="range" min="0.7" max="2.0" step="0.01" value="1">
+            </div>
+            <button id="centerBtn" class="secondary">↺ Recenter (রিসেট)</button>
+          </div>
+
+          <div class="tool-controls" style="margin-top: 10px;">
+            <div class="slider-group">
+              <label>☀️ Brightness: <span id="brightVal">0</span></label>
+              <input id="brightness" type="range" min="-40" max="40" step="1" value="0">
+            </div>
+            <div class="slider-group">
+              <label>🌓 Contrast: <span id="contrastVal">0</span></label>
+              <input id="contrast" type="range" min="-30" max="30" step="1" value="0">
+            </div>
+          </div>
+          <p class="hint">💡 পাশের ক্যানভাসে মাউস দিয়ে টেনে (drag) ছবির পজিশন ইচ্ছামতো অ্যাডজাস্ট করতে পারেন।</p>
+        </div>
+
+        <!-- RIGHT PANEL: Final 2" x 2" 600x600 pure white output -->
+        <div class="panel result-panel">
+          <div class="panel-title">
+            <b>Final 2" × 2" Indian Visa Photo</b>
+            <span class="badge-white">100% Pure White BG</span>
+          </div>
+          <div class="result-wrap">
+            <canvas id="resultCanvas" width="600" height="600"></canvas>
+            <div id="guideOverlay" class="guide-overlay hidden">
+              <svg viewBox="0 0 600 600" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
+                <!-- Center vertical axis -->
+                <line x1="300" y1="0" x2="300" y2="600" stroke="rgba(37,99,235,0.4)" stroke-dasharray="4 4" stroke-width="1.5" />
+                <!-- Top of hair limit (around 10% from top) -->
+                <line x1="120" y1="65" x2="480" y2="65" stroke="rgba(239,68,68,0.7)" stroke-dasharray="5 3" stroke-width="1.5" />
+                <text x="310" y="60" fill="rgba(239,68,68,0.9)" font-size="12" font-weight="bold">Top of Head</text>
+                <!-- Eye line (around 44% from top = y=264) -->
+                <line x1="100" y1="265" x2="500" y2="265" stroke="rgba(16,185,129,0.7)" stroke-dasharray="5 3" stroke-width="1.5" />
+                <text x="310" y="260" fill="rgba(16,185,129,0.9)" font-size="12" font-weight="bold">Eye Level</text>
+                <!-- Chin line (around 74% from top = y=444) -->
+                <line x1="140" y1="445" x2="460" y2="445" stroke="rgba(239,68,68,0.7)" stroke-dasharray="5 3" stroke-width="1.5" />
+                <text x="310" y="440" fill="rgba(239,68,68,0.9)" font-size="12" font-weight="bold">Bottom of Chin</text>
+                <!-- Head oval guide -->
+                <ellipse cx="300" cy="255" rx="145" ry="190" fill="none" stroke="rgba(37,99,235,0.6)" stroke-dasharray="6 4" stroke-width="2" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="tool-controls">
+            <button id="eraseBtn" class="secondary">✏️ Erase</button>
+            <button id="restoreBtn" class="secondary">↶ Restore</button>
+            <button id="undoBtn" class="secondary" disabled>Undo</button>
+            <div class="slider-group" style="margin-left: auto;">
+              <label>Brush: <span id="brushVal">25px</span></label>
+              <input id="brush" type="range" min="6" max="75" value="25">
+            </div>
+          </div>
+          <p class="hint">ধারগুলো ঠিক করতে Erase বা Restore সিলেক্ট করে ক্যানভাসে ব্রাশ করুন।</p>
+        </div>
+      </div>
+
+      <div class="checks">
+        <span>✓ 100% Pure White Background (#FFFFFF)</span>
+        <span>✓ Exact 600 × 600 px (300 DPI)</span>
+        <span>✓ File Size Under 500 KB (Auto-compressed)</span>
+        <span>✓ Preserves Natural Features (No Artificial Filter)</span>
+      </div>
+    </section>
+
+    <div id="error" class="error hidden" role="alert"></div>
+
+    <!-- CAMSCANNER PERSPECTIVE CROP MODAL -->
+    <div id="perspectiveModal" class="cam-modal hidden">
+      <div class="cam-dialog">
+        <div class="cam-header">
+          <div class="cam-title">
+            <span class="cam-icon">📐</span>
+            <div>
+              <div class="cam-title-text">CamScanner স্টাইল কর্নার ক্রপ</div>
+              <div class="cam-subtitle">৪টি কোণা টেনে ছবির সীমানা নির্ধারণ করুন • টেবিল বা বাঁকা ছবি স্বয়ংক্রিয়ভাবে সোজা হয়ে যাবে</div>
+            </div>
+          </div>
+          <button id="closeCamModal" class="cam-close" type="button">✕</button>
+        </div>
+
+        <div class="cam-body">
+          <div class="cam-canvas-wrap" id="camCanvasWrap">
+            <canvas id="camCanvas"></canvas>
+            <div id="camLoupe" class="cam-loupe hidden">
+              <canvas id="loupeCanvas" width="110" height="110"></canvas>
+              <div class="loupe-crosshair"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cam-footer">
+          <div class="cam-footer-left">
+            <button id="camRotateLeft" class="secondary" type="button" title="বাম দিকে ৯০° ঘুরান">⟲ বামে ঘোরান</button>
+            <button id="camRotateRight" class="secondary" type="button" title="ডান দিকে ৯০° ঘুরান">⟳ ডানে ঘোরান</button>
+            <button id="camResetPoints" class="secondary" type="button" title="পুরো ছবিতে রিসেট">⛶ রিসেট</button>
+          </div>
+          <div class="cam-footer-right">
+            <button id="camCancelBtn" class="ghost" type="button">বাতিল</button>
+            <button id="camApplyBtn" class="primary" type="button">✓ ক্রপ ও প্রসেস করুন</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI PROCESSING OVERLAY POPUP -->
+    <div id="processingModal" class="proc-modal hidden" aria-live="assertive">
+      <div class="proc-backdrop"></div>
+      <div class="proc-card">
+        <div class="proc-glow-orb"></div>
+        
+        <!-- Central Animated Scanner Icon -->
+        <div class="proc-scanner-wrap">
+          <div class="proc-pulse-wave"></div>
+          <div class="proc-pulse-wave wave-2"></div>
+          <div class="proc-scanner-circle">
+            <div class="proc-scan-line"></div>
+            <svg class="proc-camera-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </div>
+        </div>
+
+        <div class="proc-engine-tag">
+          <span class="proc-live-dot"></span>
+          <span>LOCAL AI NEURAL ENGINE v4.0</span>
+        </div>
+
+        <h2 id="procMainTitle" class="proc-headline">ছবি প্রসেস হচ্ছে...</h2>
+        <p id="procSubTitle" class="proc-subhead">অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন, অটোমেটিক প্রস্তুত হচ্ছে</p>
+
+        <!-- Step Indicators -->
+        <div class="proc-step-flow">
+          <div class="proc-step-row active" id="procStepRow1">
+            <div class="step-indicator">
+              <span class="step-num">1</span>
+              <span class="step-check">✓</span>
+            </div>
+            <div class="step-info">
+              <div class="step-name">ইমেজ ফাইল অ্যানালাইসিস</div>
+              <div class="step-sub">রেজোলিউশন ও মেটাডাটা স্ক্যান</div>
+            </div>
+            <div class="step-badge" id="stepBadge1">সম্পন্ন</div>
+          </div>
+
+          <div class="proc-step-row active" id="procStepRow2">
+            <div class="step-indicator">
+              <span class="step-num">2</span>
+              <span class="step-spin"></span>
+            </div>
+            <div class="step-info">
+              <div class="step-name">লোকাল AI ফেস রিকগনিশন</div>
+              <div class="step-sub">চোখ, মাথা ও শোল্ডার বাউন্ডারি ডিটেক্ট</div>
+            </div>
+            <div class="step-badge running" id="stepBadge2">চলছে...</div>
+          </div>
+
+          <div class="proc-step-row" id="procStepRow3">
+            <div class="step-indicator">
+              <span class="step-num">3</span>
+              <span class="step-check">✓</span>
+            </div>
+            <div class="step-info">
+              <div class="step-name">পিওর হোয়াইট ব্যাকগ্রাউন্ড ও ২"×২" ক্রপ</div>
+              <div class="step-sub">Indian Visa Portal Spec (600×600 px)</div>
+            </div>
+            <div class="step-badge" id="stepBadge3">অপেক্ষমাণ</div>
+          </div>
+        </div>
+
+        <!-- Animated Progress Bar -->
+        <div class="proc-loader-track">
+          <div class="proc-loader-fill" id="procLoaderFill"></div>
+        </div>
+
+        <div class="proc-footer-privacy">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>১০০% অফলাইন • কোনো ক্লাউডে ছবি পাঠানো হয় না</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="visa_photo.js"></script>
+</body>
+</html>

@@ -11,6 +11,7 @@
 
 import os
 import sys
+import json
 import shutil
 import subprocess
 
@@ -136,12 +137,38 @@ def build_exe():
     """PyInstaller দিয়ে EXE বিল্ড করে।"""
     print("\n  🔨 [3/4] PyInstaller দিয়ে EXE তৈরি করা হচ্ছে...")
     
+    # Clean default configs for commercial release (Zero developer private data)
+    clean_config_file = os.path.join(OBF_DIR, "config.json")
+    with open(clean_config_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "profiles": [],
+            "sim_mapping": {
+                "P1_1": "",
+                "P1_2": "",
+                "P2_1": "",
+                "P2_2": ""
+            },
+            "rocket_accounts": [],
+            "chrome_bookmarks": [],
+            "chrome_extension_path": "C:\\IVAC_Chrome_Extension",
+            "active_profile": None
+        }, f, indent=2)
+
+    clean_sim_file = os.path.join(OBF_DIR, "sim_mapping.json")
+    with open(clean_sim_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "P1_1": "",
+            "P1_2": "",
+            "P2_1": "",
+            "P2_2": ""
+        }, f, indent=2)
+
     # Data files to include
     datas = [
         (os.path.join(BASE_DIR, "dashboard"), "dashboard"),
         (os.path.join(OBF_DIR, "chrome_extension"), "chrome_extension"),
-        (os.path.join(BASE_DIR, "config.json"), "."),
-        (os.path.join(BASE_DIR, "sim_mapping.json"), "."),
+        (clean_config_file, "."),
+        (clean_sim_file, "."),
         (os.path.join(BASE_DIR, "chrome_profile_manager.py"), "."),
         (os.path.join(BASE_DIR, "golden_isolated_sp.json"), "."),
         (os.path.join(BASE_DIR, "icon.ico"), "."),
@@ -151,7 +178,7 @@ def build_exe():
     ]
     
     hidden_imports = [
-        "flask", "flask_socketio", "flask_cors",
+        "waitress", "flask", "flask_socketio", "flask_cors",
         "engineio.async_drivers.threading", "socketio", "gevent",
         "sms_server", "customtkinter", "chrome_profile_manager",
         "license_system", "license_system.hwid",
@@ -230,6 +257,16 @@ def build_exe():
             if os.path.exists(internal_dir):
                 shutil.copy2(win7_dll_src, os.path.join(internal_dir, 'api-ms-win-core-path-l1-1-0.dll'))
             print('    🪟 Windows 7 Compatibility DLL (api-ms-win-core-path) সফলভাবে যুক্ত করা হয়েছে!')
+
+        # Digital Authenticode Signing
+        sign_script = os.path.join(BASE_DIR, "tools", "sign_app.ps1")
+        exe_target = os.path.join(DIST_DIR, OUTPUT_NAME, f"{OUTPUT_NAME}.exe")
+        if os.path.exists(sign_script) and os.path.exists(exe_target):
+            try:
+                subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", sign_script, "-FilePath", exe_target], cwd=BASE_DIR)
+                print("    🔏 EXE ডিজিটাল সিগনেচার দিয়ে সফলভাবে সাইন করা হয়েছে!")
+            except Exception as sign_err:
+                print(f"    ⚠️ EXE Signing warning: {sign_err}")
         
         print("    ✅ EXE বিল্ড সফল!")
         return True
@@ -254,6 +291,14 @@ def create_installer():
     result = subprocess.run(cmd, cwd=BASE_DIR, capture_output=True, text=True)
     
     if result.returncode == 0:
+        setup_exe = os.path.join(BASE_DIR, 'Output', 'IVAC_Master_Pro_Setup_v4.0.0.exe')
+        sign_script = os.path.join(BASE_DIR, "tools", "sign_app.ps1")
+        if os.path.exists(sign_script) and os.path.exists(setup_exe):
+            try:
+                subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", sign_script, "-FilePath", setup_exe], cwd=BASE_DIR)
+                print("    🔏 Installer ডিজিটাল সিগনেচার দিয়ে সফলভাবে সাইন করা হয়েছে!")
+            except Exception as sign_err:
+                print(f"    ⚠️ Installer signing warning: {sign_err}")
         print("    ✅ Installer সফলভাবে তৈরি হয়েছে (Output ফোল্ডারে)!")
         return True
     else:

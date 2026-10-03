@@ -95,8 +95,9 @@ def run_system():
     
     # সার্ভারটি ব্যাকগ্রাউন্ডে চালু করে দিচ্ছি যাতে input() এর জন্য আটকে না থাকে
     import threading
+    from sms_server import run_production_server
     server_thread = threading.Thread(
-        target=lambda: socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True, log_output=False)
+        target=lambda: run_production_server(host=host, port=port, threads=32)
     )
     server_thread.daemon = True
     server_thread.start()

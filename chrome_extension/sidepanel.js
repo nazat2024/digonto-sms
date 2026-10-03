@@ -159,12 +159,60 @@ function extractAndFillData(text) {
 
     saveAllFields();
 
+    // Automatically trigger autofill on active page after PDF extraction
+    setTimeout(() => {
+        triggerPageAutoFill(false);
+    }, 250);
+
     if (dataFound) {
         stopLoader("✅ সফলভাবে তথ্য পূরণ হয়েছে!", "var(--btn-copy)");
         playClickSound();
         showToast("PDF থেকে ডেটা নেওয়া হয়েছে!");
     } else {
         stopLoader("⚠️ এটি কি সঠিক ভিসার পিডিএফ?", "#ef4444");
+    }
+}
+
+function triggerPageAutoFill(showFeedback = true) {
+    try {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (!tabs || !tabs[0] || !tabs[0].id) {
+                if (showFeedback) showToast("⚠️ সক্রিয় পেজ পাওয়া যায়নি!");
+                return;
+            }
+            const activeTab = tabs[0];
+            const tabUrl = (activeTab.url || '').toLowerCase();
+
+            chrome.storage.local.get(['ai_autofill_data'], (res) => {
+                const data = res.ai_autofill_data || {};
+                chrome.tabs.sendMessage(activeTab.id, {
+                    action: 'AUTOFILL_IVAC_SIGNUP',
+                    data: data
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        if (showFeedback) {
+                            if (tabUrl.includes('ivac') || tabUrl.includes('appointment')) {
+                                showToast("পেজটি একবার রিফ্রেশ করুন!");
+                            } else {
+                                showToast("⚠️ IVAC পেজে যান!");
+                            }
+                        }
+                        return;
+                    }
+                    if (response && response.success) {
+                        playClickSound();
+                        if (showFeedback) {
+                            const count = response.filledCount || 0;
+                            showToast(`⚡ ${count}টি তথ্য পেজে পূরণ হয়েছে!`);
+                        }
+                    } else if (showFeedback) {
+                        showToast(response?.message || "⚠️ পেজে কোনো ফিল্ড পাওয়া যায়নি");
+                    }
+                });
+            });
+        });
+    } catch (e) {
+        if (showFeedback) showToast("ত্রুটি হয়েছে!");
     }
 }
 
@@ -280,6 +328,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // AutoFill Page Button
+    const btnAutoFillPage = document.getElementById('btnAutoFillPage');
+    if (btnAutoFillPage) {
+        btnAutoFillPage.addEventListener('click', () => {
+            saveAllFields();
+            triggerPageAutoFill(true);
+        });
+    }
+
     // Switch to FormFill Side Panel
     const btnFormFill = document.getElementById('btnSwitchToFormFill');
     if (btnFormFill) {
@@ -294,6 +351,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Keyboard Shortcuts
     document.addEventListener('keydown', function(event) {
+        if (event.altKey && (event.key === 'a' || event.key === 'A' || event.key === 'f' || event.key === 'F')) {
+            event.preventDefault();
+            saveAllFields();
+            triggerPageAutoFill(true);
+            return;
+        }
         if (event.altKey && shortcutMap[event.key]) {
             event.preventDefault();
             const fieldId = shortcutMap[event.key];
