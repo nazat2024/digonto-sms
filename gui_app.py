@@ -2435,41 +2435,72 @@ class IVACApp(ctk.CTk):
             messagebox.showinfo("তথ্য", "ক্রম পরিবর্তনের জন্য কোনো প্রোফাইল নেই।")
             return
             
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("↕️ প্রোফাইলের ক্রম সাজান (Reorder Profiles)")
-        dialog.geometry("620x540")
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        
-        dialog.update_idletasks()
+        if hasattr(self, "_active_profile_modal") and self._active_profile_modal is not None:
+            try:
+                self._active_profile_modal.grab_release()
+                self._active_profile_modal.destroy()
+            except Exception:
+                pass
+            self._active_profile_modal = None
+
+        card = ctk.CTkFrame(
+            self, width=620, height=520, corner_radius=14,
+            fg_color=THEME.get("bg_card", "#18181b"),
+            border_width=2, border_color=THEME.get("accent_blue", "#0284c7")
+        )
+        card.place(relx=0.5, rely=0.5, anchor="center")
+        card.lift()
         try:
-            x = self.winfo_x() + (self.winfo_width() // 2) - 310
-            y = self.winfo_y() + (self.winfo_height() // 2) - 270
-            dialog.geometry(f"620x540+{max(0, x)}+{max(0, y)}")
+            card.grab_set()
         except Exception:
             pass
+        self._active_profile_modal = card
 
-        hdr = ctk.CTkFrame(dialog, fg_color="transparent")
+        def close_dialog():
+            try:
+                card.grab_release()
+            except Exception:
+                pass
+            try:
+                card.destroy()
+            except Exception:
+                pass
+            self._active_profile_modal = None
+            try:
+                self.unbind("<Escape>")
+            except Exception:
+                pass
+
+        self.bind("<Escape>", lambda e: close_dialog())
+
+        hdr = ctk.CTkFrame(card, fg_color="transparent")
         hdr.pack(fill="x", padx=20, pady=(15, 8))
         
         ctk.CTkLabel(
             hdr, text="↕️ প্রোফাইল সমূহের ক্রম সাজান",
-            font=ctk.CTkFont(size=15, weight="bold")
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=THEME.get("text_primary", "#ffffff")
         ).pack(side="left")
+
+        ctk.CTkButton(
+            hdr, text="✕", width=26, height=26,
+            corner_radius=6, fg_color="transparent", hover_color="#ef4444",
+            text_color="#94a3b8", font=ctk.CTkFont(size=13, weight="bold"),
+            command=close_dialog
+        ).pack(side="right")
         
         ctk.CTkLabel(
             hdr, text=f"মোট: {len(profiles)} টি প্রোফাইল",
             font=ctk.CTkFont(size=12), text_color="#94a3b8"
-        ).pack(side="right")
+        ).pack(side="right", padx=(0, 10))
         
         hint_lbl = ctk.CTkLabel(
-            dialog, text="💡 তালিকা থেকে যেকোনো প্রোফাইল সিলেক্ট করে ডানের বাটনগুলো দিয়ে সহজে উপরে-নিচে নিয়ে যান:",
+            card, text="💡 তালিকা থেকে যেকোনো প্রোফাইল সিলেক্ট করে ডানের বাটনগুলো দিয়ে সহজে উপরে-নিচে নিয়ে যান:",
             font=ctk.CTkFont(size=11), text_color="#38bdf8", anchor="w"
         )
         hint_lbl.pack(fill="x", padx=20, pady=(0, 8))
 
-        body = ctk.CTkFrame(dialog, fg_color="#1e293b", corner_radius=10)
+        body = ctk.CTkFrame(card, fg_color="#1e293b", corner_radius=10)
         body.pack(fill="both", expand=True, padx=20, pady=(0, 15))
         
         list_frame = tk.Frame(body, bg="#1e293b")
@@ -2566,7 +2597,7 @@ class IVACApp(ctk.CTk):
         ctk.CTkButton(btn_col, text="🔤 নামানুসারে (A-Z)", fg_color="#334155", hover_color="#475569", height=28, font=ctk.CTkFont(size=11), command=sort_az).pack(fill="x", pady=3)
         ctk.CTkButton(btn_col, text="🔢 প্রোফাইল নং (1-N)", fg_color="#334155", hover_color="#475569", height=28, font=ctk.CTkFont(size=11), command=sort_dir).pack(fill="x", pady=3)
 
-        bottom_bar = ctk.CTkFrame(dialog, fg_color="transparent")
+        bottom_bar = ctk.CTkFrame(card, fg_color="transparent")
         bottom_bar.pack(fill="x", padx=20, pady=(0, 15))
 
         def on_save():
@@ -2575,7 +2606,7 @@ class IVACApp(ctk.CTk):
             self._build_profile_cards()
             if hasattr(self, "_refresh_extension_profiles_list"):
                 self._refresh_extension_profiles_list()
-            dialog.destroy()
+            close_dialog()
 
         ctk.CTkButton(
             bottom_bar, text="💾 ক্রম সংরক্ষণ করুন",
@@ -2590,7 +2621,7 @@ class IVACApp(ctk.CTk):
             fg_color="#475569", hover_color="#64748b",
             font=ctk.CTkFont(size=12),
             height=38, width=100,
-            command=dialog.destroy
+            command=close_dialog
         ).pack(side="right")
 
     def _switch_to_extension_for_new_profile(self):
@@ -2599,55 +2630,111 @@ class IVACApp(ctk.CTk):
             self.after(50, lambda: (self.entry_chrome_profile_name.focus_set(), self._reset_tab_scroll("🧩 Extension")))
                 
     def _open_add_profile_dialog(self):
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("নতুন প্রোফাইল যুক্ত করুন")
-        dialog.geometry("460x590")
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
+        if hasattr(self, "_active_profile_modal") and self._active_profile_modal is not None:
+            try:
+                self._active_profile_modal.grab_release()
+                self._active_profile_modal.destroy()
+            except Exception:
+                pass
+            self._active_profile_modal = None
+
+        card = ctk.CTkFrame(
+            self, width=470, corner_radius=14,
+            fg_color=THEME.get("bg_card", "#18181b"),
+            border_width=2, border_color=THEME.get("accent_blue", "#0284c7")
+        )
+        card.place(relx=0.5, rely=0.5, anchor="center")
+        card.lift()
+        try:
+            card.grab_set()
+        except Exception:
+            pass
+        self._active_profile_modal = card
+
+        def close_dialog():
+            try:
+                card.grab_release()
+            except Exception:
+                pass
+            try:
+                card.destroy()
+            except Exception:
+                pass
+            self._active_profile_modal = None
+            try:
+                self.unbind("<Escape>")
+            except Exception:
+                pass
+
+        self.bind("<Escape>", lambda e: close_dialog())
+
+        # Header
+        hdr = ctk.CTkFrame(card, fg_color="transparent")
+        hdr.pack(fill="x", padx=18, pady=(14, 6))
+
+        ctk.CTkLabel(
+            hdr, text="➕ নতুন প্রোফাইল যুক্ত করুন",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=THEME.get("text_primary", "#ffffff")
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            hdr, text="✕", width=26, height=26,
+            corner_radius=6, fg_color="transparent", hover_color="#ef4444",
+            text_color="#94a3b8", font=ctk.CTkFont(size=13, weight="bold"),
+            command=close_dialog
+        ).pack(side="right")
+
+        divider = ctk.CTkFrame(card, height=1, fg_color=THEME.get("border_color", "#27272a"))
+        divider.pack(fill="x", padx=14, pady=(0, 8))
+
+        ctk.CTkLabel(
+            card, text="গ্রাহকের নাম (Profile Name):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
+        
+        name_entry = ctk.CTkEntry(card, width=430, height=30, placeholder_text="যেমন: MD REZHANUL HAQUE")
+        name_entry.pack(padx=18, pady=(0, 6))
         
         ctk.CTkLabel(
-            dialog, text="গ্রাহকের নাম (Profile Name):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(15, 2))
+            card, text="Chrome Profile ফোল্ডারের নাম:",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        name_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: MD REZHANUL HAQUE")
-        name_entry.pack(padx=20, pady=(0, 8))
-        
-        ctk.CTkLabel(
-            dialog, text="Chrome Profile ফোল্ডারের নাম:",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
-        
-        dir_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 1, 2, 3 বা Default")
-        dir_entry.pack(padx=20, pady=(0, 6))
+        dir_entry = ctk.CTkEntry(card, width=430, height=30, placeholder_text="যেমন: 1, 2, 3 বা Default")
+        dir_entry.pack(padx=18, pady=(0, 6))
         
         # IVAC Login Mobile Number
         ctk.CTkLabel(
-            dialog, text="📱 IVAC মোবাইল নম্বর (Login Mobile Number):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
+            card, text="📱 IVAC মোবাইল নম্বর (Login Mobile Number):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        phone_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 01912345678")
-        phone_entry.pack(padx=20, pady=(0, 8))
+        phone_entry = ctk.CTkEntry(card, width=430, height=30, placeholder_text="যেমন: 01912345678")
+        phone_entry.pack(padx=18, pady=(0, 6))
         
         # IVAC Login Password
         ctk.CTkLabel(
-            dialog, text="🔒 IVAC পাসওয়ার্ড (Login Password):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
+            card, text="🔒 IVAC পাসওয়ার্ড (Login Password):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        pass_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="IVAC সাইন-ইন পাসওয়ার্ড দিন")
-        pass_entry.pack(padx=20, pady=(0, 8))
+        pass_entry = ctk.CTkEntry(card, width=430, height=30, placeholder_text="IVAC সাইন-ইন পাসওয়ার্ড দিন")
+        pass_entry.pack(padx=18, pady=(0, 6))
         
         # Proxy (Optional)
         ctk.CTkLabel(
-            dialog, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - যেমন: 192.168.0.105:8080 বা 127.0.0.1:8080):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
+            card, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - মোবাইল প্রক্সি বা অন্য আইপি):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        proxy_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 192.168.0.105:8080 (মোবাইল অ্যাপ থেকে কপি করুন)")
-        proxy_entry.pack(padx=20, pady=(0, 8))
+        proxy_entry = ctk.CTkEntry(card, width=430, height=30, placeholder_text="যেমন: 192.168.0.105:8080 (মোবাইল অ্যাপ থেকে কপি করুন)")
+        proxy_entry.pack(padx=18, pady=(0, 6))
         
         def toggle_pass_vis():
             if pass_entry.cget("show") == "":
@@ -2658,18 +2745,18 @@ class IVACApp(ctk.CTk):
                 show_pass_btn.configure(text="🙈 Hide Password")
                 
         show_pass_btn = ctk.CTkButton(
-            dialog, text="🙈 Hide Password", width=120, height=22,
+            card, text="🙈 Hide Password", width=120, height=20,
             font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
             command=toggle_pass_vis
         )
-        show_pass_btn.pack(anchor="w", padx=20, pady=(0, 8))
+        show_pass_btn.pack(anchor="w", padx=18, pady=(0, 6))
         
-        tip_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        tip_frame.pack(fill="x", padx=20, pady=(0, 5))
+        tip_frame = ctk.CTkFrame(card, fg_color="transparent")
+        tip_frame.pack(fill="x", padx=18, pady=(0, 4))
         
         ctk.CTkLabel(
             tip_frame, 
-            text="💡 সঠিক Profile Name জানতে ক্রোম ব্রাউজারে নিচের\nURL টি ওপেন করুন এবং 'Profile Path' এর শেষের নাম দিন:",
+            text="💡 সঠিক Profile Name জানতে ক্রোম ব্রাউজারে নিচের URL টি ওপেন করুন:",
             font=ctk.CTkFont(size=10),
             text_color="#9ca3af",
             justify="left"
@@ -2682,20 +2769,20 @@ class IVACApp(ctk.CTk):
             url_frame, text="chrome://version/",
             font=ctk.CTkFont(family="Consolas", size=11),
             text_color="#64ffda"
-        ).pack(side="left", padx=10, pady=3)
+        ).pack(side="left", padx=10, pady=2)
         
         def copy_url():
-            dialog.clipboard_clear()
-            dialog.clipboard_append("chrome://version/")
+            self.clipboard_clear()
+            self.clipboard_append("chrome://version/")
             copy_btn.configure(text="✅ Copied", fg_color="#059669")
-            dialog.after(2000, lambda: copy_btn.configure(text="📋 Copy", fg_color="#233554"))
+            self.after(2000, lambda: copy_btn.configure(text="📋 Copy", fg_color="#233554"))
             
         copy_btn = ctk.CTkButton(
-            url_frame, text="📋 Copy", width=60, height=22,
+            url_frame, text="📋 Copy", width=60, height=20,
             font=ctk.CTkFont(size=10), fg_color="#233554", hover_color="#059669",
             command=copy_url
         )
-        copy_btn.pack(side="right", padx=5, pady=3)
+        copy_btn.pack(side="right", padx=5, pady=2)
         
         def save_new():
             name = name_entry.get().strip()
@@ -2709,7 +2796,7 @@ class IVACApp(ctk.CTk):
             proxy = proxy_entry.get().strip()
             
             if not name or not chrome_profile:
-                messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!")
+                messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
                 return
             
             if "profiles" not in self.config:
@@ -2735,68 +2822,134 @@ class IVACApp(ctk.CTk):
                 pass
                 
             self._refresh_profiles_tab()
-            dialog.destroy()
+            close_dialog()
             
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.pack(fill="x", padx=18, pady=(8, 14))
+
         ctk.CTkButton(
-            dialog, text="✅ সেভ করুন", height=32,
+            btn_row, text="✅ সেভ করুন", height=34,
             fg_color="#059669", hover_color="#047857",
             font=ctk.CTkFont(size=12, weight="bold"),
             command=save_new
-        ).pack(pady=(12, 10))
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        ctk.CTkButton(
+            btn_row, text="বাতিল", height=34, width=80,
+            fg_color="#334155", hover_color="#475569",
+            font=ctk.CTkFont(size=12),
+            command=close_dialog
+        ).pack(side="right")
 
     def _open_edit_profile_dialog(self, profile, index):
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("প্রোফাইল এডিট করুন")
-        dialog.geometry("460x590")
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        
+        if hasattr(self, "_active_profile_modal") and self._active_profile_modal is not None:
+            try:
+                self._active_profile_modal.grab_release()
+                self._active_profile_modal.destroy()
+            except Exception:
+                pass
+            self._active_profile_modal = None
+
+        card = ctk.CTkFrame(
+            self, width=470, corner_radius=14,
+            fg_color=THEME.get("bg_card", "#18181b"),
+            border_width=2, border_color=THEME.get("accent_blue", "#0284c7")
+        )
+        card.place(relx=0.5, rely=0.5, anchor="center")
+        card.lift()
+        try:
+            card.grab_set()
+        except Exception:
+            pass
+        self._active_profile_modal = card
+
+        def close_dialog():
+            try:
+                card.grab_release()
+            except Exception:
+                pass
+            try:
+                card.destroy()
+            except Exception:
+                pass
+            self._active_profile_modal = None
+            try:
+                self.unbind("<Escape>")
+            except Exception:
+                pass
+
+        self.bind("<Escape>", lambda e: close_dialog())
+
+        # Header
+        hdr = ctk.CTkFrame(card, fg_color="transparent")
+        hdr.pack(fill="x", padx=18, pady=(14, 6))
+
         ctk.CTkLabel(
-            dialog, text="গ্রাহকের নাম (Profile Name):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(15, 2))
+            hdr, text="✏️ প্রোফাইল এডিট করুন",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=THEME.get("text_primary", "#ffffff")
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            hdr, text="✕", width=26, height=26,
+            corner_radius=6, fg_color="transparent", hover_color="#ef4444",
+            text_color="#94a3b8", font=ctk.CTkFont(size=13, weight="bold"),
+            command=close_dialog
+        ).pack(side="right")
+
+        divider = ctk.CTkFrame(card, height=1, fg_color=THEME.get("border_color", "#27272a"))
+        divider.pack(fill="x", padx=14, pady=(0, 8))
+
+        ctk.CTkLabel(
+            card, text="গ্রাহকের নাম (Profile Name):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        name_entry = ctk.CTkEntry(dialog, width=420)
+        name_entry = ctk.CTkEntry(card, width=430, height=30)
         name_entry.insert(0, profile.get("name", ""))
-        name_entry.pack(padx=20, pady=(0, 8))
+        name_entry.pack(padx=18, pady=(0, 6))
         
         ctk.CTkLabel(
-            dialog, text="Chrome Profile ফোল্ডারের নাম:",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
+            card, text="Chrome Profile ফোল্ডারের নাম:",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        dir_entry = ctk.CTkEntry(dialog, width=420)
+        dir_entry = ctk.CTkEntry(card, width=430, height=30)
         dir_entry.insert(0, profile.get("chrome_profile", ""))
-        dir_entry.pack(padx=20, pady=(0, 8))
+        dir_entry.pack(padx=18, pady=(0, 6))
         
         ctk.CTkLabel(
-            dialog, text="📱 IVAC মোবাইল নম্বর (Login Mobile Number):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
+            card, text="📱 IVAC মোবাইল নম্বর (Login Mobile Number):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        phone_entry = ctk.CTkEntry(dialog, width=420)
+        phone_entry = ctk.CTkEntry(card, width=430, height=30)
         phone_entry.insert(0, profile.get("phone", ""))
-        phone_entry.pack(padx=20, pady=(0, 8))
+        phone_entry.pack(padx=18, pady=(0, 6))
         
         ctk.CTkLabel(
-            dialog, text="🔒 IVAC পাসওয়ার্ড (Login Password):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
+            card, text="🔒 IVAC পাসওয়ার্ড (Login Password):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        pass_entry = ctk.CTkEntry(dialog, width=420)
+        pass_entry = ctk.CTkEntry(card, width=430, height=30)
         pass_entry.insert(0, profile.get("password", ""))
-        pass_entry.pack(padx=20, pady=(0, 8))
+        pass_entry.pack(padx=18, pady=(0, 6))
         
         # Proxy (Optional)
         ctk.CTkLabel(
-            dialog, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - মোবাইল প্রক্সি বা অন্য আইপি):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(anchor="w", padx=20, pady=(0, 2))
+            card, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - মোবাইল প্রক্সি বা অন্য আইপি):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=THEME.get("text_secondary", "#94a3b8")
+        ).pack(anchor="w", padx=18, pady=(0, 2))
         
-        proxy_entry = ctk.CTkEntry(dialog, width=420)
+        proxy_entry = ctk.CTkEntry(card, width=430, height=30)
         proxy_entry.insert(0, profile.get("proxy", ""))
-        proxy_entry.pack(padx=20, pady=(0, 8))
+        proxy_entry.pack(padx=18, pady=(0, 6))
         
         def toggle_pass_vis():
             if pass_entry.cget("show") == "":
@@ -2807,11 +2960,11 @@ class IVACApp(ctk.CTk):
                 show_pass_btn.configure(text="🙈 Hide Password")
                 
         show_pass_btn = ctk.CTkButton(
-            dialog, text="🙈 Hide Password", width=120, height=22,
+            card, text="🙈 Hide Password", width=120, height=20,
             font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
             command=toggle_pass_vis
         )
-        show_pass_btn.pack(anchor="w", padx=20, pady=(0, 8))
+        show_pass_btn.pack(anchor="w", padx=18, pady=(0, 6))
         
         def save_edit():
             name = name_entry.get().strip()
@@ -2825,7 +2978,7 @@ class IVACApp(ctk.CTk):
             proxy = proxy_entry.get().strip()
             
             if not name or not chrome_profile:
-                messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!")
+                messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
                 return
             
             self.config["profiles"][index]["name"] = name
@@ -2847,14 +3000,24 @@ class IVACApp(ctk.CTk):
                 pass
                 
             self._refresh_profiles_tab()
-            dialog.destroy()
+            close_dialog()
             
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.pack(fill="x", padx=18, pady=(8, 14))
+
         ctk.CTkButton(
-            dialog, text="💾 আপডেট করুন", height=32,
+            btn_row, text="💾 আপডেট করুন", height=34,
             fg_color="#059669", hover_color="#047857",
             font=ctk.CTkFont(size=12, weight="bold"),
             command=save_edit
-        ).pack(pady=(12, 10))
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        ctk.CTkButton(
+            btn_row, text="বাতিল", height=34, width=80,
+            fg_color="#334155", hover_color="#475569",
+            font=ctk.CTkFont(size=12),
+            command=close_dialog
+        ).pack(side="right")
         
     def _format_profile_dir(self, p_dir):
         p_dir = str(p_dir).strip()
