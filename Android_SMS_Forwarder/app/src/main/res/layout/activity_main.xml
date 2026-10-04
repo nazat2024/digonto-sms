@@ -613,7 +613,7 @@
                         android:id="@+id/btnModeUsb"
                         android:layout_width="0dp"
                         android:layout_height="match_parent"
-                        android:layout_weight="1"
+                        android:layout_weight="0"
                         android:gravity="center"
                         android:text="🔌 USB"
                         android:textSize="12sp"
@@ -621,13 +621,14 @@
                         android:textColor="#475569"
                         android:background="@android:color/transparent"
                         android:clickable="true"
-                        android:focusable="true"/>
+                        android:focusable="true"
+                        android:visibility="gone"/>
 
                     <TextView
                         android:id="@+id/btnModeRemote"
                         android:layout_width="0dp"
                         android:layout_height="match_parent"
-                        android:layout_weight="1.2"
+                        android:layout_weight="1"
                         android:gravity="center"
                         android:text="🚀 Remote"
                         android:textSize="12sp"
@@ -925,19 +926,6 @@
                             android:textSize="11sp"
                             android:textColor="#475569"
                             android:lineSpacingExtra="3dp"/>
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnOpenUsbTetheringSettings"
-                            android:layout_width="match_parent"
-                            android:layout_height="44dp"
-                            android:layout_marginTop="10dp"
-                            android:text="⚡ 1-Click: USB Tethering অন করুন"
-                            android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            app:backgroundTint="#0284C7"
-                            app:cornerRadius="8dp"
-                            android:visibility="gone" />
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 

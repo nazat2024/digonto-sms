@@ -96,7 +96,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView btnModeWifi, btnModeUsb, btnModeRemote;
     private TextView tvProxyStatusBadge, tvProxyCarrier, tvProxyAddress, tvProxyHelpText;
     private Button btnCopyProxy, btnToggleProxy;
-    private MaterialButton btnOpenUsbTetheringSettings;
     private TextView tvProxyDownload, tvProxyUpload, tvProxySpeed, tvProxyConnections;
     private String selectedProxyMode = ProxyServerService.MODE_WIFI;
     private boolean isProxyServiceRunning = false;
@@ -231,7 +230,6 @@ public class MainActivity extends AppCompatActivity {
         tvProxySpeed = findViewById(R.id.tvProxySpeed);
         tvProxyConnections = findViewById(R.id.tvProxyConnections);
         tvProxyHelpText = findViewById(R.id.tvProxyHelpText);
-        btnOpenUsbTetheringSettings = findViewById(R.id.btnOpenUsbTetheringSettings);
 
         // Tab 4: Setting
         switchKeepScreenAwake = findViewById(R.id.switchKeepScreenAwake);
@@ -607,9 +605,6 @@ public class MainActivity extends AppCompatActivity {
         btnModeWifi.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_WIFI));
         btnModeUsb.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_USB));
         btnModeRemote.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_REMOTE));
-        if (btnOpenUsbTetheringSettings != null) {
-            btnOpenUsbTetheringSettings.setOnClickListener(v -> openUsbTetheringSettings());
-        }
 
         btnCopyProxy.setOnClickListener(v -> {
             String addr = tvProxyAddress.getText().toString().trim();
@@ -693,25 +688,16 @@ public class MainActivity extends AppCompatActivity {
             btnModeWifi.setTextColor(activeText);
             tvProxyHelpText.setText("১. ল্যাপটপ ও ফোন একই ওয়াইফাই বা হটস্পটে রাখুন।\n২. উপরের '📋 কপি' বাটনে চেপে IP:Port কপি করুন।\n৩. ল্যাপটপের IVAC Master Pro-তে প্রোফাইল এডিটে প্রক্সি ঘরে বসিয়ে দিন। ক্রোম সরাসরি এই সিমের 4G দিয়ে চলবে!");
             tvProxyAddress.setText(getWifiIpFormatted());
-            if (btnOpenUsbTetheringSettings != null) {
-                btnOpenUsbTetheringSettings.setVisibility(View.GONE);
-            }
         } else if (ProxyServerService.MODE_USB.equals(mode)) {
             btnModeUsb.setBackgroundColor(activeBg);
             btnModeUsb.setTextColor(activeText);
             tvProxyHelpText.setText("১. চার্জিং ক্যাবল দিয়ে ফোন ল্যাপটপের সাথে লাগান এবং USB Tethering অন করুন।\n২. অথবা ADB কমান্ড: adb forward tcp:8080 tcp:8080 চালান।\n৩. ল্যাপটপের প্রোফাইলে 127.0.0.1:8080 প্রক্সি বসিয়ে দিন। জিরো-ল্যাগ স্পিড পাবেন!");
             tvProxyAddress.setText("127.0.0.1:8080");
-            if (btnOpenUsbTetheringSettings != null) {
-                btnOpenUsbTetheringSettings.setVisibility(View.VISIBLE);
-            }
         } else if (ProxyServerService.MODE_REMOTE.equals(mode)) {
             btnModeRemote.setBackgroundColor(activeBg);
             btnModeRemote.setTextColor(activeText);
             tvProxyHelpText.setText("১. কাস্টমার দেশের যেকোনো প্রান্তে থাকুক, শুধু মোবাইল ডাটা অন রাখবে।\n২. ক্লাউড টানেল কানেক্ট হলে উপরে একটি রিমোট অ্যাড্রেস দেখতে পাবেন।\n৩. সেই অ্যাড্রেসটি ল্যাপটপে বসিয়ে কাস্টমারের নিজস্ব 4G মোবাইল আইপিতে স্লট ধরুন!");
             tvProxyAddress.setText("relay.digonto.com:9050");
-            if (btnOpenUsbTetheringSettings != null) {
-                btnOpenUsbTetheringSettings.setVisibility(View.GONE);
-            }
         }
 
         if (isProxyServiceRunning) {
@@ -770,45 +756,6 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Exception ignored) {}
         return "192.168.0.105:8080";
-    }
-
-    private void openUsbTetheringSettings() {
-        // Multi-intent fallback for 1-click opening of USB Tethering / Hotspot settings
-        Intent[] tetherIntents = new Intent[] {
-            // Standard AOSP Tethering
-            new Intent("android.settings.TETHER_SETTINGS"),
-            // Transsion / Infinix / Tecno (XOS & HiOS)
-            new Intent().setComponent(new ComponentName("com.android.settings", "com.android.settings.TetherSettings")),
-            // Samsung OneUI
-            new Intent().setComponent(new ComponentName("com.android.settings", "com.android.settings.wifi.tether.WifiTetherSettings")),
-            // Xiaomi MIUI / HyperOS
-            new Intent().setComponent(new ComponentName("com.android.settings", "com.android.settings.Settings$TetherSettingsActivity")),
-            new Intent().setComponent(new ComponentName("com.android.settings", "com.android.settings.Settings$WifiApSettingsActivity")),
-            // Wireless / Network Connections
-            new Intent(Settings.ACTION_WIRELESS_SETTINGS),
-            // Ultimate fallback
-            new Intent(Settings.ACTION_SETTINGS)
-        };
-
-        boolean launched = false;
-        for (Intent intent : tetherIntents) {
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                if (getPackageManager().resolveActivity(intent, 0) != null) {
-                    startActivity(intent);
-                    launched = true;
-                    break;
-                }
-            } catch (Exception ignored) {}
-        }
-
-        if (!launched) {
-            try {
-                startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (Exception e) {
-                Toast.makeText(this, "সেটিংস খোলা যায়নি: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        }
     }
 
     private void executeCallDivert(String ussdCode, boolean isDiverting) {
