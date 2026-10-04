@@ -13,7 +13,8 @@
         "alarms",
         "tabs",
         "power",
-        "downloads"
+        "downloads",
+        "proxy"
     ],
     "host_permissions": [
         "http://localhost:5000/*",

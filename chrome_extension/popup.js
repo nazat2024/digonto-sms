@@ -48,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const extToggle = document.getElementById('ext-toggle');
     const phoneInput = document.getElementById('manual-phone-input');
     const passInput = document.getElementById('manual-pass-input');
+    const proxyInput = document.getElementById('manual-proxy-input');
+    const proxyToggle = document.getElementById('profile-proxy-toggle');
+    const proxyDot = document.getElementById('ivac-proxy-status-dot');
     const toggleIvacPassBtn = document.getElementById('toggle-ivac-pass-btn');
     const savePhoneBtn = document.getElementById('save-phone-btn');
     const smsDisplay = document.getElementById('latest-sms');
@@ -290,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
             opt.dataset.dir = p.chrome_profile || '';
             opt.dataset.phone = p.phone || '';
             opt.dataset.pass = p.password || '';
+            opt.dataset.proxy = p.proxy || '';
             
             const label = p.name ? `${p.name} (${p.chrome_profile || 'Default'})` : (p.chrome_profile || 'Profile');
             opt.textContent = label;
@@ -323,16 +327,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentProfileName = selOpt.dataset.name || '';
                 const newPhone = selOpt.dataset.phone || '';
                 const newPass = selOpt.dataset.pass || '';
+                const newProxy = selOpt.dataset.proxy || '';
                 
                 chrome.storage.local.set({
                     my_chrome_profile: currentProfileDir,
                     my_profile_name: currentProfileName,
                     ivac_phone: newPhone,
-                    ivac_password: newPass
+                    ivac_password: newPass,
+                    ivac_proxy: newProxy,
+                    ivac_proxy_enabled: Boolean(newProxy)
                 });
                 
                 if (phoneInput) phoneInput.value = newPhone;
                 if (passInput) passInput.value = newPass;
+                if (proxyInput) proxyInput.value = newProxy;
+                if (proxyToggle) proxyToggle.checked = Boolean(newProxy);
+                updateProxyDot(newProxy, Boolean(newProxy));
+                chrome.runtime.sendMessage({
+                    action: 'setProfileProxy',
+                    proxy: newProxy,
+                    enabled: Boolean(newProxy)
+                });
                 currentPhone = newPhone;
                 updateStatus();
             }
@@ -840,6 +855,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ivacDot.className = `dot ${ivacStat.dotClass}`;
                     ivacDot.title = `IVAC: ${ivacStat.label}`;
                 }
+                const curProxyVal = (proxyToggle && proxyToggle.checked && proxyInput) ? proxyInput.value.trim() : '';
                 // Sync with local desktop app backend in REAL-TIME
                 fetch('http://127.0.0.1:5000/api/profile/sync', {
                     method: 'POST',
@@ -848,7 +864,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         chrome_profile: currentProfileDir,
                         name: currentProfileName,
                         phone: currentPhone,
-                        password: pass
+                        password: pass,
+                        proxy: curProxyVal
                     })
                 }).then(() => {
                     if (allServerProfiles && allServerProfiles.length) {
@@ -859,11 +876,134 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (mp) {
                             mp.phone = currentPhone;
                             mp.password = pass;
+                            mp.proxy = curProxyVal;
                         }
                     }
                 }).catch(() => {});
             });
         }, 300);
+    }
+
+    // ===== PROXY MANAGEMENT (Per-Profile Isolated Proxy) =====
+    function applyDirectProxy(proxyStr, isEnabled) {
+        if (!chrome.proxy || !chrome.proxy.settings) {
+            if (proxyDot) {
+                proxyDot.className = 'dot red';
+                proxyDot.title = 'এক্সটেনশন রিফ্রেশ করুন: chrome://extensions';
+            }
+            return;
+        }
+
+        if (isEnabled === false || !proxyStr || !proxyStr.trim()) {
+            chrome.proxy.settings.clear({ scope: 'regular' });
+            return;
+        }
+
+        let clean = proxyStr.trim();
+        let scheme = 'http';
+        if (clean.toLowerCase().startsWith('socks5://')) { scheme = 'socks5'; clean = clean.substring(9); }
+        else if (clean.toLowerCase().startsWith('socks4://')) { scheme = 'socks4'; clean = clean.substring(9); }
+        else if (clean.toLowerCase().startsWith('https://')) { scheme = 'https'; clean = clean.substring(8); }
+        else if (clean.toLowerCase().startsWith('http://')) { scheme = 'http'; clean = clean.substring(7); }
+
+        const parts = clean.split(':');
+        const host = parts[0].trim();
+        let port = 8080;
+        if (parts.length > 1) {
+            const parsed = parseInt(parts[1].trim(), 10);
+            if (!isNaN(parsed) && parsed > 0) port = parsed;
+        }
+        if (!host) {
+            chrome.proxy.settings.clear({ scope: 'regular' });
+            return;
+        }
+
+        const config = {
+            mode: 'fixed_servers',
+            rules: {
+                proxyForHttp: { scheme: scheme, host: host, port: port },
+                proxyForHttps: { scheme: scheme, host: host, port: port },
+                fallbackProxy: { scheme: scheme, host: host, port: port },
+                bypassList: ['127.0.0.1', 'localhost', '::1', '<local>']
+            }
+        };
+
+        chrome.proxy.settings.set({ value: config, scope: 'regular' }, () => {
+            if (chrome.runtime.lastError) {
+                console.error('[Popup] Error setting proxy:', chrome.runtime.lastError.message);
+                if (proxyDot) {
+                    proxyDot.className = 'dot red';
+                    proxyDot.title = 'প্রক্সি ত্রুটি: ' + chrome.runtime.lastError.message;
+                }
+            } else {
+                console.log('[Popup] Successfully set proxy to', host, port);
+            }
+        });
+    }
+
+    function updateProxyDot(proxyVal, isEnabled) {
+        if (!proxyDot) return;
+        if (!isEnabled || !proxyVal || !proxyVal.trim()) {
+            proxyDot.className = 'dot gray';
+            proxyDot.title = 'প্রক্সি বন্ধ (Direct Internet)';
+        } else {
+            proxyDot.className = 'dot green';
+            proxyDot.title = `প্রক্সি চালু 🟢 (${proxyVal.trim()})`;
+        }
+    }
+
+    // Load existing proxy from chrome.storage.local
+    chrome.storage.local.get(['ivac_proxy', 'ivac_proxy_enabled'], (res) => {
+        const pVal = res.ivac_proxy || '';
+        const pEnabled = res.ivac_proxy_enabled !== false;
+        if (proxyInput) proxyInput.value = pVal;
+        if (proxyToggle) proxyToggle.checked = pEnabled;
+        updateProxyDot(pVal, pEnabled);
+        if (pVal && pEnabled) {
+            applyDirectProxy(pVal, true);
+        }
+    });
+
+    // Auto-save proxy with debounce
+    let saveProxyDebounce = null;
+    function autoSaveProxy() {
+        if (saveProxyDebounce) clearTimeout(saveProxyDebounce);
+        saveProxyDebounce = setTimeout(() => {
+            const pVal = proxyInput ? proxyInput.value.trim() : '';
+            const pEnabled = proxyToggle ? proxyToggle.checked : true;
+            updateProxyDot(pVal, pEnabled);
+            applyDirectProxy(pVal, pEnabled);
+
+            chrome.runtime.sendMessage({
+                action: 'setProfileProxy',
+                proxy: pVal,
+                enabled: pEnabled
+            });
+
+            // Sync with local desktop backend
+            if (currentProfileDir || currentProfileName) {
+                fetch('http://127.0.0.1:5000/api/profile/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chrome_profile: currentProfileDir,
+                        name: currentProfileName,
+                        phone: currentPhone,
+                        password: passInput ? passInput.value : '',
+                        proxy: pEnabled ? pVal : ''
+                    })
+                }).catch(() => {});
+            }
+        }, 300);
+    }
+
+    if (proxyInput) {
+        proxyInput.addEventListener('input', autoSaveProxy);
+        proxyInput.addEventListener('change', autoSaveProxy);
+        proxyInput.addEventListener('blur', autoSaveProxy);
+    }
+    if (proxyToggle) {
+        proxyToggle.addEventListener('change', autoSaveProxy);
     }
 
     if (passInput) {
@@ -1257,22 +1397,39 @@ document.addEventListener('DOMContentLoaded', () => {
                         renderProfileSelector(allServerProfiles);
                     }
                     
+                    const cleanPhone = (currentPhone || (phoneInput ? phoneInput.value : '')).replace(/[^0-9]/g, '');
                     const myProfile = allServerProfiles.find(p => 
                         (currentProfileDir && p.chrome_profile === currentProfileDir) ||
-                        (currentProfileName && p.name === currentProfileName)
+                        (currentProfileName && p.name === currentProfileName) ||
+                        (cleanPhone && cleanPhone.length === 11 && p.phone && p.phone.replace(/[^0-9]/g, '') === cleanPhone)
                     );
                     
                     if (myProfile) {
+                        let needsStorageUpdate = false;
+                        const storageUpdate = {};
+
+                        if (!currentProfileDir && myProfile.chrome_profile) {
+                            currentProfileDir = myProfile.chrome_profile;
+                            storageUpdate.my_chrome_profile = currentProfileDir;
+                            needsStorageUpdate = true;
+                        }
+                        if (!currentProfileName && myProfile.name) {
+                            currentProfileName = myProfile.name;
+                            storageUpdate.my_profile_name = currentProfileName;
+                            needsStorageUpdate = true;
+                        }
+
                         const serverPhone = (myProfile.phone || '').trim();
                         const serverPass = myProfile.password || '';
+                        const serverProxy = (myProfile.proxy || '').trim();
                         
                         const isTypingPhone = (document.activeElement === phoneInput);
                         const isTypingPass = (document.activeElement === passInput);
+                        const isTypingProxy = (document.activeElement === proxyInput);
+                        
                         const curInputPhone = phoneInput ? phoneInput.value.replace(/[^0-9]/g, '') : '';
                         const curInputPass = passInput ? passInput.value : '';
-
-                        let needsStorageUpdate = false;
-                        const storageUpdate = {};
+                        const curInputProxy = proxyInput ? proxyInput.value.trim() : '';
                         
                         // ONLY populate from server if local inputs are completely empty
                         if (!curInputPhone && serverPhone && serverPhone.length === 11 && !isTypingPhone) {
@@ -1285,6 +1442,20 @@ document.addEventListener('DOMContentLoaded', () => {
                             passInput.value = serverPass;
                             storageUpdate.ivac_password = serverPass;
                             needsStorageUpdate = true;
+                        }
+                        // Auto-populate proxy from desktop app profile
+                        if (!isTypingProxy && serverProxy && curInputProxy !== serverProxy) {
+                            if (proxyInput) proxyInput.value = serverProxy;
+                            if (proxyToggle) proxyToggle.checked = true;
+                            updateProxyDot(serverProxy, true);
+                            storageUpdate.ivac_proxy = serverProxy;
+                            storageUpdate.ivac_proxy_enabled = true;
+                            needsStorageUpdate = true;
+                            chrome.runtime.sendMessage({
+                                action: 'setProfileProxy',
+                                proxy: serverProxy,
+                                enabled: true
+                            });
                         }
                         
                         // If local has valid phone, but server is missing it or different, sync local to server

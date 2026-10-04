@@ -1322,6 +1322,8 @@ def sync_profile_endpoint():
                                     p["password"] = password
                                     if prof_name and not p.get("name"):
                                         p["name"] = prof_name
+                                    if "proxy" in data:
+                                        p["proxy"] = str(data.get("proxy", "")).strip()
                                     updated = True
                                     break
                                     
@@ -1333,6 +1335,8 @@ def sync_profile_endpoint():
                                     p["password"] = password
                                     if prof_dir and not p.get("chrome_profile"):
                                         p["chrome_profile"] = prof_dir
+                                    if "proxy" in data:
+                                        p["proxy"] = str(data.get("proxy", "")).strip()
                                     updated = True
                                     break
                                     
@@ -1340,6 +1344,8 @@ def sync_profile_endpoint():
                         if not updated and len(cfg["profiles"]) == 1:
                             cfg["profiles"][0]["phone"] = phone
                             cfg["profiles"][0]["password"] = password
+                            if "proxy" in data:
+                                cfg["profiles"][0]["proxy"] = str(data.get("proxy", "")).strip()
                             updated = True
                     
                     with open(config_path, "w", encoding="utf-8") as f:

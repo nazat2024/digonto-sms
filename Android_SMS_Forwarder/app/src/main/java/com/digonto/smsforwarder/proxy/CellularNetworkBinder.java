@@ -124,6 +124,23 @@ public class CellularNetworkBinder {
 
     public String getCarrierName() {
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                int dataSubId = android.telephony.SubscriptionManager.getDefaultDataSubscriptionId();
+                if (dataSubId != android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                    TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+                    if (tm != null) {
+                        TelephonyManager subTm = tm.createForSubscriptionId(dataSubId);
+                        String name = subTm.getNetworkOperatorName();
+                        if (name != null && !name.trim().isEmpty()) {
+                            return name.trim();
+                        }
+                        name = subTm.getSimOperatorName();
+                        if (name != null && !name.trim().isEmpty()) {
+                            return name.trim();
+                        }
+                    }
+                }
+            }
             TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
             if (tm != null) {
                 String name = tm.getNetworkOperatorName();

@@ -1638,10 +1638,10 @@ class IVACApp(ctk.CTk):
     def _get_active_proxy_devices(self):
         """Returns list of online devices that have active proxy and a valid proxy_address"""
         devices = getattr(self, '_latest_devices', [])
-        if not devices:
+        if not devices or not any(d.get("proxy_address") for d in devices):
             try:
                 import requests
-                r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.3)
+                r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.5)
                 if r.ok:
                     devices = r.json().get("devices", [])
                     self._latest_devices = devices
@@ -1649,8 +1649,8 @@ class IVACApp(ctk.CTk):
                 pass
         active_list = []
         for d in devices:
-            # Strictly filter: Only online devices with proxy_active == True and non-empty proxy_address
-            if d.get("online") and d.get("proxy_active") and d.get("proxy_address"):
+            # Filter online or recently seen devices with proxy_active and non-empty proxy_address
+            if (d.get("online") or d.get("proxy_active")) and d.get("proxy_address"):
                 name = (d.get("custom_name") or d.get("device_name") or "Mobile").strip()
                 sim1 = (d.get("sim1_name") or "").strip()
                 sim2 = (d.get("sim2_name") or "").strip()
@@ -1660,6 +1660,23 @@ class IVACApp(ctk.CTk):
                 label = f"📱 {name}{sim_str} • {addr}"
                 active_list.append((label, addr))
         return active_list
+
+    def _extract_proxy_addr(self, choice_str, mapping_dict=None):
+        """Robustly extracts clean IP:Port from selected dropdown option string or mapping dict"""
+        if not choice_str:
+            return ""
+        choice_str = str(choice_str).strip()
+        if choice_str in ("❌ No Proxy (পিসির ইন্টারনেট)", "No Proxy", ""):
+            return ""
+        if choice_str == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
+            return ""
+        if mapping_dict and choice_str in mapping_dict and mapping_dict[choice_str]:
+            return str(mapping_dict[choice_str]).strip()
+        # Fallback: extract IP:Port directly using regex
+        match = re.search(r'(\d{1,3}(?:\.\d{1,3}){3}:\d{2,5})', choice_str)
+        if match:
+            return match.group(1).strip()
+        return ""
 
     def _add_otp_row(self, otp_data):
         phone = (otp_data.get("phone") or "Unknown").strip() or "Unknown"
@@ -2797,13 +2814,15 @@ class IVACApp(ctk.CTk):
                     current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
 
             def on_proxy_select(choice):
-                if choice in add_proxy_mapping:
-                    target_addr = add_proxy_mapping[choice]
+                if choice == "❌ No Proxy (পিসির ইন্টারনেট)":
                     proxy_entry.delete(0, "end")
-                    if target_addr:
-                        proxy_entry.insert(0, target_addr)
                 elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
                     proxy_entry.focus_set()
+                else:
+                    addr = self._extract_proxy_addr(choice, add_proxy_mapping)
+                    proxy_entry.delete(0, "end")
+                    if addr:
+                        proxy_entry.insert(0, addr)
 
             for child in proxy_selector_frame.winfo_children():
                 child.destroy()
@@ -2892,13 +2911,13 @@ class IVACApp(ctk.CTk):
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
             
-            proxy = proxy_entry.get().strip()
-            if add_opt_menu_ref[0]:
-                chosen_opt = add_opt_menu_ref[0].get()
-                if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
-                    proxy = ""
-                elif not proxy and chosen_opt in add_proxy_mapping and add_proxy_mapping[chosen_opt]:
-                    proxy = add_proxy_mapping[chosen_opt]
+            chosen_opt = str(add_opt_menu_ref[0].get()).strip() if add_opt_menu_ref[0] else ""
+            if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
+                proxy = ""
+            else:
+                dropdown_addr = self._extract_proxy_addr(chosen_opt, add_proxy_mapping)
+                entry_addr = proxy_entry.get().strip()
+                proxy = dropdown_addr if dropdown_addr else entry_addr
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
@@ -3043,7 +3062,22 @@ class IVACApp(ctk.CTk):
         
         pass_entry = ctk.CTkEntry(card, width=430, height=30)
         pass_entry.insert(0, profile.get("password", ""))
-        pass_entry.pack(padx=18, pady=(0, 6))
+        pass_entry.pack(padx=18, pady=(0, 4))
+
+        def toggle_pass_vis():
+            if pass_entry.cget("show") == "":
+                pass_entry.configure(show="*")
+                show_pass_btn.configure(text="👁️ Show Password")
+            else:
+                pass_entry.configure(show="")
+                show_pass_btn.configure(text="🙈 Hide Password")
+                
+        show_pass_btn = ctk.CTkButton(
+            card, text="🙈 Hide Password", width=120, height=20,
+            font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
+            command=toggle_pass_vis
+        )
+        show_pass_btn.pack(anchor="w", padx=18, pady=(0, 8))
         
         # Smart 4G Mobile Proxy Selector
         proxy_header = ctk.CTkFrame(card, fg_color="transparent")
@@ -3058,7 +3092,7 @@ class IVACApp(ctk.CTk):
         proxy_selector_frame = ctk.CTkFrame(card, fg_color="transparent")
         proxy_selector_frame.pack(fill="x", padx=18, pady=(0, 4))
 
-        proxy_entry = ctk.CTkEntry(card, width=430, height=28)
+        proxy_entry = ctk.CTkEntry(card, width=430, height=28, placeholder_text="যেমন: 192.168.0.105:8080 (বা ড্রপডাউন থেকে সিলেক্ট করুন)")
         initial_proxy = profile.get("proxy", "").strip()
         proxy_entry.insert(0, initial_proxy)
         proxy_entry.pack(padx=18, pady=(0, 6))
@@ -3078,9 +3112,10 @@ class IVACApp(ctk.CTk):
 
             current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
             if selected_proxy_val:
+                clean_target = re.sub(r'^(?:https?|socks[45])://', '', selected_proxy_val).strip()
                 found = False
                 for lbl, addr in active_devs:
-                    if addr == selected_proxy_val:
+                    if addr == clean_target or clean_target in lbl:
                         current_sel = lbl
                         found = True
                         break
@@ -3088,13 +3123,15 @@ class IVACApp(ctk.CTk):
                     current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
 
             def on_proxy_select(choice):
-                if choice in edit_proxy_mapping:
-                    target_addr = edit_proxy_mapping[choice]
+                if choice == "❌ No Proxy (পিসির ইন্টারনেট)":
                     proxy_entry.delete(0, "end")
-                    if target_addr:
-                        proxy_entry.insert(0, target_addr)
                 elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
                     proxy_entry.focus_set()
+                else:
+                    addr = self._extract_proxy_addr(choice, edit_proxy_mapping)
+                    proxy_entry.delete(0, "end")
+                    if addr:
+                        proxy_entry.insert(0, addr)
 
             for child in proxy_selector_frame.winfo_children():
                 child.destroy()
@@ -3125,21 +3162,6 @@ class IVACApp(ctk.CTk):
 
         populate_edit_proxy_options(initial_proxy)
         
-        def toggle_pass_vis():
-            if pass_entry.cget("show") == "":
-                pass_entry.configure(show="*")
-                show_pass_btn.configure(text="👁️ Show Password")
-            else:
-                pass_entry.configure(show="")
-                show_pass_btn.configure(text="🙈 Hide Password")
-                
-        show_pass_btn = ctk.CTkButton(
-            card, text="🙈 Hide Password", width=120, height=20,
-            font=ctk.CTkFont(size=10), fg_color="#1f2937", hover_color="#374151",
-            command=toggle_pass_vis
-        )
-        show_pass_btn.pack(anchor="w", padx=18, pady=(0, 6))
-        
         def save_edit():
             name = name_entry.get().strip()
             chrome_profile = dir_entry.get().strip()
@@ -3150,23 +3172,29 @@ class IVACApp(ctk.CTk):
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
             
-            proxy = proxy_entry.get().strip()
-            if edit_opt_menu_ref[0]:
-                chosen_opt = edit_opt_menu_ref[0].get()
-                if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
-                    proxy = ""
-                elif not proxy and chosen_opt in edit_proxy_mapping and edit_proxy_mapping[chosen_opt]:
-                    proxy = edit_proxy_mapping[chosen_opt]
+            chosen_opt = str(edit_opt_menu_ref[0].get()).strip() if edit_opt_menu_ref[0] else ""
+            if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
+                proxy = ""
+            else:
+                dropdown_addr = self._extract_proxy_addr(chosen_opt, edit_proxy_mapping)
+                entry_addr = proxy_entry.get().strip()
+                proxy = dropdown_addr if dropdown_addr else entry_addr
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
                 return
             
-            self.config["profiles"][index]["name"] = name
-            self.config["profiles"][index]["chrome_profile"] = chrome_profile
-            self.config["profiles"][index]["phone"] = phone
-            self.config["profiles"][index]["password"] = password
-            self.config["profiles"][index]["proxy"] = proxy
+            if 0 <= index < len(self.config.get("profiles", [])):
+                self.config["profiles"][index]["name"] = name
+                self.config["profiles"][index]["chrome_profile"] = chrome_profile
+                self.config["profiles"][index]["phone"] = phone
+                self.config["profiles"][index]["password"] = password
+                self.config["profiles"][index]["proxy"] = proxy
+            profile["name"] = name
+            profile["chrome_profile"] = chrome_profile
+            profile["phone"] = phone
+            profile["password"] = password
+            profile["proxy"] = proxy
             self._save_config()
             
             try:
@@ -3175,7 +3203,8 @@ class IVACApp(ctk.CTk):
                     "chrome_profile": chrome_profile,
                     "name": name,
                     "phone": phone,
-                    "password": password
+                    "password": password,
+                    "proxy": proxy
                 }, timeout=1)
             except Exception:
                 pass
@@ -3217,6 +3246,7 @@ class IVACApp(ctk.CTk):
         phone = profile.get("phone", "")
         password = profile.get("password", "")
         name = profile.get("name", "")
+        proxy = str(profile.get("proxy", "") or "").strip()
         
         # Asynchronously notify local server without blocking UI
         def _notify():
@@ -3226,7 +3256,8 @@ class IVACApp(ctk.CTk):
                     "chrome_profile": profile_dir,
                     "name": name,
                     "phone": phone,
-                    "password": password
+                    "password": password,
+                    "proxy": proxy
                 }, timeout=1)
             except Exception:
                 pass
@@ -3238,19 +3269,13 @@ class IVACApp(ctk.CTk):
         if profile_dir:
             profile_dir = self._format_profile_dir(profile_dir)
             encoded_prof = urllib.parse.quote(profile_dir)
-            target_url = f"https://appointment.ivacbd.com/signin#profile={encoded_prof}"
+            encoded_proxy = urllib.parse.quote(proxy) if proxy else ""
+            target_url = f"https://appointment.ivacbd.com/signin#profile={encoded_prof}&proxy={encoded_proxy}"
             chrome_exe = cpm.get_chrome_exe_path() or "chrome.exe"
             
-            proxy = str(profile.get("proxy", "") or "").strip()
-            proxy_cmd = ""
-            if proxy:
-                if not any(proxy.startswith(pr) for pr in ["http://", "https://", "socks5://", "socks4://"]):
-                    proxy_url = f"http://{proxy}"
-                else:
-                    proxy_url = proxy
-                proxy_cmd = f'--proxy-server="{proxy_url}" '
-                
-            cmd = f'start "" "{chrome_exe}" --profile-directory="{profile_dir}" {proxy_cmd}--disable-features=PrivateNetworkAccessPermissionPrompt --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --load-extension="{ext_path}" "{target_url}"'
+            # Isolated per-profile proxy is handled directly by the IVAC Extension (chrome.proxy API).
+            # Command-line --proxy-server is intentionally omitted so profiles don't cross-contaminate.
+            cmd = f'start "" "{chrome_exe}" --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --load-extension="{ext_path}" "{target_url}"'
             subprocess.Popen(cmd, shell=True)
     
     def _launch_all_profiles(self):

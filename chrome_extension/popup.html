@@ -36,7 +36,17 @@
                 <div class="box-label">🔒 Pass:</div>
                 <input type="text" id="manual-pass-input" placeholder="পাসওয়ার্ড">
                 <button type="button" id="toggle-ivac-pass-btn" class="eye-btn" title="পাসওয়ার্ড দেখুন/লুকান">👁️</button>
-                
+            </div>
+            <div class="phone-box ivac-box" style="margin-top: 3px;">
+                <div class="box-label">🌐 Proxy:</div>
+                <div class="phone-input-wrapper" style="display:flex; align-items:center; gap:4px; flex:1;">
+                    <input type="text" id="manual-proxy-input" placeholder="IP:Port (যেমন: 192.168.0.185:8080)" style="flex:1; font-size:11px;">
+                    <span id="ivac-proxy-status-dot" class="dot gray" title="প্রক্সি স্ট্যাটাস"></span>
+                    <label class="switch small-switch" title="এই প্রোফাইলের প্রক্সি অন/অফ" style="margin-left:2px; flex-shrink:0;">
+                        <input type="checkbox" id="profile-proxy-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
             </div>
 
         <!-- 2. Webfile Upload Section -->

@@ -22,8 +22,125 @@ let _cachedConfigTime = 0;
 
 const _otpFetchCache = {}; // url -> { time, data }
 
+// ===== PER-PROFILE PROXY MANAGER (Isolates proxy settings strictly to this profile) =====
+function applyProfileProxy(proxyStr, isEnabled) {
+    if (!chrome.proxy || !chrome.proxy.settings) {
+        return;
+    }
+
+    if (isEnabled === false || !proxyStr || !proxyStr.trim()) {
+        chrome.proxy.settings.clear({ scope: 'regular' }, () => {
+            if (chrome.runtime.lastError) {
+                console.warn('[Proxy] Error clearing proxy:', chrome.runtime.lastError.message);
+            } else {
+                console.log('[Proxy] Profile proxy cleared -> Direct Internet');
+            }
+        });
+        return;
+    }
+
+    let clean = proxyStr.trim();
+    let scheme = 'http';
+    if (clean.toLowerCase().startsWith('socks5://')) {
+        scheme = 'socks5';
+        clean = clean.substring(9);
+    } else if (clean.toLowerCase().startsWith('socks4://')) {
+        scheme = 'socks4';
+        clean = clean.substring(9);
+    } else if (clean.toLowerCase().startsWith('https://')) {
+        scheme = 'https';
+        clean = clean.substring(8);
+    } else if (clean.toLowerCase().startsWith('http://')) {
+        scheme = 'http';
+        clean = clean.substring(7);
+    }
+
+    const parts = clean.split(':');
+    const host = parts[0].trim();
+    let port = 8080;
+    if (parts.length > 1) {
+        const parsedPort = parseInt(parts[1].trim(), 10);
+        if (!isNaN(parsedPort) && parsedPort > 0) {
+            port = parsedPort;
+        }
+    }
+
+    if (!host) {
+        chrome.proxy.settings.clear({ scope: 'regular' });
+        return;
+    }
+
+    const config = {
+        mode: 'fixed_servers',
+        rules: {
+            proxyForHttp: {
+                scheme: scheme,
+                host: host,
+                port: port
+            },
+            proxyForHttps: {
+                scheme: scheme,
+                host: host,
+                port: port
+            },
+            fallbackProxy: {
+                scheme: scheme,
+                host: host,
+                port: port
+            },
+            bypassList: ['127.0.0.1', 'localhost', '::1', '<local>']
+        }
+    };
+
+    chrome.proxy.settings.set({ value: config, scope: 'regular' }, () => {
+        if (chrome.runtime.lastError) {
+            console.error('[Proxy] Error setting proxy:', chrome.runtime.lastError.message);
+        } else {
+            console.log(`[Proxy] Applied ${scheme}://${host}:${port} to current profile (regular scope)`);
+        }
+    });
+}
+
+// Initialise proxy on background startup
+chrome.storage.local.get(['ivac_proxy', 'ivac_proxy_enabled'], (res) => {
+    if (res && res.ivac_proxy) {
+        applyProfileProxy(res.ivac_proxy, res.ivac_proxy_enabled !== false);
+    }
+});
+
+// React to storage changes in real-time
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.ivac_proxy !== undefined || changes.ivac_proxy_enabled !== undefined)) {
+        chrome.storage.local.get(['ivac_proxy', 'ivac_proxy_enabled'], (res) => {
+            applyProfileProxy(res.ivac_proxy, res.ivac_proxy_enabled !== false);
+        });
+    }
+});
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+
+    if (request.action === 'setProfileProxy') {
+        const pVal = (request.proxy || '').trim();
+        const pEnabled = request.enabled !== false;
+        chrome.storage.local.set({
+            ivac_proxy: pVal,
+            ivac_proxy_enabled: pEnabled
+        }, () => {
+            applyProfileProxy(pVal, pEnabled);
+            sendResponse({ success: true, proxy: pVal, enabled: pEnabled });
+        });
+        return true;
+    }
+
+    if (request.action === 'getProfileProxy') {
+        chrome.storage.local.get(['ivac_proxy', 'ivac_proxy_enabled'], (res) => {
+            sendResponse({
+                proxy: res.ivac_proxy || '',
+                enabled: res.ivac_proxy_enabled !== false
+            });
+        });
+        return true;
+    }
 
     // ===== LICENSE & CONFIG SYNC (Proxy via Background to bypass third-party site CSP) =====
     if (request.action === 'checkServerStatus') {
@@ -794,6 +911,29 @@ async function runServerHeartbeat() {
         _cachedStatusTime = Date.now();
         _cachedStatusConnected = true;
         chrome.storage.local.set({ server_connected: true, license_valid: isLic });
+
+        // Auto-sync profile dedicated proxy from desktop app in real-time
+        if (data && data.profiles && Array.isArray(data.profiles)) {
+            chrome.storage.local.get(['my_chrome_profile', 'ivac_phone', 'ivac_proxy'], (st) => {
+                const myProfDir = st ? st.my_chrome_profile : '';
+                const myPhone = st ? (st.ivac_phone || '').replace(/[^0-9]/g, '') : '';
+                const matched = data.profiles.find(p => 
+                    (myProfDir && p.chrome_profile === myProfDir) ||
+                    (myPhone && myPhone.length === 11 && p.phone && p.phone.replace(/[^0-9]/g, '') === myPhone)
+                );
+                if (matched && matched.proxy) {
+                    const sProxy = (matched.proxy || '').trim();
+                    const curProxy = (st && st.ivac_proxy ? st.ivac_proxy : '').trim();
+                    if (sProxy && sProxy !== curProxy) {
+                        chrome.storage.local.set({
+                            ivac_proxy: sProxy,
+                            ivac_proxy_enabled: true
+                        });
+                        applyProfileProxy(sProxy, true);
+                    }
+                }
+            });
+        }
     } catch (e) {
         _cachedStatusData = null;
         _cachedStatusTime = 0;

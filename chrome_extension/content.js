@@ -751,18 +751,27 @@ setTimeout(autoFillLoginCredentials, 400);
 setTimeout(autoFillLoginCredentials, 1200);
 setTimeout(autoFillLoginCredentials, 2500);
 
-// Extract #profile= from URL if launched from desktop app or shortcut
+// Extract #profile= and #proxy= from URL if launched from desktop app or shortcut
 (function initProfileFromUrl() {
     try {
-        if (window.location.hash && window.location.hash.includes('profile=')) {
+        if (window.location.hash && (window.location.hash.includes('profile=') || window.location.hash.includes('proxy='))) {
             const match = window.location.hash.match(/profile=([^&]+)/);
             if (match && match[1]) {
                 const profDir = decodeURIComponent(match[1]);
                 chrome.storage.local.set({ my_chrome_profile: profDir });
-                try {
-                    history.replaceState(null, null, window.location.pathname + window.location.search);
-                } catch(e) {}
             }
+            const proxyMatch = window.location.hash.match(/proxy=([^&]*)/);
+            if (proxyMatch) {
+                const proxyVal = decodeURIComponent(proxyMatch[1] || '').trim();
+                chrome.runtime.sendMessage({
+                    action: 'setProfileProxy',
+                    proxy: proxyVal,
+                    enabled: Boolean(proxyVal)
+                });
+            }
+            try {
+                history.replaceState(null, null, window.location.pathname + window.location.search);
+            } catch(e) {}
         }
     } catch(e) {}
 })();
