@@ -3594,8 +3594,8 @@ class IVACApp(ctk.CTk):
         )
         self.btn_toggle_add_bm.pack(side="right")
         
-        self.bm_list_frame = ctk.CTkFrame(bm_card, fg_color=THEME["bg_subcard"], corner_radius=8, border_width=1, border_color=THEME["border_color"])
-        self.bm_list_frame.pack(fill="x", padx=15, pady=(0, 10))
+        self.bm_list_frame = ctk.CTkFrame(bm_card, fg_color="transparent")
+        self.bm_list_frame.pack(fill="x", padx=15, pady=(0, 4))
         self._refresh_bookmarks_ui()
         
         # Collapsible Add Bookmark Box (Hidden by default until button click!)
@@ -4211,7 +4211,6 @@ class IVACApp(ctk.CTk):
         self.run_in_background(_task, _on_done)
 
     def _refresh_bookmarks_ui(self):
-        import tkinter as tk
         if not hasattr(self, "bm_list_frame") or not self.bm_list_frame.winfo_exists():
             return
             
@@ -4220,37 +4219,70 @@ class IVACApp(ctk.CTk):
             
         bms = self.config.get("chrome_bookmarks", [])
         if not bms:
-            tk.Label(
+            empty_card = ctk.CTkFrame(
                 self.bm_list_frame,
-                text="কোনো অতিরিক্ত বুকমার্ক নেই। (উপরে উল্লিখিত ২ টি ডিফল্ট লিংক সবসময় থাকবে)",
-                font=("Segoe UI", 9), fg=THEME["text_muted"], bg=THEME["bg_subcard"]
-            ).pack(anchor="w", padx=10, pady=8)
+                fg_color=THEME["bg_subcard"],
+                corner_radius=8,
+                border_width=1,
+                border_color=THEME["border_color"]
+            )
+            empty_card.pack(fill="x", pady=(0, 8))
+            
+            ctk.CTkLabel(
+                empty_card,
+                text="ℹ️ কোনো অতিরিক্ত বুকমার্ক নেই। (উপরে উল্লিখিত ২টি ডিফল্ট লিংক সবসময় স্বয়ংক্রিয়ভাবে থাকবে)",
+                font=ctk.CTkFont(size=11),
+                text_color=THEME["text_muted"]
+            ).pack(anchor="w", padx=14, pady=10)
             return
             
         for idx, bm in enumerate(bms):
-            row = tk.Frame(self.bm_list_frame, bg=THEME["bg_subcard"])
-            row.pack(fill="x", padx=10, pady=3)
+            card = ctk.CTkFrame(
+                self.bm_list_frame,
+                fg_color=THEME["bg_subcard"],
+                corner_radius=8,
+                border_width=1,
+                border_color=THEME["border_color"]
+            )
+            card.pack(fill="x", pady=(0, 8))
             
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=12, pady=7)
+            
+            # Left: Icon & Title
             bm_title = bm.get('name') or bm.get('title', '')
-            tk.Label(
-                row, text=f"🔗 {bm_title}:",
-                font=("Segoe UI", 9, "bold"), fg=THEME["text_primary"], bg=THEME["bg_subcard"]
-            ).pack(side="left")
+            lbl_title = ctk.CTkLabel(
+                inner,
+                text=f"🔗 {bm_title}:",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=THEME["text_primary"]
+            )
+            lbl_title.pack(side="left", padx=(0, 8))
             
-            tk.Label(
-                row, text=bm.get("url", ""),
-                font=("Segoe UI", 9), fg=THEME["text_secondary"], bg=THEME["bg_subcard"]
-            ).pack(side="left", padx=(5, 10), fill="x", expand=True)
+            # Middle: URL
+            lbl_url = ctk.CTkLabel(
+                inner,
+                text=bm.get("url", ""),
+                font=ctk.CTkFont(size=11),
+                text_color=THEME["text_secondary"],
+                anchor="w"
+            )
+            lbl_url.pack(side="left", fill="x", expand=True, padx=(0, 8))
             
-            del_btn = tk.Label(
-                row, text="✕", font=("Segoe UI", 9, "bold"),
-                bg=THEME["danger"], fg="white", padx=8, pady=2,
-                cursor="hand2", relief="flat"
+            # Right: Modern Delete Button
+            del_btn = ctk.CTkButton(
+                inner,
+                text="✕",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color=THEME["danger"],
+                hover_color=THEME["danger_hover"],
+                text_color="#ffffff",
+                width=28,
+                height=26,
+                corner_radius=6,
+                command=lambda i=idx: self._delete_custom_bookmark(i)
             )
             del_btn.pack(side="right")
-            del_btn.bind("<Enter>", lambda e, b=del_btn: b.configure(bg=THEME["danger_hover"]))
-            del_btn.bind("<Leave>", lambda e, b=del_btn: b.configure(bg=THEME["danger"]))
-            del_btn.bind("<Button-1>", lambda e, i=idx: self._delete_custom_bookmark(i))
 
     def _toggle_bookmark_add_box(self):
         if not hasattr(self, "add_bm_box"):
