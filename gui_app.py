@@ -2772,14 +2772,17 @@ class IVACApp(ctk.CTk):
         proxy_entry = ctk.CTkEntry(card, width=430, height=28, placeholder_text="যেমন: 192.168.0.105:8080 (বা ড্রপডাউন থেকে সিলেক্ট করুন)")
         proxy_entry.pack(padx=18, pady=(0, 6))
 
+        add_proxy_mapping = {}
+        add_opt_menu_ref = [None]
+
         def populate_add_proxy_options(selected_proxy_val=""):
             active_devs = self._get_active_proxy_devices()
-            mapping = {}
+            add_proxy_mapping.clear()
             options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
-            mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
+            add_proxy_mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
             for lbl, addr in active_devs:
                 options.append(lbl)
-                mapping[lbl] = addr
+                add_proxy_mapping[lbl] = addr
             options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
 
             current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
@@ -2794,9 +2797,9 @@ class IVACApp(ctk.CTk):
                     current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
 
             def on_proxy_select(choice):
-                if choice in mapping:
-                    target_addr = mapping[choice]
-                    proxy_entry.delete(0, tk.END)
+                if choice in add_proxy_mapping:
+                    target_addr = add_proxy_mapping[choice]
+                    proxy_entry.delete(0, "end")
                     if target_addr:
                         proxy_entry.insert(0, target_addr)
                 elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
@@ -2818,6 +2821,7 @@ class IVACApp(ctk.CTk):
             )
             opt_menu.set(current_sel)
             opt_menu.pack(side="left", fill="x", expand=True, padx=(0, 6))
+            add_opt_menu_ref[0] = opt_menu
 
             refresh_btn = ctk.CTkButton(
                 proxy_selector_frame,
@@ -2887,7 +2891,14 @@ class IVACApp(ctk.CTk):
                 
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
+            
             proxy = proxy_entry.get().strip()
+            if add_opt_menu_ref[0]:
+                chosen_opt = add_opt_menu_ref[0].get()
+                if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
+                    proxy = ""
+                elif not proxy and chosen_opt in add_proxy_mapping and add_proxy_mapping[chosen_opt]:
+                    proxy = add_proxy_mapping[chosen_opt]
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
@@ -3052,14 +3063,17 @@ class IVACApp(ctk.CTk):
         proxy_entry.insert(0, initial_proxy)
         proxy_entry.pack(padx=18, pady=(0, 6))
 
+        edit_proxy_mapping = {}
+        edit_opt_menu_ref = [None]
+
         def populate_edit_proxy_options(selected_proxy_val=""):
             active_devs = self._get_active_proxy_devices()
-            mapping = {}
+            edit_proxy_mapping.clear()
             options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
-            mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
+            edit_proxy_mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
             for lbl, addr in active_devs:
                 options.append(lbl)
-                mapping[lbl] = addr
+                edit_proxy_mapping[lbl] = addr
             options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
 
             current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
@@ -3074,9 +3088,9 @@ class IVACApp(ctk.CTk):
                     current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
 
             def on_proxy_select(choice):
-                if choice in mapping:
-                    target_addr = mapping[choice]
-                    proxy_entry.delete(0, tk.END)
+                if choice in edit_proxy_mapping:
+                    target_addr = edit_proxy_mapping[choice]
+                    proxy_entry.delete(0, "end")
                     if target_addr:
                         proxy_entry.insert(0, target_addr)
                 elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
@@ -3098,6 +3112,7 @@ class IVACApp(ctk.CTk):
             )
             opt_menu.set(current_sel)
             opt_menu.pack(side="left", fill="x", expand=True, padx=(0, 6))
+            edit_opt_menu_ref[0] = opt_menu
 
             refresh_btn = ctk.CTkButton(
                 proxy_selector_frame,
@@ -3134,7 +3149,14 @@ class IVACApp(ctk.CTk):
                 
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
+            
             proxy = proxy_entry.get().strip()
+            if edit_opt_menu_ref[0]:
+                chosen_opt = edit_opt_menu_ref[0].get()
+                if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
+                    proxy = ""
+                elif not proxy and chosen_opt in edit_proxy_mapping and edit_proxy_mapping[chosen_opt]:
+                    proxy = edit_proxy_mapping[chosen_opt]
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
