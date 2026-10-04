@@ -1324,6 +1324,8 @@ def sync_profile_endpoint():
                                         p["name"] = prof_name
                                     if "proxy" in data:
                                         p["proxy"] = str(data.get("proxy", "")).strip()
+                                    if "proxy_enabled" in data:
+                                        p["proxy_enabled"] = bool(data.get("proxy_enabled"))
                                     updated = True
                                     break
                                     
@@ -1337,6 +1339,8 @@ def sync_profile_endpoint():
                                         p["chrome_profile"] = prof_dir
                                     if "proxy" in data:
                                         p["proxy"] = str(data.get("proxy", "")).strip()
+                                    if "proxy_enabled" in data:
+                                        p["proxy_enabled"] = bool(data.get("proxy_enabled"))
                                     updated = True
                                     break
                                     
@@ -1346,6 +1350,8 @@ def sync_profile_endpoint():
                             cfg["profiles"][0]["password"] = password
                             if "proxy" in data:
                                 cfg["profiles"][0]["proxy"] = str(data.get("proxy", "")).strip()
+                            if "proxy_enabled" in data:
+                                cfg["profiles"][0]["proxy_enabled"] = bool(data.get("proxy_enabled"))
                             updated = True
                     
                     with open(config_path, "w", encoding="utf-8") as f:

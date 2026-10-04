@@ -914,7 +914,10 @@ async function runServerHeartbeat() {
 
         // Auto-sync profile dedicated proxy from desktop app in real-time
         if (data && data.profiles && Array.isArray(data.profiles)) {
-            chrome.storage.local.get(['my_chrome_profile', 'ivac_phone', 'ivac_proxy'], (st) => {
+            chrome.storage.local.get(['my_chrome_profile', 'ivac_phone', 'ivac_proxy', 'ivac_proxy_enabled'], (st) => {
+                if (st && st.ivac_proxy_enabled === false) {
+                    return; // User explicitly turned off proxy, do not re-enable
+                }
                 const myProfDir = st ? st.my_chrome_profile : '';
                 const myPhone = st ? (st.ivac_phone || '').replace(/[^0-9]/g, '') : '';
                 const matched = data.profiles.find(p => 
@@ -922,14 +925,18 @@ async function runServerHeartbeat() {
                     (myPhone && myPhone.length === 11 && p.phone && p.phone.replace(/[^0-9]/g, '') === myPhone)
                 );
                 if (matched && matched.proxy) {
+                    if (matched.proxy_enabled === false) {
+                        return; // Profile config explicitly disabled proxy
+                    }
                     const sProxy = (matched.proxy || '').trim();
                     const curProxy = (st && st.ivac_proxy ? st.ivac_proxy : '').trim();
                     if (sProxy && sProxy !== curProxy) {
+                        const isEn = (st && st.ivac_proxy_enabled !== undefined) ? st.ivac_proxy_enabled : true;
                         chrome.storage.local.set({
                             ivac_proxy: sProxy,
-                            ivac_proxy_enabled: true
+                            ivac_proxy_enabled: isEn
                         });
-                        applyProfileProxy(sProxy, true);
+                        applyProfileProxy(sProxy, isEn);
                     }
                 }
             });

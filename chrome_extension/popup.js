@@ -964,15 +964,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Auto-save proxy with debounce
+    // Auto-save proxy with debounce for text input
     let saveProxyDebounce = null;
-    function autoSaveProxy() {
+    function autoSaveProxyInput() {
         if (saveProxyDebounce) clearTimeout(saveProxyDebounce);
         saveProxyDebounce = setTimeout(() => {
             const pVal = proxyInput ? proxyInput.value.trim() : '';
             const pEnabled = proxyToggle ? proxyToggle.checked : true;
             updateProxyDot(pVal, pEnabled);
             applyDirectProxy(pVal, pEnabled);
+
+            chrome.storage.local.set({
+                ivac_proxy: pVal,
+                ivac_proxy_enabled: pEnabled
+            });
 
             chrome.runtime.sendMessage({
                 action: 'setProfileProxy',
@@ -990,7 +995,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         name: currentProfileName,
                         phone: currentPhone,
                         password: passInput ? passInput.value : '',
-                        proxy: pEnabled ? pVal : ''
+                        proxy: pVal,
+                        proxy_enabled: pEnabled
                     })
                 }).catch(() => {});
             }
@@ -998,12 +1004,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (proxyInput) {
-        proxyInput.addEventListener('input', autoSaveProxy);
-        proxyInput.addEventListener('change', autoSaveProxy);
-        proxyInput.addEventListener('blur', autoSaveProxy);
+        proxyInput.addEventListener('input', autoSaveProxyInput);
+        proxyInput.addEventListener('change', autoSaveProxyInput);
+        proxyInput.addEventListener('blur', autoSaveProxyInput);
     }
     if (proxyToggle) {
-        proxyToggle.addEventListener('change', autoSaveProxy);
+        proxyToggle.addEventListener('change', () => {
+            if (saveProxyDebounce) clearTimeout(saveProxyDebounce);
+            const pVal = proxyInput ? proxyInput.value.trim() : '';
+            const pEnabled = proxyToggle.checked;
+            updateProxyDot(pVal, pEnabled);
+            applyDirectProxy(pVal, pEnabled);
+
+            chrome.storage.local.set({
+                ivac_proxy: pVal,
+                ivac_proxy_enabled: pEnabled
+            });
+
+            chrome.runtime.sendMessage({
+                action: 'setProfileProxy',
+                proxy: pVal,
+                enabled: pEnabled
+            });
+
+            // Sync with local desktop backend
+            if (currentProfileDir || currentProfileName) {
+                fetch('http://127.0.0.1:5000/api/profile/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chrome_profile: currentProfileDir,
+                        name: currentProfileName,
+                        phone: currentPhone,
+                        password: passInput ? passInput.value : '',
+                        proxy: pVal,
+                        proxy_enabled: pEnabled
+                    })
+                }).catch(() => {});
+            }
+        });
     }
 
     if (passInput) {
@@ -1443,18 +1482,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             storageUpdate.ivac_password = serverPass;
                             needsStorageUpdate = true;
                         }
-                        // Auto-populate proxy from desktop app profile
-                        if (!isTypingProxy && serverProxy && curInputProxy !== serverProxy) {
+                        // Auto-populate proxy from desktop app profile (only if input is empty!)
+                        if (!isTypingProxy && serverProxy && !curInputProxy) {
                             if (proxyInput) proxyInput.value = serverProxy;
-                            if (proxyToggle) proxyToggle.checked = true;
-                            updateProxyDot(serverProxy, true);
-                            storageUpdate.ivac_proxy = serverProxy;
-                            storageUpdate.ivac_proxy_enabled = true;
-                            needsStorageUpdate = true;
-                            chrome.runtime.sendMessage({
-                                action: 'setProfileProxy',
-                                proxy: serverProxy,
-                                enabled: true
+                            chrome.storage.local.get(['ivac_proxy_enabled'], (enRes) => {
+                                const isEn = (enRes && enRes.ivac_proxy_enabled !== undefined) ? enRes.ivac_proxy_enabled : (myProfile.proxy_enabled !== false);
+                                if (proxyToggle) proxyToggle.checked = isEn;
+                                updateProxyDot(serverProxy, isEn);
+                                chrome.storage.local.set({
+                                    ivac_proxy: serverProxy,
+                                    ivac_proxy_enabled: isEn
+                                });
+                                applyDirectProxy(serverProxy, isEn);
+                                chrome.runtime.sendMessage({
+                                    action: 'setProfileProxy',
+                                    proxy: serverProxy,
+                                    enabled: isEn
+                                });
                             });
                         }
                         

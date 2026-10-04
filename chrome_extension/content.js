@@ -763,10 +763,13 @@ setTimeout(autoFillLoginCredentials, 2500);
             const proxyMatch = window.location.hash.match(/proxy=([^&]*)/);
             if (proxyMatch) {
                 const proxyVal = decodeURIComponent(proxyMatch[1] || '').trim();
-                chrome.runtime.sendMessage({
-                    action: 'setProfileProxy',
-                    proxy: proxyVal,
-                    enabled: Boolean(proxyVal)
+                chrome.storage.local.get(['ivac_proxy_enabled'], (res) => {
+                    const isEn = (res && res.ivac_proxy_enabled !== undefined) ? res.ivac_proxy_enabled : Boolean(proxyVal);
+                    chrome.runtime.sendMessage({
+                        action: 'setProfileProxy',
+                        proxy: proxyVal,
+                        enabled: isEn
+                    });
                 });
             }
             try {
