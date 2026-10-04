@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
  */
 public class RemoteTunnelClient {
     private static final String TAG = "RemoteTunnelClient";
-    private static final String DEFAULT_RELAY_HOST = "relay.digonto.com"; // Configurable
+    private static final String DEFAULT_RELAY_HOST = "relay.ivacmaster.pro"; // Configurable
     private static final int DEFAULT_RELAY_PORT = 9050;
 
     public interface OnTunnelStateListener {
@@ -72,7 +72,7 @@ public class RemoteTunnelClient {
         if (executor != null) {
             executor.shutdownNow();
         }
-        notifyState("Disconnected", null);
+        notifyState("ডিসকানেক্টেড", null);
         Log.d(TAG, "Remote tunnel client stopped");
     }
 
@@ -82,15 +82,16 @@ public class RemoteTunnelClient {
 
     private void runTunnelLoop() {
         int backoffMs = 2000;
+        int failCount = 0;
         while (isRunning) {
-            notifyState("Connecting...", null);
+            notifyState("কানেক্ট হচ্ছে (" + relayHost + ")...", null);
             try {
                 controlSocket = new Socket();
                 controlSocket.setTcpNoDelay(true);
                 controlSocket.setKeepAlive(true);
 
                 // Control socket can connect directly via current active internet
-                controlSocket.connect(new InetSocketAddress(relayHost, relayPort), 10000);
+                controlSocket.connect(new InetSocketAddress(relayHost, relayPort), 7000);
 
                 OutputStream out = controlSocket.getOutputStream();
                 InputStream in = controlSocket.getInputStream();
@@ -106,8 +107,9 @@ public class RemoteTunnelClient {
                 out.write(payload);
                 out.flush();
 
+                failCount = 0;
                 String assignedAddr = relayHost + ":" + (relayPort + (Math.abs(nodeId.hashCode()) % 1000));
-                notifyState("Connected (Tunnel Active)", assignedAddr);
+                notifyState("🟢 ক্লাউড টানেল সক্রিয়", assignedAddr);
                 backoffMs = 2000; // reset backoff on success
 
                 // Listen for tunnel connection requests from relay
@@ -126,8 +128,10 @@ public class RemoteTunnelClient {
                 }
             } catch (Exception e) {
                 if (!isRunning) break;
+                failCount++;
+                String errStatus = (failCount >= 2) ? "সার্ভার অফলাইন (" + relayHost + ":" + relayPort + ")" : "রি-কানেক্ট হচ্ছে...";
+                notifyState(errStatus, null);
                 Log.w(TAG, "Tunnel connection lost/failed: " + e.getMessage() + ", retry in " + backoffMs + "ms");
-                notifyState("Reconnecting in " + (backoffMs / 1000) + "s...", null);
             } finally {
                 safeClose(controlSocket);
             }

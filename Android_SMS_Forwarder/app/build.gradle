@@ -10,8 +10,8 @@ android {
         applicationId "com.digonto.smsforwarder"
         minSdk 24
         targetSdk 34
-        versionCode 18
-        versionName "6.2"
+        versionCode 19
+        versionName "6.3"
         vectorDrawables.useSupportLibrary = true
     }
 

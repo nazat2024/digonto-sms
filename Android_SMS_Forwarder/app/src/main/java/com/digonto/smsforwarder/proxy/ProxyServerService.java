@@ -139,10 +139,13 @@ public class ProxyServerService extends Service {
         try {
             if (MODE_REMOTE.equals(mode)) {
                 // Mode 3: Remote Reverse Tunnel
-                String nodeId = getSharedPreferences("proxy_prefs", MODE_PRIVATE).getString("remote_node_id", "BD-" + System.currentTimeMillis() % 10000);
-                remoteTunnel = new RemoteTunnelClient(nodeId, "relay.digonto.com", 9050, cellularBinder, stats);
+                android.content.SharedPreferences proxyPrefs = getSharedPreferences("proxy_prefs", MODE_PRIVATE);
+                String nodeId = proxyPrefs.getString("remote_node_id", "BD-" + System.currentTimeMillis() % 10000);
+                String relayHost = proxyPrefs.getString("relay_host", "relay.ivacmaster.pro");
+                int relayPort = proxyPrefs.getInt("relay_port", 9050);
+                remoteTunnel = new RemoteTunnelClient(nodeId, relayHost, relayPort, cellularBinder, stats);
                 remoteTunnel.setListener((status, assignedAddr) -> {
-                    remoteAssignedAddress = assignedAddr != null ? assignedAddr : "";
+                    remoteAssignedAddress = assignedAddr != null ? assignedAddr : status;
                     if (isRunning) {
                         activeProxyAddress = remoteAssignedAddress;
                         com.digonto.smsforwarder.MqttService.triggerPingNow();
@@ -239,7 +242,7 @@ public class ProxyServerService extends Service {
 
     public String getDisplayIpAddress() {
         if (MODE_REMOTE.equals(currentMode)) {
-            return remoteAssignedAddress.isEmpty() ? "Connecting to Relay..." : remoteAssignedAddress;
+            return remoteAssignedAddress.isEmpty() ? "সার্ভার আইপি সেট করুন" : remoteAssignedAddress;
         } else if (MODE_USB.equals(currentMode)) {
             String usbIp = getUsbIpAddress();
             return usbIp != null ? usbIp : "127.0.0.1 (ADB Forward)";

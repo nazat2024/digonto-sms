@@ -105,7 +105,7 @@ public class MqttService extends Service {
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DigontoSMS:WakeLock");
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IVACMasterPro:WakeLock");
                 wakeLock.setReferenceCounted(false);
                 wakeLock.acquire(10 * 60 * 1000L);
             }
@@ -114,7 +114,7 @@ public class MqttService extends Service {
         try {
             WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             if (wm != null) {
-                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DigontoSMS:WifiLock");
+                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "IVACMasterPro:WifiLock");
                 wifiLock.setReferenceCounted(false);
                 wifiLock.acquire();
             }
@@ -182,7 +182,7 @@ public class MqttService extends Service {
                 }
 
                 String devId = prefs.getString("device_id", UUID.randomUUID().toString()).replace("-", "");
-                String clientId = "digonto_m_" + devId.substring(0, Math.min(devId.length(), 16));
+                String clientId = "ivac_m_" + devId.substring(0, Math.min(devId.length(), 16));
 
                 mqttClient = new MqttClient("tcp://broker.emqx.io:1883", clientId, new MemoryPersistence());
 
@@ -402,7 +402,7 @@ public class MqttService extends Service {
             pingHandler.removeCallbacksAndMessages(null);
         }
         if (pingThread == null || !pingThread.isAlive()) {
-            pingThread = new HandlerThread("DigontoHighPriorityPing", Process.THREAD_PRIORITY_FOREGROUND);
+            pingThread = new HandlerThread("IVACHighPriorityPing", Process.THREAD_PRIORITY_FOREGROUND);
             pingThread.start();
             pingHandler = new Handler(pingThread.getLooper());
         }

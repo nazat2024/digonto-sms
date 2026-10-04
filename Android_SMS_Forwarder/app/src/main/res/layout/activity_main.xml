@@ -926,6 +926,21 @@
                             android:textSize="11sp"
                             android:textColor="#475569"
                             android:lineSpacingExtra="3dp"/>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRelaySettings"
+                            android:layout_width="match_parent"
+                            android:layout_height="42dp"
+                            android:layout_marginTop="10dp"
+                            android:text="⚙️ রিমোট সার্ভার আইপি সেট করুন"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="#0284C7"
+                            app:strokeColor="#0284C7"
+                            app:strokeWidth="1.5dp"
+                            app:backgroundTint="#F0F9FF"
+                            app:cornerRadius="8dp"
+                            android:visibility="gone" />
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 

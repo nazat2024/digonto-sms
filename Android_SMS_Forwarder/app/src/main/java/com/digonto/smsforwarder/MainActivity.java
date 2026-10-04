@@ -20,11 +20,13 @@ import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.text.InputType;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -96,6 +98,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView btnModeWifi, btnModeUsb, btnModeRemote;
     private TextView tvProxyStatusBadge, tvProxyCarrier, tvProxyAddress, tvProxyHelpText;
     private Button btnCopyProxy, btnToggleProxy;
+    private MaterialButton btnRelaySettings;
     private TextView tvProxyDownload, tvProxyUpload, tvProxySpeed, tvProxyConnections;
     private String selectedProxyMode = ProxyServerService.MODE_WIFI;
     private boolean isProxyServiceRunning = false;
@@ -230,6 +233,7 @@ public class MainActivity extends AppCompatActivity {
         tvProxySpeed = findViewById(R.id.tvProxySpeed);
         tvProxyConnections = findViewById(R.id.tvProxyConnections);
         tvProxyHelpText = findViewById(R.id.tvProxyHelpText);
+        btnRelaySettings = findViewById(R.id.btnRelaySettings);
 
         // Tab 4: Setting
         switchKeepScreenAwake = findViewById(R.id.switchKeepScreenAwake);
@@ -605,6 +609,9 @@ public class MainActivity extends AppCompatActivity {
         btnModeWifi.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_WIFI));
         btnModeUsb.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_USB));
         btnModeRemote.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_REMOTE));
+        if (btnRelaySettings != null) {
+            btnRelaySettings.setOnClickListener(v -> showRelaySettingsDialog());
+        }
 
         btnCopyProxy.setOnClickListener(v -> {
             String addr = tvProxyAddress.getText().toString().trim();
@@ -654,7 +661,18 @@ public class MainActivity extends AppCompatActivity {
                     double downSpeed = intent.getDoubleExtra("downloadSpeed", 0);
                     int activeConns = intent.getIntExtra("activeConnections", 0);
 
-                    updateProxyUi(running, mode, ip != null ? (ip.contains(":") ? ip : ip + ":" + port) : "127.0.0.1:8080",
+                    String displayIp;
+                    if (ip != null && !ip.isEmpty()) {
+                        if (ip.contains(":") || ip.contains(" ") || ip.contains("।") || ip.contains("(") || ip.contains(")")) {
+                            displayIp = ip;
+                        } else {
+                            displayIp = ip + ":" + port;
+                        }
+                    } else {
+                        displayIp = "127.0.0.1:8080";
+                    }
+
+                    updateProxyUi(running, mode, displayIp,
                             carrier != null ? carrier : "4G Mobile", downBytes, upBytes, downSpeed, activeConns);
                 }
             }
@@ -688,16 +706,32 @@ public class MainActivity extends AppCompatActivity {
             btnModeWifi.setTextColor(activeText);
             tvProxyHelpText.setText("১. ল্যাপটপ ও ফোন একই ওয়াইফাই বা হটস্পটে রাখুন।\n২. উপরের '📋 কপি' বাটনে চেপে IP:Port কপি করুন।\n৩. ল্যাপটপের IVAC Master Pro-তে প্রোফাইল এডিটে প্রক্সি ঘরে বসিয়ে দিন। ক্রোম সরাসরি এই সিমের 4G দিয়ে চলবে!");
             tvProxyAddress.setText(getWifiIpFormatted());
+            if (btnRelaySettings != null) {
+                btnRelaySettings.setVisibility(View.GONE);
+            }
         } else if (ProxyServerService.MODE_USB.equals(mode)) {
             btnModeUsb.setBackgroundColor(activeBg);
             btnModeUsb.setTextColor(activeText);
             tvProxyHelpText.setText("১. চার্জিং ক্যাবল দিয়ে ফোন ল্যাপটপের সাথে লাগান এবং USB Tethering অন করুন।\n২. অথবা ADB কমান্ড: adb forward tcp:8080 tcp:8080 চালান।\n৩. ল্যাপটপের প্রোফাইলে 127.0.0.1:8080 প্রক্সি বসিয়ে দিন। জিরো-ল্যাগ স্পিড পাবেন!");
             tvProxyAddress.setText("127.0.0.1:8080");
+            if (btnRelaySettings != null) {
+                btnRelaySettings.setVisibility(View.GONE);
+            }
         } else if (ProxyServerService.MODE_REMOTE.equals(mode)) {
             btnModeRemote.setBackgroundColor(activeBg);
             btnModeRemote.setTextColor(activeText);
-            tvProxyHelpText.setText("১. কাস্টমার দেশের যেকোনো প্রান্তে থাকুক, শুধু মোবাইল ডাটা অন রাখবে।\n২. ক্লাউড টানেল কানেক্ট হলে উপরে একটি রিমোট অ্যাড্রেস দেখতে পাবেন।\n৩. সেই অ্যাড্রেসটি ল্যাপটপে বসিয়ে কাস্টমারের নিজস্ব 4G মোবাইল আইপিতে স্লট ধরুন!");
-            tvProxyAddress.setText("relay.digonto.com:9050");
+            tvProxyHelpText.setText("১. কাস্টমার দেশের যেকোনো প্রান্তে থাকুক, শুধু মোবাইল ডাটা অন রাখবে।\n২. নিচে '⚙️ রিমোট সার্ভার আইপি সেট করুন' বাটনে আপনার রিলে সার্ভার আইপি ও পোর্ট দিন।\n৩. টানেল কানেক্ট হলে উপরে যে অ্যাড্রেসটি আসবে, সেটি ল্যাপটপে বসিয়ে কাস্টমারের নিজস্ব 4G মোবাইল আইপিতে কাজ করুন!");
+            SharedPreferences pPrefs = getSharedPreferences("proxy_prefs", MODE_PRIVATE);
+            String savedRelay = pPrefs.getString("relay_host", "");
+            int savedPort = pPrefs.getInt("relay_port", 9050);
+            if (!savedRelay.isEmpty()) {
+                tvProxyAddress.setText(savedRelay + ":" + savedPort);
+            } else {
+                tvProxyAddress.setText("সার্ভার আইপি সেট করুন");
+            }
+            if (btnRelaySettings != null) {
+                btnRelaySettings.setVisibility(View.VISIBLE);
+            }
         }
 
         if (isProxyServiceRunning) {
@@ -756,6 +790,71 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Exception ignored) {}
         return "192.168.0.105:8080";
+    }
+
+    private void showRelaySettingsDialog() {
+        SharedPreferences pPrefs = getSharedPreferences("proxy_prefs", MODE_PRIVATE);
+        String currentHost = pPrefs.getString("relay_host", "");
+        int currentPort = pPrefs.getInt("relay_port", 9050);
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(60, 40, 60, 20);
+
+        TextView tvHostLabel = new TextView(this);
+        tvHostLabel.setText("ক্লাউড / ভিপিএস সার্ভার আইপি বা ডোমেন:");
+        tvHostLabel.setTextSize(13);
+        tvHostLabel.setTextColor(Color.parseColor("#334155"));
+        layout.addView(tvHostLabel);
+
+        EditText etHost = new EditText(this);
+        etHost.setHint("যেমন: 103.145.xxx.xxx বা 192.168.0.105");
+        etHost.setText(currentHost);
+        layout.addView(etHost);
+
+        TextView tvPortLabel = new TextView(this);
+        tvPortLabel.setText("সার্ভার পোর্ট:");
+        tvPortLabel.setTextSize(13);
+        tvPortLabel.setTextColor(Color.parseColor("#334155"));
+        tvPortLabel.setPadding(0, 20, 0, 0);
+        layout.addView(tvPortLabel);
+
+        EditText etPort = new EditText(this);
+        etPort.setInputType(InputType.TYPE_CLASS_NUMBER);
+        etPort.setHint("9050");
+        etPort.setText(String.valueOf(currentPort));
+        layout.addView(etPort);
+
+        new AlertDialog.Builder(this)
+                .setTitle("⚙️ রিমোট রিলে সার্ভার সেটিংস")
+                .setView(layout)
+                .setPositiveButton("সেভ ও কানেক্ট", (dialog, which) -> {
+                    String host = etHost.getText().toString().trim();
+                    String portStr = etPort.getText().toString().trim();
+                    int port = 9050;
+                    try {
+                        port = Integer.parseInt(portStr);
+                    } catch (Exception ignored) {}
+
+                    if (host.isEmpty()) {
+                        Toast.makeText(this, "অনুগ্রহ করে সার্ভার আইপি দিন", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    pPrefs.edit().putString("relay_host", host).putInt("relay_port", port).apply();
+                    Toast.makeText(this, "রিলে সার্ভার সংরক্ষিত: " + host + ":" + port, Toast.LENGTH_SHORT).show();
+                    tvProxyAddress.setText(host + ":" + port);
+
+                    if (isProxyServiceRunning) {
+                        Intent restartIntent = new Intent(this, ProxyServerService.class);
+                        restartIntent.setAction(ProxyServerService.ACTION_START);
+                        restartIntent.putExtra("mode", ProxyServerService.MODE_REMOTE);
+                        restartIntent.putExtra("port", port);
+                        startService(restartIntent);
+                    }
+                })
+                .setNegativeButton("বাতিল", null)
+                .show();
     }
 
     private void executeCallDivert(String ussdCode, boolean isDiverting) {
