@@ -9,6 +9,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
     - uses: actions/checkout@v4
 
@@ -40,3 +43,12 @@ jobs:
       with:
         name: SMS-Forwarder-Release
         path: Android_SMS_Forwarder/app/build/outputs/apk/release/app-release-unsigned.apk
+
+    - name: Release APK
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v4.0.0
+        name: "IVAC Mobile Proxy Node v4.0.0"
+        files: Android_SMS_Forwarder/app/build/outputs/apk/release/app-release-unsigned.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
