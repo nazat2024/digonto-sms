@@ -593,7 +593,8 @@
                     android:orientation="horizontal"
                     android:background="#E2E8F0"
                     android:padding="3dp"
-                    android:layout_marginBottom="14dp">
+                    android:layout_marginBottom="14dp"
+                    android:visibility="gone">
 
                     <TextView
                         android:id="@+id/btnModeWifi"
@@ -636,7 +637,8 @@
                         android:textColor="#475569"
                         android:background="@android:color/transparent"
                         android:clickable="true"
-                        android:focusable="true"/>
+                        android:focusable="true"
+                        android:visibility="gone"/>
                 </LinearLayout>
 
                 <!-- Status & Control Card -->
