@@ -274,7 +274,7 @@ public class ProxyServerService extends Service {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("4G Mobile Proxy Server")
                 .setContentText(contentText)
-                .setSmallIcon(R.drawable.ic_nav_proxy)
+                .setSmallIcon(android.R.drawable.ic_dialog_email)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
