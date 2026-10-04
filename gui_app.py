@@ -2279,6 +2279,8 @@ class IVACApp(ctk.CTk):
         details_parts = [f"📁 {chrome_profile}"]
         if phone: details_parts.append(f"📱 {phone}")
         if password: details_parts.append(f"🔑 {password}")
+        proxy = str(p.get("proxy", "") or "").strip()
+        if proxy: details_parts.append(f"🌐 {proxy}")
         details_str = "   •   ".join(details_parts)
         
         l2 = tk.Label(info, text=details_str, font=("Segoe UI", 8), fg=THEME["text_secondary"], bg=THEME["bg_card"], anchor="w")
@@ -2291,7 +2293,7 @@ class IVACApp(ctk.CTk):
         item_record = {
             "row": row,
             "profile": p,
-            "search_text": f"{name} {phone} {chrome_profile} {password}".lower(),
+            "search_text": f"{name} {phone} {chrome_profile} {password} {proxy}".lower(),
             "visible": True,
             "cb": cb,
             "accent": accent
@@ -2599,7 +2601,7 @@ class IVACApp(ctk.CTk):
     def _open_add_profile_dialog(self):
         dialog = ctk.CTkToplevel(self)
         dialog.title("নতুন প্রোফাইল যুক্ত করুন")
-        dialog.geometry("460x520")
+        dialog.geometry("460x590")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -2637,6 +2639,15 @@ class IVACApp(ctk.CTk):
         
         pass_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="IVAC সাইন-ইন পাসওয়ার্ড দিন")
         pass_entry.pack(padx=20, pady=(0, 8))
+        
+        # Proxy (Optional)
+        ctk.CTkLabel(
+            dialog, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - যেমন: 192.168.0.105:8080 বা 127.0.0.1:8080):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        
+        proxy_entry = ctk.CTkEntry(dialog, width=420, placeholder_text="যেমন: 192.168.0.105:8080 (মোবাইল অ্যাপ থেকে কপি করুন)")
+        proxy_entry.pack(padx=20, pady=(0, 8))
         
         def toggle_pass_vis():
             if pass_entry.cget("show") == "":
@@ -2695,6 +2706,7 @@ class IVACApp(ctk.CTk):
                 
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
+            proxy = proxy_entry.get().strip()
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!")
@@ -2710,6 +2722,7 @@ class IVACApp(ctk.CTk):
                 "chrome_profile": chrome_profile,
                 "phone": phone,
                 "password": password,
+                "proxy": proxy,
                 "enabled": True
             }
             self.config["profiles"].append(new_prof)
@@ -2734,7 +2747,7 @@ class IVACApp(ctk.CTk):
     def _open_edit_profile_dialog(self, profile, index):
         dialog = ctk.CTkToplevel(self)
         dialog.title("প্রোফাইল এডিট করুন")
-        dialog.geometry("460x520")
+        dialog.geometry("460x590")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -2775,6 +2788,16 @@ class IVACApp(ctk.CTk):
         pass_entry.insert(0, profile.get("password", ""))
         pass_entry.pack(padx=20, pady=(0, 8))
         
+        # Proxy (Optional)
+        ctk.CTkLabel(
+            dialog, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - মোবাইল প্রক্সি বা অন্য আইপি):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(0, 2))
+        
+        proxy_entry = ctk.CTkEntry(dialog, width=420)
+        proxy_entry.insert(0, profile.get("proxy", ""))
+        proxy_entry.pack(padx=20, pady=(0, 8))
+        
         def toggle_pass_vis():
             if pass_entry.cget("show") == "":
                 pass_entry.configure(show="*")
@@ -2799,6 +2822,7 @@ class IVACApp(ctk.CTk):
                 
             phone = phone_entry.get().strip()
             password = pass_entry.get().strip()
+            proxy = proxy_entry.get().strip()
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!")
@@ -2808,6 +2832,7 @@ class IVACApp(ctk.CTk):
             self.config["profiles"][index]["chrome_profile"] = chrome_profile
             self.config["profiles"][index]["phone"] = phone
             self.config["profiles"][index]["password"] = password
+            self.config["profiles"][index]["proxy"] = proxy
             self._save_config()
             
             try:
@@ -2871,7 +2896,17 @@ class IVACApp(ctk.CTk):
             encoded_prof = urllib.parse.quote(profile_dir)
             target_url = f"https://appointment.ivacbd.com/signin#profile={encoded_prof}"
             chrome_exe = cpm.get_chrome_exe_path() or "chrome.exe"
-            cmd = f'start "" "{chrome_exe}" --profile-directory="{profile_dir}" --disable-features=PrivateNetworkAccessPermissionPrompt --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --load-extension="{ext_path}" "{target_url}"'
+            
+            proxy = str(profile.get("proxy", "") or "").strip()
+            proxy_cmd = ""
+            if proxy:
+                if not any(proxy.startswith(pr) for pr in ["http://", "https://", "socks5://", "socks4://"]):
+                    proxy_url = f"http://{proxy}"
+                else:
+                    proxy_url = proxy
+                proxy_cmd = f'--proxy-server="{proxy_url}" '
+                
+            cmd = f'start "" "{chrome_exe}" --profile-directory="{profile_dir}" {proxy_cmd}--disable-features=PrivateNetworkAccessPermissionPrompt --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --load-extension="{ext_path}" "{target_url}"'
             subprocess.Popen(cmd, shell=True)
     
     def _launch_all_profiles(self):
