@@ -1718,6 +1718,7 @@ const slotMonthIndices = {}; // Per-month rotation index map: "YYYY_MM" -> curre
 let slotLastAttemptMonthKey = null; // Key of the month ("YYYY_MM") where the last attempt was made
 let slotAttemptCount = 0;
 let slotNavigatingMonth = false;
+let slotLastEmptyMonthSwitchTime = 0;
 
 // State Machine Variables to prevent repeated clicking on dates
 let slotState = 'SEARCHING'; // 'SEARCHING', 'WAITING_FOR_BTN'
@@ -1901,6 +1902,27 @@ function findAvailableCalendarDates() {
 
     candidates.sort((a, b) => a.day - b.day);
     return candidates;
+}
+
+/**
+ * Calculates the last workable booking date of a month.
+ * In Bangladesh, IVAC is closed on Friday (5) and Saturday (6).
+ * If the month ends on Friday or Saturday, Thursday is the effective last date.
+ * @param {number} year - Full year (e.g. 2026)
+ * @param {number} month - 0-indexed month (0 = Jan, 9 = Oct, 11 = Dec)
+ * @returns {number} The last workable day number of the month (e.g. 29 for Oct 2026)
+ */
+function getLastWorkableDayOfMonth(year, month) {
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const lastDayDate = new Date(year, month, totalDays);
+    const dayOfWeek = lastDayDate.getDay(); // 0 = Sun, 1 = Mon, ..., 5 = Fri, 6 = Sat
+    
+    if (dayOfWeek === 6) { // Saturday
+        return totalDays - 2; // Thursday
+    } else if (dayOfWeek === 5) { // Friday
+        return totalDays - 1; // Thursday
+    }
+    return totalDays;
 }
 
 function getTargetMonthsToScan(res, calendarInfo) {
@@ -2112,65 +2134,116 @@ function handleSlotRotation() {
 
             // Other target months in the round-robin cycle
             const otherTargetMonths = targetMonths.filter(m => (m.year * 12 + m.month) !== currentTotal);
+            const currentIdx = targetMonths.findIndex(m => (m.year * 12 + m.month) === currentTotal);
+            const isLastTargetMonth = (currentIdx !== -1) && (currentIdx === targetMonths.length - 1);
 
-            // ==================== MULTI-MONTH ALTERNATION CHECK ====================
-            // When to switch to the other month:
-            // 1) Current month has ZERO available date circles (prioritizedQueue is empty) -> Switch to other month!
-            // 2) An attempt was just completed on the current month (slotLastAttemptMonthKey === currentMonthKey) -> Switch to alternate month!
-            const shouldSwitchToOtherMonth = otherTargetMonths.length > 0 && 
-                (prioritizedQueue.length === 0 || slotLastAttemptMonthKey === currentMonthKey);
+            // ==================== CASE 1: NO AVAILABLE DATES IN CURRENT MONTH ====================
+            if (prioritizedQueue.length === 0) {
+                if (otherTargetMonths.length > 0) {
+                    const timeSinceEmptySwitch = now - slotLastEmptyMonthSwitchTime;
+                    if (timeSinceEmptySwitch < 5000) {
+                        const remain = Math.ceil((5000 - timeSinceEmptySwitch) / 1000);
+                        if (slotStatusText) slotStatusText.textContent = `⏳ এই মাসে কোনো স্লট নেই (${remain}s)...`;
+                        if (slotCountdownText) slotCountdownText.textContent = 'অন্য মাস স্ক্যান অপেক্ষা';
+                        return;
+                    }
 
-            if (shouldSwitchToOtherMonth) {
-                // Find next target month in the rotation
-                const currentIdx = targetMonths.findIndex(m => (m.year * 12 + m.month) === currentTotal);
-                const nextTarget = targetMonths[(currentIdx + 1) % targetMonths.length];
-                const nextTotal = nextTarget.year * 12 + nextTarget.month;
-                const direction = nextTotal > currentTotal ? 'next' : 'prev';
+                    const nextTarget = targetMonths[(currentIdx + 1) % targetMonths.length];
+                    const nextTotal = nextTarget.year * 12 + nextTarget.month;
+                    const direction = nextTotal > currentTotal ? 'next' : 'prev';
 
-                const curMonthName = MONTH_NAMES_EN[currentMonth].toUpperCase();
-                const nextMonthName = MONTH_NAMES_EN[nextTarget.month].toUpperCase();
-                console.log(`[IVAC Slot] Alternating Month Switch: [${curMonthName}] -> [${nextMonthName}] via ${direction}`);
+                    const curMonthName = MONTH_NAMES_EN[currentMonth].toUpperCase();
+                    const nextMonthName = MONTH_NAMES_EN[nextTarget.month].toUpperCase();
+                    console.log(`[IVAC Slot] No slots in [${curMonthName}]. Switching to [${nextMonthName}] via ${direction}`);
 
-                if (slotStatusText) slotStatusText.textContent = `📅 মাস পরিবর্তন: ${nextMonthName}...`;
-                if (slotCountdownText) slotCountdownText.textContent = 'উভয় মাসের স্লট অল্টারনেট চেক';
+                    if (slotStatusText) slotStatusText.textContent = `📅 স্লট নেই, অন্য মাস চেক: ${nextMonthName}...`;
+                    if (slotCountdownText) slotCountdownText.textContent = 'মাস পরিবর্তন হচ্ছে';
 
-                slotNavigatingMonth = true;
-                slotLastAttemptMonthKey = null; // Clear so the newly arrived month immediately clicks its date
-                clickCalendarArrow(direction);
-                setTimeout(() => { slotNavigatingMonth = false; }, 800);
-                return;
-            }
-
-            // ==================== CLICK A DATE IN CURRENT MONTH ====================
-            if (prioritizedQueue.length > 0) {
-                let monthDateIdx = slotMonthIndices[currentMonthKey] || 0;
-                if (monthDateIdx >= prioritizedQueue.length) {
-                    monthDateIdx = 0;
-                    slotMonthIndices[currentMonthKey] = 0;
+                    slotNavigatingMonth = true;
+                    slotLastEmptyMonthSwitchTime = now;
+                    slotLastAttemptMonthKey = null;
+                    clickCalendarArrow(direction);
+                    setTimeout(() => { slotNavigatingMonth = false; }, 1000);
+                    return;
+                } else {
+                    if (slotStatusText) slotStatusText.textContent = '⏳ কোনো স্লট নেই...';
+                    if (slotCountdownText) slotCountdownText.textContent = 'তারিখ আসার অপেক্ষায় স্ক্যানিং';
+                    return;
                 }
-
-                const targetDateObj = prioritizedQueue[monthDateIdx];
-                if (!targetDateObj) return;
-
-                // CLICK THE DATE CIRCLE (HEAD's exact working method)
-                targetDateObj.element.click();
-
-                const monthLabel = MONTH_NAMES_EN[currentMonth].charAt(0).toUpperCase() + MONTH_NAMES_EN[currentMonth].slice(1);
-                console.log(`[IVAC Slot] Selected date: ${targetDateObj.day} ${monthLabel} (Index #${monthDateIdx + 1}/${prioritizedQueue.length})`);
-
-                // Transition to WAITING State
-                slotState = 'WAITING_FOR_BTN';
-                slotDateClickTime = now;
-                slotLastClickedTarget = targetDateObj;
-                slotLastAttemptMonthKey = currentMonthKey;
-
-                if (slotStatusText) slotStatusText.textContent = `📅 ${targetDateObj.day} ${monthLabel} সিলেক্টেড!`;
-                if (slotCountdownText) slotCountdownText.textContent = `মোট চেষ্টা #${slotAttemptCount + 1}`;
-            } else {
-                // No circles available in current month
-                if (slotStatusText) slotStatusText.textContent = '⏳ কোনো স্লট নেই...';
-                if (slotCountdownText) slotCountdownText.textContent = 'তারিখ আসার অপেক্ষায় স্ক্যানিং';
             }
+
+            // ==================== CASE 2: CURRENT MONTH HAS AVAILABLE DATES ====================
+            let monthDateIdx = slotMonthIndices[currentMonthKey] || 0;
+
+            // Check if all dates in current month's queue have been checked
+            if (monthDateIdx >= prioritizedQueue.length) {
+                const lastCheckedDateObj = prioritizedQueue[prioritizedQueue.length - 1];
+                const lastCheckedDay = lastCheckedDateObj ? lastCheckedDateObj.day : 0;
+                const lastWorkableDay = getLastWorkableDayOfMonth(currentYear, currentMonth);
+
+                console.log(`[IVAC Slot] Current month queue complete. Last checked: ${lastCheckedDay}, Last workable day: ${lastWorkableDay}`);
+
+                // User Rule: If this is an earlier target month (e.g. October),
+                // ONLY switch to next month if lastCheckedDay was the month's last workable date (Thursday if ends on Fri/Sat)!
+                if (!isLastTargetMonth && otherTargetMonths.length > 0 && lastCheckedDay >= lastWorkableDay) {
+                    const nextTarget = targetMonths[(currentIdx + 1) % targetMonths.length];
+                    const nextTotal = nextTarget.year * 12 + nextTarget.month;
+                    const direction = nextTotal > currentTotal ? 'next' : 'prev';
+                    const nextMonthName = MONTH_NAMES_EN[nextTarget.month].toUpperCase();
+
+                    console.log(`[IVAC Slot] Reached end of month (${lastCheckedDay} >= ${lastWorkableDay}). Moving to next month: ${nextMonthName}`);
+
+                    if (slotStatusText) slotStatusText.textContent = `📅 শেষ তারিখ সম্পন্ন, পরবর্তী মাস: ${nextMonthName}...`;
+                    if (slotCountdownText) slotCountdownText.textContent = 'অন্য মাসে স্লট খোঁজা হচ্ছে';
+
+                    slotMonthIndices[currentMonthKey] = 0; // Reset queue for this month
+                    slotNavigatingMonth = true;
+                    slotLastAttemptMonthKey = null;
+                    clickCalendarArrow(direction);
+                    setTimeout(() => { slotNavigatingMonth = false; }, 1000);
+                    return;
+                } else if (isLastTargetMonth && otherTargetMonths.length > 0) {
+                    // Finished all dates in the last target month (e.g. November). Return to the first month (e.g. October)!
+                    const nextTarget = targetMonths[0];
+                    const nextMonthName = MONTH_NAMES_EN[nextTarget.month].toUpperCase();
+
+                    console.log(`[IVAC Slot] Finished checking last target month. Returning to: ${nextMonthName}`);
+
+                    if (slotStatusText) slotStatusText.textContent = `📅 পুনরায় প্রথম মাসে ফিরছে: ${nextMonthName}...`;
+                    if (slotCountdownText) slotCountdownText.textContent = 'মাস পরিবর্তন হচ্ছে';
+
+                    slotMonthIndices[currentMonthKey] = 0;
+                    slotNavigatingMonth = true;
+                    slotLastAttemptMonthKey = null;
+                    clickCalendarArrow('prev');
+                    setTimeout(() => { slotNavigatingMonth = false; }, 1000);
+                    return;
+                } else {
+                    // Month end NOT reached (e.g. 8 < 29)!
+                    // Stay in current month and loop back to the first available date!
+                    console.log(`[IVAC Slot] Not at month end (${lastCheckedDay} < ${lastWorkableDay}). Looping back to first date in current month.`);
+                    slotMonthIndices[currentMonthKey] = 0;
+                    monthDateIdx = 0;
+                }
+            }
+
+            const targetDateObj = prioritizedQueue[monthDateIdx];
+            if (!targetDateObj) return;
+
+            // CLICK THE DATE CIRCLE (HEAD's exact working method)
+            targetDateObj.element.click();
+
+            const monthLabel = MONTH_NAMES_EN[currentMonth].charAt(0).toUpperCase() + MONTH_NAMES_EN[currentMonth].slice(1);
+            console.log(`[IVAC Slot] Selected date: ${targetDateObj.day} ${monthLabel} (Index #${monthDateIdx + 1}/${prioritizedQueue.length})`);
+
+            // Transition to WAITING State
+            slotState = 'WAITING_FOR_BTN';
+            slotDateClickTime = now;
+            slotLastClickedTarget = targetDateObj;
+            slotLastAttemptMonthKey = currentMonthKey;
+
+            if (slotStatusText) slotStatusText.textContent = `📅 ${targetDateObj.day} ${monthLabel} সিলেক্টেড!`;
+            if (slotCountdownText) slotCountdownText.textContent = `মোট চেষ্টা #${slotAttemptCount + 1}`;
         });
     } catch(e) {
         console.error('[IVAC Slot] Error in handleSlotRotation:', e);
