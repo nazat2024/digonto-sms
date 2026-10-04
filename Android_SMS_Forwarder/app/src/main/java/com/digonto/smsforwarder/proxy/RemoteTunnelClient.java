@@ -84,7 +84,7 @@ public class RemoteTunnelClient {
         int backoffMs = 2000;
         int failCount = 0;
         while (isRunning) {
-            notifyState("টানেল কানেক্ট হচ্ছে...", null);
+            notifyState("ক্লাউড সার্ভার অফলাইন", null);
             try {
                 controlSocket = new Socket();
                 controlSocket.setTcpNoDelay(true);
@@ -129,7 +129,7 @@ public class RemoteTunnelClient {
             } catch (Exception e) {
                 if (!isRunning) break;
                 failCount++;
-                notifyState("টানেল কানেক্ট হচ্ছে...", null);
+                notifyState("ক্লাউড সার্ভার অফলাইন", null);
                 Log.w(TAG, "Tunnel connection lost/failed: " + e.getMessage() + ", retry in " + backoffMs + "ms");
             } finally {
                 safeClose(controlSocket);

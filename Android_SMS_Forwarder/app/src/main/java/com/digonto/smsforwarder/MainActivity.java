@@ -709,8 +709,8 @@ public class MainActivity extends AppCompatActivity {
         } else if (ProxyServerService.MODE_REMOTE.equals(mode)) {
             btnModeRemote.setBackgroundColor(activeBg);
             btnModeRemote.setTextColor(activeText);
-            tvProxyHelpText.setText("১. কাস্টমার দেশের যেকোনো প্রান্তে থাকুক, শুধু মোবাইল ডাটা অন রাখবে।\n২. ক্লাউড টানেল কানেক্ট হলে উপরে একটি রিমোট অ্যাড্রেস দেখতে পাবেন।\n৩. সেই অ্যাড্রেসটি ল্যাপটপে বসিয়ে কাস্টমারের নিজস্ব 4G মোবাইল আইপিতে কাজ করুন!");
-            tvProxyAddress.setText("টানেল কানেক্ট হচ্ছে...");
+            tvProxyHelpText.setText("১. কাস্টমার দেশের যেকোনো প্রান্তে থাকলে ক্লাউড রিলে সার্ভার (VPS)-এর মাধ্যমে 4G ডাটা শেয়ার করতে হয়।\n২. আপনি যদি একই ওয়াইফাই বা হটস্পটে থাকেন, তবে 'Wi-Fi' ট্যাব ব্যবহার করুন (যা সরাসরি ১০০% ফুল স্পিডে চলবে)।\n৩. ক্লাউড সার্ভার সক্রিয় হলে উপরে স্বয়ংক্রিয়ভাবে রিমোট প্রক্সি অ্যাড্রেস চলে আসবে।");
+            tvProxyAddress.setText("ক্লাউড সার্ভার অফলাইন");
         }
 
         if (isProxyServiceRunning) {

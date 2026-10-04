@@ -242,7 +242,7 @@ public class ProxyServerService extends Service {
 
     public String getDisplayIpAddress() {
         if (MODE_REMOTE.equals(currentMode)) {
-            return remoteAssignedAddress.isEmpty() ? "টানেল কানেক্ট হচ্ছে..." : remoteAssignedAddress;
+            return remoteAssignedAddress.isEmpty() ? "ক্লাউড সার্ভার অফলাইন" : remoteAssignedAddress;
         } else if (MODE_USB.equals(currentMode)) {
             String usbIp = getUsbIpAddress();
             return usbIp != null ? usbIp : "127.0.0.1 (ADB Forward)";
