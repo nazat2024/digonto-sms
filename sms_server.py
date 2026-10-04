@@ -1716,6 +1716,7 @@ try:
                     import re
                     phone_matches = re.findall(r'\b(01[3-9]\d{8})\b', f"{sim1} {sim2} {c_name} {dev_model}")
                     
+                    prev_dev_proxy = connected_devices.get(dev_id, {}).get("proxy_address", "")
                     connected_devices[dev_id] = {
                         "device_id": dev_id,
                         "device_name": dev_model,
@@ -1744,7 +1745,9 @@ try:
                                     if old_p and old_p != dev_proxy:
                                         prof_phone = re.sub(r'[^0-9]', '', str(prof.get("phone", "")))
                                         is_match = False
-                                        if prof_phone and prof_phone in phone_matches:
+                                        if prev_dev_proxy and old_p == prev_dev_proxy:
+                                            is_match = True
+                                        elif prof_phone and prof_phone in phone_matches:
                                             is_match = True
                                         elif ":" in old_p and ":" in dev_proxy:
                                             old_h, old_pt = old_p.split(":")[:2]
@@ -1758,6 +1761,14 @@ try:
                                 if cfg_mod:
                                     with open(cfg_path, "w", encoding="utf-8") as f:
                                         json.dump(cfg_obj, f, indent=2, ensure_ascii=False)
+                                    global last_config_ts, _cached_status_resp, _cached_config_mtime
+                                    last_config_ts = time.time()
+                                    _cached_status_resp = None
+                                    _cached_config_mtime = 0
+                                    if active_profile_data and isinstance(active_profile_data, dict):
+                                        act_p = str(active_profile_data.get("proxy") or "").strip()
+                                        if act_p and act_p != dev_proxy:
+                                            active_profile_data["proxy"] = dev_proxy
                         except Exception:
                             pass
                     # Send pong immediately back to mobile

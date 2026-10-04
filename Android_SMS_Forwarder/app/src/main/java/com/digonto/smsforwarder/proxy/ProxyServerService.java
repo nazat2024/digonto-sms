@@ -69,10 +69,16 @@ public class ProxyServerService extends Service {
     private boolean isRunning = false;
 
     private final Handler tickerHandler = new Handler(Looper.getMainLooper());
+    private String lastReportedAddress = "";
     private final Runnable tickerRunnable = new Runnable() {
         @Override
         public void run() {
             if (isRunning) {
+                updateActiveAddress();
+                if (activeProxyAddress != null && !activeProxyAddress.isEmpty() && !activeProxyAddress.equals(lastReportedAddress)) {
+                    lastReportedAddress = activeProxyAddress;
+                    com.digonto.smsforwarder.MqttService.triggerPingNow();
+                }
                 stats.updateSpeeds();
                 broadcastStatus();
                 updateNotification();
@@ -247,7 +253,8 @@ public class ProxyServerService extends Service {
         try {
             List<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());
             for (NetworkInterface intf : interfaces) {
-                if (intf.getName().startsWith("wlan")) {
+                String n = intf.getName().toLowerCase();
+                if (n.startsWith("wlan") || n.contains("wifi") || n.startsWith("ap") || n.startsWith("p2p")) {
                     for (InetAddress addr : Collections.list(intf.getInetAddresses())) {
                         if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
                             return addr.getHostAddress();
