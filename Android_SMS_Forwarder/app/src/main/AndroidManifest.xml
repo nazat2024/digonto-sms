@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -48,6 +49,13 @@
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="remoteMessaging|dataSync" />
+
+        <service
+            android:name=".proxy.ProxyServerService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
 
         <receiver android:name=".SmsReceiver"
             android:exported="true">

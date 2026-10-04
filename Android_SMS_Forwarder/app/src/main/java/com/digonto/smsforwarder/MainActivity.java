@@ -30,6 +30,15 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.res.ColorStateList;
+import com.digonto.smsforwarder.proxy.ProxyServerService;
+import com.digonto.smsforwarder.proxy.ProxyTrafficStats;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.Collections;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -79,6 +88,15 @@ public class MainActivity extends AppCompatActivity {
     private RecyclerView rvHistoryTab;
     private TextView tvEmptyHistoryTab;
     private Button btnRefreshMessages, btnClearMessages;
+
+    // Tab 3: Proxy View Elements
+    private TextView btnModeWifi, btnModeUsb, btnModeRemote;
+    private TextView tvProxyStatusBadge, tvProxyCarrier, tvProxyAddress, tvProxyHelpText;
+    private Button btnCopyProxy, btnToggleProxy;
+    private TextView tvProxyDownload, tvProxyUpload, tvProxySpeed, tvProxyConnections;
+    private String selectedProxyMode = ProxyServerService.MODE_WIFI;
+    private boolean isProxyServiceRunning = false;
+    private BroadcastReceiver proxyStatusReceiver;
     private HistoryAdapter historyAdapter;
 
     // Tab 4: Setting View Elements
@@ -139,6 +157,7 @@ public class MainActivity extends AppCompatActivity {
         setupBottomNavigation();
         setupHomeTab();
         setupMessageTab();
+        setupProxyTab();
         setupSettingTab();
         setupAmoledBlackSaver();
 
@@ -193,6 +212,21 @@ public class MainActivity extends AppCompatActivity {
         tvEmptyHistoryTab = findViewById(R.id.tvEmptyHistoryTab);
         btnRefreshMessages = findViewById(R.id.btnRefreshMessages);
         btnClearMessages = findViewById(R.id.btnClearMessages);
+
+        // Tab 3: Proxy
+        btnModeWifi = findViewById(R.id.btnModeWifi);
+        btnModeUsb = findViewById(R.id.btnModeUsb);
+        btnModeRemote = findViewById(R.id.btnModeRemote);
+        tvProxyStatusBadge = findViewById(R.id.tvProxyStatusBadge);
+        tvProxyCarrier = findViewById(R.id.tvProxyCarrier);
+        tvProxyAddress = findViewById(R.id.tvProxyAddress);
+        btnCopyProxy = findViewById(R.id.btnCopyProxy);
+        btnToggleProxy = findViewById(R.id.btnToggleProxy);
+        tvProxyDownload = findViewById(R.id.tvProxyDownload);
+        tvProxyUpload = findViewById(R.id.tvProxyUpload);
+        tvProxySpeed = findViewById(R.id.tvProxySpeed);
+        tvProxyConnections = findViewById(R.id.tvProxyConnections);
+        tvProxyHelpText = findViewById(R.id.tvProxyHelpText);
 
         // Tab 4: Setting
         switchKeepScreenAwake = findViewById(R.id.switchKeepScreenAwake);
@@ -561,6 +595,164 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnCancelCallDivert.setOnClickListener(v -> executeCallDivert("##21#", false));
+    }
+
+    // ==================== TAB 3: PROXY SETUP ====================
+    private void setupProxyTab() {
+        btnModeWifi.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_WIFI));
+        btnModeUsb.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_USB));
+        btnModeRemote.setOnClickListener(v -> selectProxyMode(ProxyServerService.MODE_REMOTE));
+
+        btnCopyProxy.setOnClickListener(v -> {
+            String addr = tvProxyAddress.getText().toString().trim();
+            if (!addr.isEmpty()) {
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                ClipData clip = ClipData.newPlainText("Proxy Address", addr);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "📋 প্রক্সি অ্যাড্রেস কপি করা হয়েছে: " + addr, Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+
+        btnToggleProxy.setOnClickListener(v -> {
+            if (isProxyServiceRunning) {
+                // Stop Proxy
+                Intent stopIntent = new Intent(this, ProxyServerService.class);
+                stopIntent.setAction(ProxyServerService.ACTION_STOP);
+                startService(stopIntent);
+                updateProxyUi(false, selectedProxyMode, tvProxyAddress.getText().toString(), "Cellular 4G", 0, 0, 0, 0);
+            } else {
+                // Start Proxy
+                Intent startIntent = new Intent(this, ProxyServerService.class);
+                startIntent.setAction(ProxyServerService.ACTION_START);
+                startIntent.putExtra("mode", selectedProxyMode);
+                startIntent.putExtra("port", 8080);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(startIntent);
+                } else {
+                    startService(startIntent);
+                }
+                updateProxyUi(true, selectedProxyMode, tvProxyAddress.getText().toString(), "Cellular 4G", 0, 0, 0, 0);
+            }
+        });
+
+        proxyStatusReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent != null && ProxyServerService.ACTION_BROADCAST_STATUS.equals(intent.getAction())) {
+                    boolean running = intent.getBooleanExtra("isRunning", false);
+                    String mode = intent.getStringExtra("mode");
+                    int port = intent.getIntExtra("port", 8080);
+                    String ip = intent.getStringExtra("ip");
+                    String carrier = intent.getStringExtra("carrier");
+                    long downBytes = intent.getLongExtra("downloadBytes", 0);
+                    long upBytes = intent.getLongExtra("uploadBytes", 0);
+                    double downSpeed = intent.getDoubleExtra("downloadSpeed", 0);
+                    int activeConns = intent.getIntExtra("activeConnections", 0);
+
+                    updateProxyUi(running, mode, ip != null ? (ip.contains(":") ? ip : ip + ":" + port) : "127.0.0.1:8080",
+                            carrier != null ? carrier : "4G Mobile", downBytes, upBytes, downSpeed, activeConns);
+                }
+            }
+        };
+
+        IntentFilter filter = new IntentFilter(ProxyServerService.ACTION_BROADCAST_STATUS);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(proxyStatusReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(proxyStatusReceiver, filter);
+        }
+
+        selectProxyMode(ProxyServerService.MODE_WIFI);
+    }
+
+    private void selectProxyMode(String mode) {
+        selectedProxyMode = mode;
+
+        btnModeWifi.setBackgroundColor(Color.TRANSPARENT);
+        btnModeWifi.setTextColor(Color.parseColor("#475569"));
+        btnModeUsb.setBackgroundColor(Color.TRANSPARENT);
+        btnModeUsb.setTextColor(Color.parseColor("#475569"));
+        btnModeRemote.setBackgroundColor(Color.TRANSPARENT);
+        btnModeRemote.setTextColor(Color.parseColor("#475569"));
+
+        int activeBg = Color.parseColor("#0284C7");
+        int activeText = Color.parseColor("#FFFFFF");
+
+        if (ProxyServerService.MODE_WIFI.equals(mode)) {
+            btnModeWifi.setBackgroundColor(activeBg);
+            btnModeWifi.setTextColor(activeText);
+            tvProxyHelpText.setText("১. ল্যাপটপ ও ফোন একই ওয়াইফাই বা হটস্পটে রাখুন।\n২. উপরের '📋 কপি' বাটনে চেপে IP:Port কপি করুন।\n৩. ল্যাপটপের IVAC Master Pro-তে প্রোফাইল এডিটে প্রক্সি ঘরে বসিয়ে দিন। ক্রোম সরাসরি এই সিমের 4G দিয়ে চলবে!");
+            tvProxyAddress.setText(getWifiIpFormatted());
+        } else if (ProxyServerService.MODE_USB.equals(mode)) {
+            btnModeUsb.setBackgroundColor(activeBg);
+            btnModeUsb.setTextColor(activeText);
+            tvProxyHelpText.setText("১. চার্জিং ক্যাবল দিয়ে ফোন ল্যাপটপের সাথে লাগান এবং USB Tethering অন করুন।\n২. অথবা ADB কমান্ড: adb forward tcp:8080 tcp:8080 চালান।\n৩. ল্যাপটপের প্রোফাইলে 127.0.0.1:8080 প্রক্সি বসিয়ে দিন। জিরো-ল্যাগ স্পিড পাবেন!");
+            tvProxyAddress.setText("127.0.0.1:8080");
+        } else if (ProxyServerService.MODE_REMOTE.equals(mode)) {
+            btnModeRemote.setBackgroundColor(activeBg);
+            btnModeRemote.setTextColor(activeText);
+            tvProxyHelpText.setText("১. কাস্টমার দেশের যেকোনো প্রান্তে থাকুক, শুধু মোবাইল ডাটা অন রাখবে।\n২. ক্লাউড টানেল কানেক্ট হলে উপরে একটি রিমোট অ্যাড্রেস দেখতে পাবেন।\n৩. সেই অ্যাড্রেসটি ল্যাপটপে বসিয়ে কাস্টমারের নিজস্ব 4G মোবাইল আইপিতে স্লট ধরুন!");
+            tvProxyAddress.setText("relay.digonto.com:9050");
+        }
+
+        if (isProxyServiceRunning) {
+            Intent intent = new Intent(this, ProxyServerService.class);
+            intent.setAction(ProxyServerService.ACTION_START);
+            intent.putExtra("mode", selectedProxyMode);
+            intent.putExtra("port", 8080);
+            startService(intent);
+        }
+    }
+
+    private void updateProxyUi(boolean isRunning, String mode, String displayAddress, String carrier,
+                               long downBytes, long upBytes, double speedBps, int activeConns) {
+        this.isProxyServiceRunning = isRunning;
+
+        if (isRunning) {
+            tvProxyStatusBadge.setText("🟢 প্রক্সি চলছে (সক্রিয়)");
+            tvProxyStatusBadge.setTextColor(Color.parseColor("#16A34A"));
+            tvProxyStatusBadge.setBackgroundColor(Color.parseColor("#DCFCE7"));
+
+            btnToggleProxy.setText("⏹️ প্রক্সি বন্ধ করুন");
+            btnToggleProxy.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#EF4444")));
+        } else {
+            tvProxyStatusBadge.setText("🔴 প্রক্সি বন্ধ আছে");
+            tvProxyStatusBadge.setTextColor(Color.parseColor("#EF4444"));
+            tvProxyStatusBadge.setBackgroundColor(Color.parseColor("#FEE2E2"));
+
+            btnToggleProxy.setText("▶️ 4G প্রক্সি চালু করুন");
+            btnToggleProxy.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#10B981")));
+        }
+
+        if (displayAddress != null && !displayAddress.isEmpty()) {
+            tvProxyAddress.setText(displayAddress);
+        }
+        if (carrier != null && !carrier.isEmpty()) {
+            tvProxyCarrier.setText("📶 " + carrier + " (Locked)");
+        }
+
+        tvProxyDownload.setText(ProxyTrafficStats.formatBytes(downBytes));
+        tvProxyUpload.setText(ProxyTrafficStats.formatBytes(upBytes));
+        tvProxySpeed.setText(ProxyTrafficStats.formatSpeed(speedBps));
+        tvProxyConnections.setText(activeConns + " টি");
+    }
+
+    private String getWifiIpFormatted() {
+        try {
+            List<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());
+            for (NetworkInterface intf : interfaces) {
+                if (intf.getName().startsWith("wlan")) {
+                    for (InetAddress addr : Collections.list(intf.getInetAddresses())) {
+                        if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
+                            return addr.getHostAddress() + ":8080";
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return "192.168.0.105:8080";
     }
 
     private void executeCallDivert(String ussdCode, boolean isDiverting) {
@@ -1239,6 +1431,11 @@ public class MainActivity extends AppCompatActivity {
         }
         if (amoledHandler != null && amoledRunnable != null) {
             amoledHandler.removeCallbacks(amoledRunnable);
+        }
+        if (proxyStatusReceiver != null) {
+            try {
+                unregisterReceiver(proxyStatusReceiver);
+            } catch (Exception ignored) {}
         }
     }
 }
