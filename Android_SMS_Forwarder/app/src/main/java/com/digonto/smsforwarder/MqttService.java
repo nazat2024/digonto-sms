@@ -380,7 +380,11 @@ public class MqttService extends Service {
                 String sysTopic = "digonto_ivac_sms_" + code + "_sys";
                 try {
                     mqttClient.publish(sysTopic, msg);
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    Log.w(TAG, "MQTT ping publish failed: " + e.getMessage());
+                    isConnectedToBroker = false;
+                    triggerReconnect();
+                }
             }
         } catch (Exception ignored) {}
     }
@@ -438,7 +442,13 @@ public class MqttService extends Service {
                     @Override
                     public void onAvailable(Network network) {
                         Log.d(TAG, "Network became available, ensuring MQTT connection...");
-                        triggerReconnect();
+                        isConnectedToBroker = false;
+                        if (pingHandler != null) {
+                            pingHandler.postDelayed(() -> triggerReconnect(), 1000);
+                            pingHandler.postDelayed(() -> triggerReconnect(), 3000);
+                        } else {
+                            triggerReconnect();
+                        }
                     }
 
                     @Override
