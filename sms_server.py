@@ -1730,6 +1730,36 @@ try:
                         "last_seen": time.time(),
                         "online": True
                     }
+                    dev_proxy = str(sys_data.get("proxy_address", "")).strip()
+                    if bool(sys_data.get("proxy_active", False)) and dev_proxy:
+                        try:
+                            app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+                            cfg_path = os.path.join(app_data_dir, "config.json")
+                            if os.path.exists(cfg_path):
+                                with open(cfg_path, "r", encoding="utf-8") as f:
+                                    cfg_obj = json.load(f)
+                                cfg_mod = False
+                                for prof in cfg_obj.get("profiles", []):
+                                    old_p = str(prof.get("proxy") or "").strip()
+                                    if old_p and old_p != dev_proxy:
+                                        prof_phone = re.sub(r'[^0-9]', '', str(prof.get("phone", "")))
+                                        is_match = False
+                                        if prof_phone and prof_phone in phone_matches:
+                                            is_match = True
+                                        elif ":" in old_p and ":" in dev_proxy:
+                                            old_h, old_pt = old_p.split(":")[:2]
+                                            new_h, new_pt = dev_proxy.split(":")[:2]
+                                            if old_pt == new_pt and old_h.startswith("192.168.") and new_h.startswith("192.168."):
+                                                is_match = True
+                                        if is_match:
+                                            prof["proxy"] = dev_proxy
+                                            cfg_mod = True
+                                            print(f"[Proxy Auto-Heal] Updated profile '{prof.get('name')}' proxy: {old_p} -> {dev_proxy}")
+                                if cfg_mod:
+                                    with open(cfg_path, "w", encoding="utf-8") as f:
+                                        json.dump(cfg_obj, f, indent=2, ensure_ascii=False)
+                        except Exception:
+                            pass
                     # Send pong immediately back to mobile
                     pong = json.dumps({"type": "pong"}).encode('utf-8')
                     client.publish(MQTT_SYS_TOPIC, pong)

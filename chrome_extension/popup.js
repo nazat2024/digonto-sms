@@ -1482,8 +1482,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             storageUpdate.ivac_password = serverPass;
                             needsStorageUpdate = true;
                         }
-                        // Auto-populate proxy from desktop app profile (only if input is empty!)
-                        if (!isTypingProxy && serverProxy && !curInputProxy) {
+                        // Auto-populate or sync proxy from desktop app profile when server proxy changes
+                        if (!isTypingProxy && serverProxy && curInputProxy !== serverProxy) {
                             if (proxyInput) proxyInput.value = serverProxy;
                             chrome.storage.local.get(['ivac_proxy_enabled'], (enRes) => {
                                 const isEn = (enRes && enRes.ivac_proxy_enabled !== undefined) ? enRes.ivac_proxy_enabled : (myProfile.proxy_enabled !== false);
