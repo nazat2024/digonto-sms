@@ -1518,6 +1518,7 @@ class IVACApp(ctk.CTk):
                 return
             otps = data.get("otps", [])
             devices = data.get("devices", [])
+            self._latest_devices = devices
             
             # 1. INCREMENTAL DEVICE UPDATE (ZERO DESTROY LAG FOR 20-30 MOBILES)
             if not hasattr(self, '_device_rows'):
@@ -1559,7 +1560,10 @@ class IVACApp(ctk.CTk):
                     sims = []
                     if dev.get("sim1_name"): sims.append(dev["sim1_name"])
                     if dev.get("sim2_name"): sims.append(dev["sim2_name"])
-                    sim_text = " | ".join(sims) if sims else "No SIM set"
+                    proxy_active = dev.get("proxy_active", False)
+                    proxy_addr = dev.get("proxy_address", "")
+                    proxy_tag = f" • 🌐 Proxy: {proxy_addr}" if (proxy_active and proxy_addr) else ""
+                    sim_text = (" | ".join(sims) if sims else "No SIM set") + proxy_tag
                     
                     status_icon = "🟢" if is_online else "⚪"
                     color = "#059669" if is_online else "#495670"
@@ -1630,6 +1634,32 @@ class IVACApp(ctk.CTk):
                 print(f"Config sync error: {ce}")
         except Exception:
             pass
+
+    def _get_active_proxy_devices(self):
+        """Returns list of online devices that have active proxy and a valid proxy_address"""
+        devices = getattr(self, '_latest_devices', [])
+        if not devices:
+            try:
+                import requests
+                r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.3)
+                if r.ok:
+                    devices = r.json().get("devices", [])
+                    self._latest_devices = devices
+            except Exception:
+                pass
+        active_list = []
+        for d in devices:
+            # Strictly filter: Only online devices with proxy_active == True and non-empty proxy_address
+            if d.get("online") and d.get("proxy_active") and d.get("proxy_address"):
+                name = (d.get("custom_name") or d.get("device_name") or "Mobile").strip()
+                sim1 = (d.get("sim1_name") or "").strip()
+                sim2 = (d.get("sim2_name") or "").strip()
+                sim_display = sim1 or sim2
+                sim_str = f" [{sim_display}]" if sim_display else ""
+                addr = str(d.get("proxy_address", "")).strip()
+                label = f"📱 {name}{sim_str} • {addr}"
+                active_list.append((label, addr))
+        return active_list
 
     def _add_otp_row(self, otp_data):
         phone = (otp_data.get("phone") or "Unknown").strip() or "Unknown"
@@ -2726,15 +2756,79 @@ class IVACApp(ctk.CTk):
         pass_entry = ctk.CTkEntry(card, width=430, height=30, placeholder_text="IVAC সাইন-ইন পাসওয়ার্ড দিন")
         pass_entry.pack(padx=18, pady=(0, 6))
         
-        # Proxy (Optional)
+        # Smart 4G Mobile Proxy Selector
+        proxy_header = ctk.CTkFrame(card, fg_color="transparent")
+        proxy_header.pack(fill="x", padx=18, pady=(0, 2))
+
         ctk.CTkLabel(
-            card, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - মোবাইল প্রক্সি বা অন্য আইপি):",
+            proxy_header, text="🌐 4G Mobile Proxy (ঐচ্ছিক - মোবাইল প্রক্সি বা আইপি):",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=THEME.get("text_secondary", "#94a3b8")
-        ).pack(anchor="w", padx=18, pady=(0, 2))
-        
-        proxy_entry = ctk.CTkEntry(card, width=430, height=30, placeholder_text="যেমন: 192.168.0.105:8080 (মোবাইল অ্যাপ থেকে কপি করুন)")
+        ).pack(side="left")
+
+        proxy_selector_frame = ctk.CTkFrame(card, fg_color="transparent")
+        proxy_selector_frame.pack(fill="x", padx=18, pady=(0, 4))
+
+        proxy_entry = ctk.CTkEntry(card, width=430, height=28, placeholder_text="যেমন: 192.168.0.105:8080 (বা ড্রপডাউন থেকে সিলেক্ট করুন)")
         proxy_entry.pack(padx=18, pady=(0, 6))
+
+        def populate_add_proxy_options(selected_proxy_val=""):
+            active_devs = self._get_active_proxy_devices()
+            mapping = {}
+            options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
+            mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
+            for lbl, addr in active_devs:
+                options.append(lbl)
+                mapping[lbl] = addr
+            options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
+
+            current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
+            if selected_proxy_val:
+                found = False
+                for lbl, addr in active_devs:
+                    if addr == selected_proxy_val:
+                        current_sel = lbl
+                        found = True
+                        break
+                if not found:
+                    current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
+
+            def on_proxy_select(choice):
+                if choice in mapping:
+                    target_addr = mapping[choice]
+                    proxy_entry.delete(0, tk.END)
+                    if target_addr:
+                        proxy_entry.insert(0, target_addr)
+                elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
+                    proxy_entry.focus_set()
+
+            for child in proxy_selector_frame.winfo_children():
+                child.destroy()
+
+            opt_menu = ctk.CTkOptionMenu(
+                proxy_selector_frame,
+                values=options,
+                command=on_proxy_select,
+                width=380, height=28,
+                fg_color="#1e293b",
+                button_color="#0284c7",
+                button_hover_color="#0369a1",
+                dropdown_fg_color="#0f172a",
+                font=ctk.CTkFont(size=11)
+            )
+            opt_menu.set(current_sel)
+            opt_menu.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+            refresh_btn = ctk.CTkButton(
+                proxy_selector_frame,
+                text="🔄", width=34, height=28,
+                fg_color="#334155", hover_color="#475569",
+                font=ctk.CTkFont(size=12),
+                command=lambda: populate_add_proxy_options(proxy_entry.get().strip())
+            )
+            refresh_btn.pack(side="right")
+
+        populate_add_proxy_options("")
         
         def toggle_pass_vis():
             if pass_entry.cget("show") == "":
@@ -2940,16 +3034,81 @@ class IVACApp(ctk.CTk):
         pass_entry.insert(0, profile.get("password", ""))
         pass_entry.pack(padx=18, pady=(0, 6))
         
-        # Proxy (Optional)
+        # Smart 4G Mobile Proxy Selector
+        proxy_header = ctk.CTkFrame(card, fg_color="transparent")
+        proxy_header.pack(fill="x", padx=18, pady=(0, 2))
+
         ctk.CTkLabel(
-            card, text="🌐 4G Proxy IP:Port (ঐচ্ছিক - মোবাইল প্রক্সি বা অন্য আইপি):",
+            proxy_header, text="🌐 4G Mobile Proxy (ঐচ্ছিক - মোবাইল প্রক্সি বা আইপি):",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=THEME.get("text_secondary", "#94a3b8")
-        ).pack(anchor="w", padx=18, pady=(0, 2))
-        
-        proxy_entry = ctk.CTkEntry(card, width=430, height=30)
-        proxy_entry.insert(0, profile.get("proxy", ""))
+        ).pack(side="left")
+
+        proxy_selector_frame = ctk.CTkFrame(card, fg_color="transparent")
+        proxy_selector_frame.pack(fill="x", padx=18, pady=(0, 4))
+
+        proxy_entry = ctk.CTkEntry(card, width=430, height=28)
+        initial_proxy = profile.get("proxy", "").strip()
+        proxy_entry.insert(0, initial_proxy)
         proxy_entry.pack(padx=18, pady=(0, 6))
+
+        def populate_edit_proxy_options(selected_proxy_val=""):
+            active_devs = self._get_active_proxy_devices()
+            mapping = {}
+            options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
+            mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
+            for lbl, addr in active_devs:
+                options.append(lbl)
+                mapping[lbl] = addr
+            options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
+
+            current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
+            if selected_proxy_val:
+                found = False
+                for lbl, addr in active_devs:
+                    if addr == selected_proxy_val:
+                        current_sel = lbl
+                        found = True
+                        break
+                if not found:
+                    current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
+
+            def on_proxy_select(choice):
+                if choice in mapping:
+                    target_addr = mapping[choice]
+                    proxy_entry.delete(0, tk.END)
+                    if target_addr:
+                        proxy_entry.insert(0, target_addr)
+                elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
+                    proxy_entry.focus_set()
+
+            for child in proxy_selector_frame.winfo_children():
+                child.destroy()
+
+            opt_menu = ctk.CTkOptionMenu(
+                proxy_selector_frame,
+                values=options,
+                command=on_proxy_select,
+                width=380, height=28,
+                fg_color="#1e293b",
+                button_color="#0284c7",
+                button_hover_color="#0369a1",
+                dropdown_fg_color="#0f172a",
+                font=ctk.CTkFont(size=11)
+            )
+            opt_menu.set(current_sel)
+            opt_menu.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+            refresh_btn = ctk.CTkButton(
+                proxy_selector_frame,
+                text="🔄", width=34, height=28,
+                fg_color="#334155", hover_color="#475569",
+                font=ctk.CTkFont(size=12),
+                command=lambda: populate_edit_proxy_options(proxy_entry.get().strip())
+            )
+            refresh_btn.pack(side="right")
+
+        populate_edit_proxy_options(initial_proxy)
         
         def toggle_pass_vis():
             if pass_entry.cget("show") == "":

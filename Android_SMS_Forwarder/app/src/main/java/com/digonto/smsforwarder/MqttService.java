@@ -366,6 +366,12 @@ public class MqttService extends Service {
             pingData.put("sim2_name", prefs.getString("sim2_name", "Unknown SIM 2"));
             pingData.put("timestamp", System.currentTimeMillis());
 
+            // Real-Time 4G Mobile Proxy Status
+            boolean proxyActive = com.digonto.smsforwarder.proxy.ProxyServerService.isServiceRunning;
+            String proxyAddr = com.digonto.smsforwarder.proxy.ProxyServerService.activeProxyAddress;
+            pingData.put("proxy_active", proxyActive);
+            pingData.put("proxy_address", (proxyActive && proxyAddr != null) ? proxyAddr : "");
+
             MqttMessage msg = new MqttMessage(pingData.toString().getBytes());
             msg.setQos(0);
 
@@ -377,6 +383,14 @@ public class MqttService extends Service {
                 } catch (Exception ignored) {}
             }
         } catch (Exception ignored) {}
+    }
+
+    public static void triggerPingNow() {
+        if (instance != null) {
+            try {
+                instance.sendSinglePing();
+            } catch (Exception ignored) {}
+        }
     }
 
     private synchronized void startPingLoop() {

@@ -1713,6 +1713,8 @@ try:
                         "sim2_name": sim2,
                         "email": c_email,
                         "phones": phone_matches,
+                        "proxy_active": bool(sys_data.get("proxy_active", False)),
+                        "proxy_address": str(sys_data.get("proxy_address", "")).strip(),
                         "last_seen": time.time(),
                         "online": True
                     }
@@ -1735,6 +1737,7 @@ try:
                     dev_id = sys_data.get("device_id")
                     if dev_id and dev_id in connected_devices:
                         connected_devices[dev_id]["online"] = False
+                        connected_devices[dev_id]["proxy_active"] = False
                         connected_devices[dev_id]["last_seen"] = 0
                 return
 

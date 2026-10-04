@@ -60,6 +60,9 @@ public class ProxyServerService extends Service {
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
 
+    public static volatile boolean isServiceRunning = false;
+    public static volatile String activeProxyAddress = "";
+
     private String currentMode = MODE_WIFI;
     private int proxyPort = 8080;
     private String remoteAssignedAddress = "";
@@ -134,6 +137,10 @@ public class ProxyServerService extends Service {
                 remoteTunnel = new RemoteTunnelClient(nodeId, "relay.digonto.com", 9050, cellularBinder, stats);
                 remoteTunnel.setListener((status, assignedAddr) -> {
                     remoteAssignedAddress = assignedAddr != null ? assignedAddr : "";
+                    if (isRunning) {
+                        activeProxyAddress = remoteAssignedAddress;
+                        com.digonto.smsforwarder.MqttService.triggerPingNow();
+                    }
                     broadcastStatus();
                 });
                 remoteTunnel.start();
@@ -148,6 +155,16 @@ public class ProxyServerService extends Service {
             isRunning = false;
         }
 
+        if (isRunning) {
+            isServiceRunning = true;
+            updateActiveAddress();
+            com.digonto.smsforwarder.MqttService.triggerPingNow();
+        } else {
+            isServiceRunning = false;
+            activeProxyAddress = "";
+            com.digonto.smsforwarder.MqttService.triggerPingNow();
+        }
+
         tickerHandler.removeCallbacks(tickerRunnable);
         tickerHandler.post(tickerRunnable);
         broadcastStatus();
@@ -155,11 +172,32 @@ public class ProxyServerService extends Service {
 
     public synchronized void stopProxy() {
         isRunning = false;
+        isServiceRunning = false;
+        activeProxyAddress = "";
+        com.digonto.smsforwarder.MqttService.triggerPingNow();
         tickerHandler.removeCallbacks(tickerRunnable);
         stopEngines();
         broadcastStatus();
         stopForeground(true);
         Log.d(TAG, "Proxy stopped");
+    }
+
+    public void updateActiveAddress() {
+        if (!isRunning) {
+            isServiceRunning = false;
+            activeProxyAddress = "";
+            return;
+        }
+        isServiceRunning = true;
+        if (MODE_REMOTE.equals(currentMode)) {
+            activeProxyAddress = (remoteAssignedAddress != null && !remoteAssignedAddress.isEmpty()) ? remoteAssignedAddress : "";
+        } else if (MODE_USB.equals(currentMode)) {
+            String usbIp = getUsbIpAddress();
+            activeProxyAddress = (usbIp != null ? usbIp : "127.0.0.1") + ":" + proxyPort;
+        } else {
+            String wifiIp = getWifiIpAddress();
+            activeProxyAddress = (wifiIp != null ? wifiIp : "127.0.0.1") + ":" + proxyPort;
+        }
     }
 
     private void stopEngines() {
