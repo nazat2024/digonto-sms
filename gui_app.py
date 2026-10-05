@@ -399,6 +399,8 @@ class IVACApp(ctk.CTk):
         self.otp_data = {}
         self._expanded_phones = set()
         self._loaded_tabs = set()
+        self._proxy_device_cache = {}
+        self._load_cached_device_proxy_mappings()
         
         # Apply user theme and font scale preferences
         saved_theme = self.config.get("ui_theme", "cyber_navy")
@@ -421,6 +423,7 @@ class IVACApp(ctk.CTk):
         self._check_license_and_start()
         self.after(100, self._start_gui_mqtt_listener)
         self.after(500, self._cleanup_legacy_installation)
+        self.after(300, self._setup_alt_zoom_loupe)
 
     def _cleanup_legacy_installation(self):
         """Removes leftover desktop shortcut and Start Menu folder from older 'Digonto QuickFill'."""
@@ -448,6 +451,197 @@ class IVACApp(ctk.CTk):
                         pass
         except Exception:
             pass
+
+    def _setup_alt_zoom_loupe(self):
+        """Alt-Key Magnifying Glass (Loupe Zoom): Displays smooth 2x zoomed inspection lens under cursor while holding Alt"""
+        import ctypes
+        import tkinter as tk
+        from ctypes import wintypes
+        from PIL import Image, ImageTk, ImageDraw
+
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        VK_MENU = 0x12  # Alt key (either left or right)
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ('biSize', wintypes.DWORD),
+                ('biWidth', wintypes.LONG),
+                ('biHeight', wintypes.LONG),
+                ('biPlanes', wintypes.WORD),
+                ('biBitCount', wintypes.WORD),
+                ('biCompression', wintypes.DWORD),
+                ('biSizeImage', wintypes.DWORD),
+                ('biXPelsPerMeter', wintypes.LONG),
+                ('biYPelsPerMeter', wintypes.LONG),
+                ('biClrUsed', wintypes.DWORD),
+                ('biClrImportant', wintypes.DWORD)
+            ]
+
+        LOUPE_WIDTH = 360
+        LOUPE_HEIGHT = 180
+        self._loupe_zoom_factor = 2.8
+
+        loupe = tk.Toplevel(self)
+        loupe.overrideredirect(True)
+        loupe.attributes('-topmost', True)
+        loupe.withdraw()
+
+        lens_frame = tk.Frame(loupe, bg="#0284c7", padx=2, pady=2)
+        lens_frame.pack(fill="both", expand=True)
+
+        lens_label = tk.Label(lens_frame, bg="#090d16", bd=0)
+        lens_label.pack(fill="both", expand=True)
+
+        self._loupe_active = False
+        self._loupe_img_ref = None
+        self._alt_key_held = False
+
+        # Dual-track Alt key detection: hardware state + Tkinter event bindings
+        def _on_alt_down(e=None):
+            self._alt_key_held = True
+
+        def _on_alt_up(e=None):
+            self._alt_key_held = False
+
+        def _on_loupe_wheel(e=None):
+            if self._loupe_active or getattr(self, "_alt_key_held", False) or bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000):
+                if hasattr(e, 'delta') and e.delta:
+                    current_z = getattr(self, '_loupe_zoom_factor', 2.8)
+                    if e.delta > 0:
+                        self._loupe_zoom_factor = min(5.0, round(current_z + 0.3, 1))
+                    else:
+                        self._loupe_zoom_factor = max(1.5, round(current_z - 0.3, 1))
+                    return "break"
+
+        try:
+            self.bind_all("<KeyPress-Alt_L>", _on_alt_down, add="+")
+            self.bind_all("<KeyPress-Alt_R>", _on_alt_down, add="+")
+            self.bind_all("<KeyRelease-Alt_L>", _on_alt_up, add="+")
+            self.bind_all("<KeyRelease-Alt_R>", _on_alt_up, add="+")
+            self.bind_all("<Alt-KeyPress>", _on_alt_down, add="+")
+            self.bind_all("<Alt-KeyRelease>", _on_alt_up, add="+")
+            self.bind_all("<MouseWheel>", _on_loupe_wheel, add="+")
+        except Exception:
+            pass
+
+        def capture_screen_rect(x, y, w, h):
+            try:
+                src_dc = user32.GetDC(0)
+                mem_dc = gdi32.CreateCompatibleDC(src_dc)
+                bmp = gdi32.CreateCompatibleBitmap(src_dc, w, h)
+                gdi32.SelectObject(mem_dc, bmp)
+                gdi32.BitBlt(mem_dc, 0, 0, w, h, src_dc, x, y, 0x00CC0020)
+                
+                bmi = BITMAPINFOHEADER()
+                bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+                bmi.biWidth = w
+                bmi.biHeight = -h
+                bmi.biPlanes = 1
+                bmi.biBitCount = 32
+                bmi.biCompression = 0
+                
+                buf = ctypes.create_string_buffer(w * h * 4)
+                gdi32.GetDIBits(mem_dc, bmp, 0, h, buf, ctypes.byref(bmi), 0)
+                
+                gdi32.DeleteObject(bmp)
+                gdi32.DeleteDC(mem_dc)
+                user32.ReleaseDC(0, src_dc)
+                
+                return Image.frombuffer('RGBA', (w, h), buf, 'raw', 'BGRA', 0, 1)
+            except Exception:
+                return None
+
+        pt = wintypes.POINT()
+        rect = wintypes.RECT()
+
+        def update_loupe():
+            try:
+                if not self.winfo_exists():
+                    return
+
+                # Check hardware state of Alt key or Tkinter event state
+                alt_down = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000) or getattr(self, "_alt_key_held", False)
+
+                # Get true physical mouse position via Win32 API (avoids Tkinter 64-bit coordinate glitches)
+                user32.GetCursorPos(ctypes.byref(pt))
+                mx, my = pt.x, pt.y
+
+                # Get true window rect of our application
+                root_hwnd = user32.GetParent(self.winfo_id()) or self.winfo_id()
+                user32.GetWindowRect(root_hwnd, ctypes.byref(rect))
+                in_window = (rect.left <= mx <= rect.right) and (rect.top <= my <= rect.bottom)
+
+                # Also verify application is focused / active
+                fg_hwnd = user32.GetForegroundWindow()
+                loupe_hwnd = loupe.winfo_id()
+                app_active = (fg_hwnd in (root_hwnd, self.winfo_id(), loupe_hwnd))
+
+                if not app_active:
+                    self._alt_key_held = False
+                    alt_down = False
+
+                if alt_down and in_window and self.winfo_viewable() and self.state() != "iconic":
+                    zoom_factor = getattr(self, '_loupe_zoom_factor', 2.8)
+                    src_w = max(20, int(LOUPE_WIDTH / zoom_factor))
+                    src_h = max(10, int(LOUPE_HEIGHT / zoom_factor))
+                    half_w = src_w // 2
+                    half_h = src_h // 2
+
+                    src_x = mx - half_w
+                    src_y = my - half_h
+                    img = capture_screen_rect(src_x, src_y, src_w, src_h)
+                    if img:
+                        zoomed = img.resize((LOUPE_WIDTH, LOUPE_HEIGHT), Image.Resampling.LANCZOS)
+                        
+                        # Subtle central crosshair for precise inspection
+                        draw = ImageDraw.Draw(zoomed)
+                        cx, cy = LOUPE_WIDTH // 2, LOUPE_HEIGHT // 2
+                        draw.line([(cx - 10, cy), (cx - 3, cy)], fill=(255, 255, 255, 180), width=1)
+                        draw.line([(cx + 3, cy), (cx + 10, cy)], fill=(255, 255, 255, 180), width=1)
+                        draw.line([(cx, cy - 10), (cx, cy - 3)], fill=(255, 255, 255, 180), width=1)
+                        draw.line([(cx, cy + 3), (cx, cy + 10)], fill=(255, 255, 255, 180), width=1)
+                        
+                        # Corner zoom indicator badge with current zoom factor
+                        badge_txt = f"{zoom_factor:.1f}x"
+                        draw.rectangle([(LOUPE_WIDTH - 38, 4), (LOUPE_WIDTH - 4, 18)], fill=(0, 0, 0, 160))
+                        draw.text((LOUPE_WIDTH - 34, 4), badge_txt, fill=(56, 189, 248, 230))
+
+                        tk_img = ImageTk.PhotoImage(zoomed)
+                        lens_label.configure(image=tk_img)
+                        self._loupe_img_ref = tk_img
+
+                        screen_w = user32.GetSystemMetrics(0)
+                        screen_h = user32.GetSystemMetrics(1)
+                        
+                        # Place loupe far enough away horizontally from inspection area (half_w) to never capture itself
+                        OFFSET_X = half_w + 18
+                        if mx + OFFSET_X + LOUPE_WIDTH < screen_w - 10:
+                            lx = mx + OFFSET_X
+                        else:
+                            lx = mx - OFFSET_X - LOUPE_WIDTH
+
+                        ly = my - (LOUPE_HEIGHT // 2)
+                        if ly < 10:
+                            ly = 10
+                        elif ly + LOUPE_HEIGHT > screen_h - 40:
+                            ly = screen_h - LOUPE_HEIGHT - 40
+
+                        loupe.geometry(f"{LOUPE_WIDTH}x{LOUPE_HEIGHT}+{lx}+{ly}")
+                        if not self._loupe_active:
+                            loupe.deiconify()
+                            loupe.lift()
+                            self._loupe_active = True
+                else:
+                    if self._loupe_active:
+                        loupe.withdraw()
+                        self._loupe_active = False
+            except Exception:
+                pass
+            finally:
+                self.after(25, update_loupe)
+
+        self.after(400, update_loupe)
     
     def _load_config(self):
         backup_file = os.path.join(APP_DATA_DIR, "config_backup.json")
@@ -514,6 +708,9 @@ class IVACApp(ctk.CTk):
             if self.config.get("profiles") or self.config.get("rocket_accounts"):
                 with open(backup_file, 'w', encoding='utf-8') as bf:
                     json.dump(self.config, bf, ensure_ascii=False, indent=2)
+            # Instantly update device row IP usage counts
+            if hasattr(self, '_device_rows') and self._device_rows and hasattr(self, '_latest_devices') and self._latest_devices:
+                self.after(0, lambda: self._apply_status_update({"devices": self._latest_devices}))
         except Exception:
             pass
     def _lockout_license(self, error_msg="আপনার লাইসেন্সটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে!", status="blocked"):
@@ -1520,6 +1717,23 @@ class IVACApp(ctk.CTk):
             devices = data.get("devices", [])
             self._latest_devices = devices
             
+            # Real-time proxy-to-device mapping cache update
+            proxy_cache_changed = False
+            for dev in devices:
+                d_proxy = self._clean_proxy_ip(dev.get("proxy_address"))
+                if d_proxy:
+                    d_name = self._format_device_name(dev.get("custom_name"), dev.get("device_name"))
+                    if d_name:
+                        if self._cache_device_proxy_mapping(d_proxy, d_name):
+                            proxy_cache_changed = True
+            
+            if proxy_cache_changed:
+                if hasattr(self, 'tabview') and self.tabview.get() == "👥 Profiles":
+                    if hasattr(self, '_refresh_profiles_tab'):
+                        self._refresh_profiles_tab()
+                else:
+                    self._profiles_tab_dirty = True
+            
             # 1. INCREMENTAL DEVICE UPDATE (ZERO DESTROY LAG FOR 20-30 MOBILES)
             if not hasattr(self, '_device_rows'):
                 self._device_rows = {}
@@ -1563,17 +1777,17 @@ class IVACApp(ctk.CTk):
                     proxy_active = dev.get("proxy_active", False)
                     proxy_addr = dev.get("proxy_address", "")
 
-                    # Clean IP extraction - no "Proxy:" prefix, pure IP
-                    ip_clean = ""
-                    if proxy_active and proxy_addr:
-                        ip_clean = str(proxy_addr).strip()
-                        for prefix in ["http://", "https://", "socks5://"]:
-                            if ip_clean.lower().startswith(prefix):
-                                ip_clean = ip_clean[len(prefix):]
-
+                    # Clean IP extraction - format: 🌐 <ip>-USE: <count>
+                    ip_clean = self._clean_proxy_ip(proxy_addr) if (proxy_active and proxy_addr) else ""
                     sim_text = " | ".join(sims) if sims else "No SIM set"
-                    ip_text = f"🌐 {ip_clean}" if ip_clean else "🌐 -"
-                    ip_color = "#0284c7" if ip_clean else "#64748b"
+                    if ip_clean:
+                        profiles = self.config.get("profiles", []) if hasattr(self, "config") else []
+                        use_cnt = sum(1 for p in profiles if self._clean_proxy_ip(p.get("proxy", "")) == ip_clean)
+                        ip_text = f"🌐 {ip_clean}-USE: {use_cnt}"
+                        ip_color = "#0284c7"
+                    else:
+                        ip_text = "🌐 -"
+                        ip_color = "#64748b"
 
                     status_icon = "🟢" if is_online else "⚪"
                     color = "#059669" if is_online else "#495670"
@@ -1650,6 +1864,105 @@ class IVACApp(ctk.CTk):
         except Exception:
             pass
 
+    def _clean_proxy_ip(self, proxy_str):
+        if not proxy_str:
+            return ""
+        s = str(proxy_str).strip()
+        if s.lower() in ("none", "null", "false", ""):
+            return ""
+        for prefix in ["http://", "https://", "socks5://", "socks4://"]:
+            if s.lower().startswith(prefix):
+                s = s[len(prefix):]
+        return s.rstrip("/").strip()
+
+    def _format_device_name(self, custom_name, device_name):
+        c = str(custom_name or "").strip()
+        d = str(device_name or "").strip()
+        if c in ("Device", "Unknown", "Mobile", "None", ""): c = ""
+        if d in ("Device", "Unknown", "Mobile", "None", ""): d = ""
+        return c or d or ""
+
+    def _load_cached_device_proxy_mappings(self):
+        if not hasattr(self, '_proxy_device_cache'):
+            self._proxy_device_cache = {}
+        try:
+            import os, json
+            app_data = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+            cache_file = os.path.join(app_data, "proxy_devices_cache.json")
+            if os.path.exists(cache_file):
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    self._proxy_device_cache.update(json.load(f))
+        except Exception:
+            pass
+
+    def _cache_device_proxy_mapping(self, clean_proxy, name):
+        if not clean_proxy or not name:
+            return False
+        if not hasattr(self, '_proxy_device_cache'):
+            self._proxy_device_cache = {}
+            self._load_cached_device_proxy_mappings()
+        if self._proxy_device_cache.get(clean_proxy) != name:
+            self._proxy_device_cache[clean_proxy] = name
+            try:
+                import os, json
+                app_data = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
+                os.makedirs(app_data, exist_ok=True)
+                cache_file = os.path.join(app_data, "proxy_devices_cache.json")
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(self._proxy_device_cache, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+            return True
+        return False
+
+    def _resolve_device_name_for_proxy(self, proxy, phone=None):
+        clean_target = self._clean_proxy_ip(proxy)
+        if not clean_target:
+            return ""
+
+        # 1. Check in-memory devices list (from status poller)
+        devices = getattr(self, '_latest_devices', [])
+        if not devices:
+            try:
+                import requests
+                r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.3)
+                if r.ok:
+                    devices = r.json().get("devices", [])
+                    self._latest_devices = devices
+            except Exception:
+                pass
+
+        # Check exact proxy match
+        for d in devices:
+            d_proxy = self._clean_proxy_ip(d.get("proxy_address"))
+            if d_proxy and d_proxy == clean_target:
+                name = self._format_device_name(d.get("custom_name"), d.get("device_name"))
+                if name:
+                    self._cache_device_proxy_mapping(clean_target, name)
+                    return name
+
+        # Check by phone match if proxy host matches
+        clean_phone = re.sub(r'[^0-9]', '', str(phone or ""))
+        if clean_phone and len(clean_phone) >= 10:
+            target_host = clean_target.split(":")[0] if ":" in clean_target else clean_target
+            for d in devices:
+                d_phones = d.get("phones") or []
+                if clean_phone in d_phones or clean_phone in str(d.get("sim1_name", "")) or clean_phone in str(d.get("sim2_name", "")):
+                    d_proxy = self._clean_proxy_ip(d.get("proxy_address"))
+                    d_host = d_proxy.split(":")[0] if ":" in d_proxy else d_proxy
+                    if not target_host or not d_host or target_host == d_host or target_host.startswith("192.168."):
+                        name = self._format_device_name(d.get("custom_name"), d.get("device_name"))
+                        if name:
+                            self._cache_device_proxy_mapping(clean_target, name)
+                            return name
+
+        # 2. Check persistent cache
+        if hasattr(self, '_proxy_device_cache'):
+            if clean_target in self._proxy_device_cache:
+                return self._proxy_device_cache[clean_target]
+        self._load_cached_device_proxy_mappings()
+        return getattr(self, '_proxy_device_cache', {}).get(clean_target, "")
+
     def _get_active_proxy_devices(self):
         """Returns list of online devices that have active proxy and a valid proxy_address"""
         devices = getattr(self, '_latest_devices', [])
@@ -1663,16 +1976,23 @@ class IVACApp(ctk.CTk):
             except Exception:
                 pass
         active_list = []
+        
+        # Count profiles per proxy IP for informative dropdown label
+        profiles = self.config.get("profiles", []) if hasattr(self, "config") else []
+        proxy_counts = {}
+        for p in profiles:
+            p_addr = self._clean_proxy_ip(p.get("proxy", ""))
+            if p_addr:
+                proxy_counts[p_addr] = proxy_counts.get(p_addr, 0) + 1
+
         for d in devices:
             # Filter online or recently seen devices with proxy_active and non-empty proxy_address
             if (d.get("online") or d.get("proxy_active")) and d.get("proxy_address"):
-                name = (d.get("custom_name") or d.get("device_name") or "Mobile").strip()
-                sim1 = (d.get("sim1_name") or "").strip()
-                sim2 = (d.get("sim2_name") or "").strip()
-                sim_display = sim1 or sim2
-                sim_str = f" [{sim_display}]" if sim_display else ""
+                name = self._format_device_name(d.get("custom_name"), d.get("device_name")) or "Mobile"
                 addr = str(d.get("proxy_address", "")).strip()
-                label = f"📱 {name}{sim_str} • {addr}"
+                clean_addr = self._clean_proxy_ip(addr)
+                count = proxy_counts.get(clean_addr, 0)
+                label = f"📱 {name}-{addr}-Use: {count}"
                 active_list.append((label, addr))
         return active_list
 
@@ -2188,14 +2508,15 @@ class IVACApp(ctk.CTk):
 
         proxy_active = dev_data.get("proxy_active", False)
         proxy_addr = dev_data.get("proxy_address", "")
-        ip_clean = ""
-        if proxy_active and proxy_addr:
-            ip_clean = str(proxy_addr).strip()
-            for prefix in ["http://", "https://", "socks5://"]:
-                if ip_clean.lower().startswith(prefix):
-                    ip_clean = ip_clean[len(prefix):]
-        ip_text = f"🌐 {ip_clean}" if ip_clean else "🌐 -"
-        ip_color = "#0284c7" if ip_clean else "#64748b"
+        ip_clean = self._clean_proxy_ip(proxy_addr) if (proxy_active and proxy_addr) else ""
+        if ip_clean:
+            profiles = self.config.get("profiles", []) if hasattr(self, "config") else []
+            use_cnt = sum(1 for p in profiles if self._clean_proxy_ip(p.get("proxy", "")) == ip_clean)
+            ip_text = f"🌐 {ip_clean}-USE: {use_cnt}"
+            ip_color = "#0284c7"
+        else:
+            ip_text = "🌐 -"
+            ip_color = "#64748b"
 
         display_text = f"  {status_icon}  {dev_name}"
         self._add_device_row_incremental(dev_data, dev_id, display_text, color, sim_text, ip_text, ip_color, is_active, dev_name)
@@ -2400,6 +2721,13 @@ class IVACApp(ctk.CTk):
             except Exception:
                 saved_y = 0.0
 
+        # Pre-calculate proxy usage counts
+        self._current_proxy_counts = {}
+        for prof in all_profiles:
+            p_addr = self._clean_proxy_ip(prof.get("proxy", ""))
+            if p_addr:
+                self._current_proxy_counts[p_addr] = self._current_proxy_counts.get(p_addr, 0) + 1
+
         # Fast Synchronous Direct Render - Instant response for all profiles!
         for i, p in enumerate(all_profiles):
             self._create_fast_profile_row(self._profiles_container, p, i)
@@ -2528,12 +2856,22 @@ class IVACApp(ctk.CTk):
         l1 = tk.Label(info, text=name, font=("Segoe UI", 10, "bold"), fg=THEME["text_primary"], bg=THEME["bg_card"], anchor="w")
         l1.pack(anchor="w")
         
-        details_parts = [f"📁 {chrome_profile}"]
+        details_parts = []
         if phone: details_parts.append(f"📱 {phone}")
         if password: details_parts.append(f"🔑 {password}")
         proxy = str(p.get("proxy", "") or "").strip()
-        if proxy: details_parts.append(f"🌐 {proxy}")
-        details_str = "   •   ".join(details_parts)
+        if proxy.lower() in ("none", "null", "false", ""):
+            proxy = ""
+        dev_mobile_name = ""
+        if proxy:
+            clean_proxy = self._clean_proxy_ip(proxy)
+            dev_mobile_name = self._resolve_device_name_for_proxy(clean_proxy, phone)
+            use_cnt = getattr(self, "_current_proxy_counts", {}).get(clean_proxy, 1)
+            if dev_mobile_name:
+                details_parts.append(f"🌐{dev_mobile_name}-{clean_proxy}-Use: {use_cnt}")
+            else:
+                details_parts.append(f"🌐{clean_proxy}-Use: {use_cnt}")
+        details_str = "   •   ".join(details_parts) if details_parts else "—"
         
         l2 = tk.Label(info, text=details_str, font=("Segoe UI", 8), fg=THEME["text_secondary"], bg=THEME["bg_card"], anchor="w")
         l2.pack(anchor="w")
@@ -2545,7 +2883,7 @@ class IVACApp(ctk.CTk):
         item_record = {
             "row": row,
             "profile": p,
-            "search_text": f"{name} {phone} {chrome_profile} {password} {proxy}".lower(),
+            "search_text": f"{name} {phone} {chrome_profile} {password} {proxy} {dev_mobile_name}".lower(),
             "visible": True,
             "cb": cb,
             "accent": accent

@@ -586,14 +586,16 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- Connection Mode Selector (Segmented Tabs) -->
+                <!-- Connection Mode Selector (Hidden to keep UI clean since Wi-Fi is default & auto) -->
                 <LinearLayout
+                    android:id="@+id/layoutModeSelector"
                     android:layout_width="match_parent"
                     android:layout_height="42dp"
                     android:orientation="horizontal"
                     android:background="#E2E8F0"
                     android:padding="3dp"
-                    android:layout_marginBottom="14dp">
+                    android:layout_marginBottom="14dp"
+                    android:visibility="gone">
 
                     <TextView
                         android:id="@+id/btnModeWifi"
@@ -636,7 +638,8 @@
                         android:textColor="#475569"
                         android:background="@android:color/transparent"
                         android:clickable="true"
-                        android:focusable="true"/>
+                        android:focusable="true"
+                        android:visibility="gone"/>
                 </LinearLayout>
 
                 <!-- Status & Control Card -->
@@ -922,7 +925,7 @@
                             android:id="@+id/tvProxyHelpText"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="১. ল্যাপটপ ও ফোন একই ওয়াইফাই বা হটস্পটে রাখুন।\n২. উপরের '📋 কপি' বাটনে চেপে IP:Port কপি করুন।\n৩. ল্যাপটপের IVAC Master Pro-তে প্রোফাইল এডিটে প্রক্সি ঘরে বসিয়ে দিন। ক্রোম সরাসরি এই সিমের 4G দিয়ে চলবে!"
+                            android:text="১. কম্পিউটার ও মোবাইল একই ওয়াইফাই বা হটস্পটে যুক্ত রাখুন।\n২. যেই সিমে ইন্টারনেট কেনা আছে, সেই সিমের মোবাইল ডাটা অন রাখুন।\n৩. এখান থেকে '৪জি প্রক্সি চালু করুন' বাটনে চাপ দিন (বাকি সব সফটওয়্যার স্বয়ংক্রিয়ভাবে হ্যান্ডেল করবে)!"
                             android:textSize="11sp"
                             android:textColor="#475569"
                             android:lineSpacingExtra="3dp"/>
@@ -1056,7 +1059,7 @@
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="২ মিনিট স্পর্শ না থাকলে স্ক্রিন কালো হয়ে ব্যাটারি বাঁচাবে"
+                                    android:text="১ মিনিট স্পর্শ না থাকলে স্ক্রিন কালো হয়ে ব্যাটারি বাঁচাবে"
                                     android:textSize="11sp"
                                     android:textColor="#64748B"/>
                             </LinearLayout>
@@ -1065,7 +1068,7 @@
                                 android:id="@+id/switchAmoledSaver"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:checked="false"/>
+                                android:checked="true"/>
                         </LinearLayout>
 
                     </LinearLayout>

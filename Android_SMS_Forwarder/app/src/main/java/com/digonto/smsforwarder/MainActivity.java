@@ -114,7 +114,7 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout layoutBlackSaverOverlay;
     private Handler amoledHandler = new Handler(Looper.getMainLooper());
     private Runnable amoledRunnable;
-    private static final long AMOLED_TIMEOUT_MS = 120_000; // 2 minutes
+    private static final long AMOLED_TIMEOUT_MS = 60_000; // 1 minute (halved from 2 minutes)
 
     private SharedPreferences prefs;
     private boolean isSimLocked = false;
@@ -535,8 +535,13 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, isChecked ? "Screen will stay awake" : "Normal screen timeout restored", Toast.LENGTH_SHORT).show();
         });
 
-        // AMOLED Black Saver switch
-        boolean amoledSaver = prefs.getBoolean("amoled_black_saver", false);
+        // Ensure AMOLED Black Saver defaults to true
+        if (!prefs.contains("amoled_black_saver_v2")) {
+            prefs.edit().putBoolean("amoled_black_saver", true).putBoolean("amoled_black_saver_v2", true).apply();
+        }
+
+        // AMOLED Black Saver switch (default ON)
+        boolean amoledSaver = prefs.getBoolean("amoled_black_saver", true);
         switchAmoledSaver.setChecked(amoledSaver);
         switchAmoledSaver.setOnCheckedChangeListener((buttonView, isChecked) -> {
             prefs.edit().putBoolean("amoled_black_saver", isChecked).apply();
@@ -544,7 +549,7 @@ public class MainActivity extends AppCompatActivity {
                 exitAmoledMode();
             }
             resetAmoledTimer();
-            Toast.makeText(this, isChecked ? "AMOLED Saver Enabled (2 min idle)" : "AMOLED Saver Disabled", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, isChecked ? "AMOLED Saver Enabled (1 min idle)" : "AMOLED Saver Disabled", Toast.LENGTH_SHORT).show();
         });
 
         // Custom Device Name
@@ -706,7 +711,7 @@ public class MainActivity extends AppCompatActivity {
         if (ProxyServerService.MODE_WIFI.equals(mode)) {
             btnModeWifi.setBackgroundColor(activeBg);
             btnModeWifi.setTextColor(activeText);
-            tvProxyHelpText.setText("১. ল্যাপটপ ও ফোন একই ওয়াইফাই বা হটস্পটে রাখুন।\n২. উপরের '📋 কপি' বাটনে চেপে IP:Port কপি করুন।\n৩. ল্যাপটপের IVAC Master Pro-তে প্রোফাইল এডিটে প্রক্সি ঘরে বসিয়ে দিন। ক্রোম সরাসরি এই সিমের 4G দিয়ে চলবে!");
+            tvProxyHelpText.setText("১. কম্পিউটার ও মোবাইল একই ওয়াইফাই বা হটস্পটে যুক্ত রাখুন।\n২. যেই সিমে ইন্টারনেট কেনা আছে, সেই সিমের মোবাইল ডাটা অন রাখুন।\n৩. এখান থেকে '৪জি প্রক্সি চালু করুন' বাটনে চাপ দিন (বাকি সব সফটওয়্যার স্বয়ংক্রিয়ভাবে হ্যান্ডেল করবে)!");
             tvProxyAddress.setText(getWifiIpFormatted());
         } else if (ProxyServerService.MODE_USB.equals(mode)) {
             btnModeUsb.setBackgroundColor(activeBg);
@@ -858,7 +863,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupAmoledBlackSaver() {
         amoledRunnable = () -> {
-            boolean isSaverEnabled = prefs.getBoolean("amoled_black_saver", false);
+            boolean isSaverEnabled = prefs.getBoolean("amoled_black_saver", true);
             if (isSaverEnabled) {
                 enterAmoledMode();
             }
@@ -895,7 +900,7 @@ public class MainActivity extends AppCompatActivity {
     private void resetAmoledTimer() {
         if (amoledHandler != null && amoledRunnable != null) {
             amoledHandler.removeCallbacks(amoledRunnable);
-            boolean isSaverEnabled = prefs.getBoolean("amoled_black_saver", false);
+            boolean isSaverEnabled = prefs.getBoolean("amoled_black_saver", true);
             if (isSaverEnabled) {
                 amoledHandler.postDelayed(amoledRunnable, AMOLED_TIMEOUT_MS);
             }

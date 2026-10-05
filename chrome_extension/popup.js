@@ -1042,6 +1042,244 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                 }).catch(() => {});
             }
+
+            // Auto-refresh IP check if result box is currently open
+            if (proxyIpResultBox && proxyIpResultBox.style.display !== 'none') {
+                setTimeout(() => {
+                    doCheckProxyIp();
+                }, 300);
+            }
+        });
+    }
+
+    // ===== PROXY IP CHECK BUTTON (Shows live IP & SIM operator below) =====
+    const checkProxyBtn = document.getElementById('check-proxy-btn');
+    const proxyIpResultBox = document.getElementById('proxy-ip-result-box');
+
+    if (checkProxyBtn) {
+        let isChecking = false;
+
+        function detectSimName(isp, org) {
+            const text = `${isp || ''} ${org || ''}`.toLowerCase();
+            if (text.includes('grameenphone') || text.includes('grameen') || text.includes('telenor')) return 'Grameenphone';
+            if (text.includes('banglalink') || text.includes('veon')) return 'Banglalink';
+            if (text.includes('robi') || text.includes('axiom')) return 'Robi';
+            if (text.includes('airtel')) return 'Airtel';
+            if (text.includes('teletalk')) return 'Teletalk';
+            return (isp || org || '').split(' ')[0] || '';
+        }
+
+        function cleanProxyAddr(p) {
+            if (!p) return '';
+            let s = String(p).trim().toLowerCase();
+            ['socks5://', 'socks4://', 'https://', 'http://'].forEach(prefix => {
+                if (s.startsWith(prefix)) s = s.substring(prefix.length);
+            });
+            return s.replace(/\/+$/, '').trim();
+        }
+
+        async function resolveCurrentMobileName(targetProxy, isProxyEnabled) {
+            // When proxy switch is OFF or proxy is empty, it is NOT using a mobile proxy!
+            if (!isProxyEnabled || !targetProxy || !targetProxy.trim()) {
+                return 'No IP';
+            }
+
+            const cleanTarget = cleanProxyAddr(targetProxy);
+            if (!cleanTarget) {
+                return 'No IP';
+            }
+
+            // Fetch live status if not loaded or empty
+            let status = latestServerStatus;
+            if (!status || !status.devices || !status.devices.length) {
+                try {
+                    const ctrl = new AbortController();
+                    const tid = setTimeout(() => ctrl.abort(), 1200);
+                    const res = await fetch('http://127.0.0.1:5000/api/status', { signal: ctrl.signal });
+                    clearTimeout(tid);
+                    if (res.ok) {
+                        status = await res.json();
+                        latestServerStatus = status;
+                    }
+                } catch (e) {}
+            }
+
+            const devices = (status && Array.isArray(status.devices)) ? status.devices : [];
+
+            function formatName(n) {
+                if (!n) return '';
+                let str = String(n).trim();
+                if (['device', 'unknown', 'mobile', 'none', ''].includes(str.toLowerCase())) return '';
+                if (str === str.toLowerCase()) {
+                    str = str.charAt(0).toUpperCase() + str.slice(1);
+                }
+                return str;
+            }
+
+            // 1. Exact proxy match
+            for (const dev of devices) {
+                const devProxy = cleanProxyAddr(dev.proxy_address);
+                if (devProxy && devProxy === cleanTarget) {
+                    const name = formatName(dev.custom_name) || formatName(dev.device_name);
+                    if (name) return name;
+                }
+            }
+
+            // 2. Host match (e.g. 192.168.0.195)
+            const targetHost = cleanTarget.split(':')[0];
+            if (targetHost) {
+                for (const dev of devices) {
+                    const devProxy = cleanProxyAddr(dev.proxy_address);
+                    const devHost = devProxy.split(':')[0];
+                    if (devHost && devHost === targetHost) {
+                        const name = formatName(dev.custom_name) || formatName(dev.device_name);
+                        if (name) return name;
+                    }
+                }
+            }
+
+            // 3. Match by phone if proxy belongs to local mobile subnet
+            if (cleanTarget.startsWith('192.168.') || cleanTarget.startsWith('10.') || cleanTarget.startsWith('172.')) {
+                const cleanPhone = (currentPhone || (phoneInput ? phoneInput.value : '')).replace(/[^0-9]/g, '');
+                if (cleanPhone && cleanPhone.length === 11) {
+                    for (const dev of devices) {
+                        const devPhones = dev.phones || [];
+                        const text = `${dev.sim1_name || ''} ${dev.sim2_name || ''} ${dev.custom_name || ''} ${dev.device_name || ''}`;
+                        if (devPhones.includes(cleanPhone) || text.includes(cleanPhone)) {
+                            const name = formatName(dev.custom_name) || formatName(dev.device_name);
+                            if (name) return name;
+                        }
+                    }
+                }
+
+                // If only 1 online device with active proxy
+                const proxyDevs = devices.filter(d => d.online !== false && d.proxy_active);
+                if (proxyDevs.length === 1) {
+                    const name = formatName(proxyDevs[0].custom_name) || formatName(proxyDevs[0].device_name);
+                    if (name) return name;
+                }
+            }
+
+            // If no connected mobile device is found for this proxy
+            return 'No IP';
+        }
+
+        async function doCheckProxyIp() {
+            if (isChecking) return;
+            isChecking = true;
+            checkProxyBtn.classList.add('loading');
+            checkProxyBtn.textContent = '...';
+
+            if (proxyIpResultBox) {
+                proxyIpResultBox.style.display = 'flex';
+                proxyIpResultBox.style.background = '#f1f5f9';
+                proxyIpResultBox.style.borderColor = '#cbd5e1';
+                proxyIpResultBox.style.color = '#475569';
+                proxyIpResultBox.innerHTML = `<span>⏳ IP ও সিম যাচাই করা হচ্ছে...</span>`;
+            }
+
+            try {
+                let ip = '';
+                let details = '';
+                let simName = '';
+
+                // Method 1: ipwho.is (fast, provides IP + City + ISP/Operator)
+                try {
+                    const ctrl = new AbortController();
+                    const tid = setTimeout(() => ctrl.abort(), 3500);
+                    const res = await fetch('https://ipwho.is/', { signal: ctrl.signal });
+                    clearTimeout(tid);
+                    if (res.ok) {
+                        const d = await res.json();
+                        if (d && d.success !== false) {
+                            ip = d.ip || '';
+                            const city = d.city || '';
+                            const country = d.country_code || d.country || '';
+                            details = [city, country].filter(Boolean).join(', ');
+                            const isp = d.connection ? (d.connection.isp || d.connection.org || '') : '';
+                            const org = d.connection ? (d.connection.org || '') : '';
+                            simName = detectSimName(isp, org);
+                        }
+                    }
+                } catch (e1) {}
+
+                // Method 2 (Fallback): api.ipify.org (100% reliable pure IP)
+                if (!ip) {
+                    try {
+                        const ctrl2 = new AbortController();
+                        const tid2 = setTimeout(() => ctrl2.abort(), 3000);
+                        const res2 = await fetch('https://api.ipify.org?format=json', { signal: ctrl2.signal });
+                        clearTimeout(tid2);
+                        if (res2.ok) {
+                            const d2 = await res2.json();
+                            ip = d2.ip || '';
+                        }
+                    } catch (e2) {}
+                }
+
+                // Method 3 (Second Fallback): icanhazip.com
+                if (!ip) {
+                    try {
+                        const ctrl3 = new AbortController();
+                        const tid3 = setTimeout(() => ctrl3.abort(), 2500);
+                        const res3 = await fetch('https://icanhazip.com', { signal: ctrl3.signal });
+                        clearTimeout(tid3);
+                        if (res3.ok) {
+                            ip = (await res3.text()).trim();
+                        }
+                    } catch (e3) {}
+                }
+
+                if (ip) {
+                    checkProxyBtn.classList.remove('loading');
+                    checkProxyBtn.textContent = 'Check';
+
+                    // Resolve connected mobile device name for this proxy (checks if proxy switch is ON)
+                    const isProxyEnabled = proxyToggle ? proxyToggle.checked : false;
+                    const curProxyVal = proxyInput ? proxyInput.value.trim() : '';
+                    const mobileName = await resolveCurrentMobileName(curProxyVal, isProxyEnabled);
+
+                    if (proxyIpResultBox) {
+                        proxyIpResultBox.style.display = 'flex';
+                        proxyIpResultBox.style.background = '#f0fdf4';
+                        proxyIpResultBox.style.borderColor = '#86efac';
+                        proxyIpResultBox.style.color = '#15803d';
+                        
+                        const simPart = simName ? ` • 📱 <b>${simName}</b>` : '';
+                        const locPart = details ? ` <span style="color:#64748b; font-size:8.5px;">(${details})</span>` : '';
+                        const isNoIp = !mobileName || mobileName.toLowerCase() === 'no ip';
+                        const mobDisplay = isNoIp ? 'No IP' : mobileName;
+                        const mobColor = isNoIp ? '#dc2626' : '#0369a1';
+                        const mobPart = ` • <span style="font-size:8.5px; color:${mobColor}; font-weight:700;">mobile: ${mobDisplay}</span>`;
+                        proxyIpResultBox.innerHTML = `
+                            <span title="লাইভ পাবলিক আইপি, সিম অপারেটর ও মোবাইল">🌐 <b>${ip}</b>${simPart}${locPart}${mobPart}</span>
+                        `;
+                    }
+                } else {
+                    throw new Error('Unable to resolve IP');
+                }
+            } catch (err) {
+                checkProxyBtn.classList.remove('loading');
+                checkProxyBtn.textContent = 'Check';
+
+                if (proxyIpResultBox) {
+                    proxyIpResultBox.style.display = 'flex';
+                    proxyIpResultBox.style.background = '#fef2f2';
+                    proxyIpResultBox.style.borderColor = '#fca5a5';
+                    proxyIpResultBox.style.color = '#b91c1c';
+                    proxyIpResultBox.innerHTML = `
+                        <span>⚠️ ইন্টারনেট বা প্রক্সি কানেকশন পাওয়া যায়নি</span>
+                    `;
+                }
+            } finally {
+                isChecking = false;
+            }
+        }
+
+        // Single click: Instantly checks IP and SIM and displays it below
+        checkProxyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            doCheckProxyIp();
         });
     }
 

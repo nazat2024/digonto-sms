@@ -914,8 +914,9 @@ function createPinWidget() {
             * { margin:0; padding:0; box-sizing:border-box; }
             #pin-box {
                 position: fixed;
-                top: 12px;
-                right: 12px;
+                top: 10px;
+                left: max(15px, calc(50% - 220px));
+                right: auto;
                 z-index: 2147483647;
                 width: 195px;
                 background: #fff;
@@ -1119,26 +1120,96 @@ function createPinWidget() {
 
 
 
-    // Make draggable
+    // Make draggable & save custom position with strict viewport boundary clamping (cannot be dragged off-screen)
     const pinBox = shadow.getElementById('pin-box');
     const pinHeader = shadow.getElementById('pin-header');
     let dragging = false, dx = 0, dy = 0;
 
+    function clampPinBoxPosition(leftVal, topVal) {
+        const boxWidth = (pinBox && (pinBox.offsetWidth || pinBox.getBoundingClientRect().width)) || 195;
+        const boxHeight = (pinBox && (pinBox.offsetHeight || pinBox.getBoundingClientRect().height)) || 60;
+        const pad = 4; // 4px safe margin from viewport edge
+
+        const winW = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 1024;
+        const winH = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 768;
+
+        const maxLeft = Math.max(pad, winW - boxWidth - pad);
+        const maxTop = Math.max(pad, winH - boxHeight - pad);
+
+        let finalLeft = typeof leftVal === 'number' ? leftVal : parseFloat(leftVal);
+        let finalTop = typeof topVal === 'number' ? topVal : parseFloat(topVal);
+
+        if (isNaN(finalLeft)) finalLeft = pad;
+        if (isNaN(finalTop)) finalTop = pad;
+
+        finalLeft = Math.min(Math.max(pad, finalLeft), maxLeft);
+        finalTop = Math.min(Math.max(pad, finalTop), maxTop);
+
+        return { left: finalLeft + 'px', top: finalTop + 'px' };
+    }
+
+    // Restore user-dragged position if saved, otherwise default is used (with boundary clamping)
+    chrome.storage.local.get(['pin_custom_left', 'pin_custom_top'], (pos) => {
+        if (pos && pos.pin_custom_left && pos.pin_custom_top) {
+            const clamped = clampPinBoxPosition(pos.pin_custom_left, pos.pin_custom_top);
+            pinBox.style.left = clamped.left;
+            pinBox.style.top = clamped.top;
+            pinBox.style.right = 'auto';
+            pinBox.style.bottom = 'auto';
+        }
+    });
+
     pinHeader.addEventListener('mousedown', (e) => {
         dragging = true;
-        dx = e.clientX - pinBox.getBoundingClientRect().left;
-        dy = e.clientY - pinBox.getBoundingClientRect().top;
+        const rect = pinBox.getBoundingClientRect();
+        dx = e.clientX - rect.left;
+        dy = e.clientY - rect.top;
         e.preventDefault();
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!dragging) return;
-        pinBox.style.left = (e.clientX - dx) + 'px';
-        pinBox.style.top = (e.clientY - dy) + 'px';
+        const clamped = clampPinBoxPosition(e.clientX - dx, e.clientY - dy);
+        pinBox.style.left = clamped.left;
+        pinBox.style.top = clamped.top;
         pinBox.style.right = 'auto';
+        pinBox.style.bottom = 'auto';
     });
 
-    document.addEventListener('mouseup', () => { dragging = false; });
+    document.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            const clamped = clampPinBoxPosition(pinBox.style.left, pinBox.style.top);
+            pinBox.style.left = clamped.left;
+            pinBox.style.top = clamped.top;
+            chrome.storage.local.set({
+                pin_custom_left: clamped.left,
+                pin_custom_top: clamped.top
+            });
+        }
+    });
+
+    // Window resize safeguard: ensure box never overflows screen if window resized
+    window.addEventListener('resize', () => {
+        if (!pinBox || !document.contains(pinWidgetEl)) return;
+        const rect = pinBox.getBoundingClientRect();
+        if (rect.left + rect.width > window.innerWidth || rect.top + rect.height > window.innerHeight) {
+            const clamped = clampPinBoxPosition(rect.left, rect.top);
+            pinBox.style.left = clamped.left;
+            pinBox.style.top = clamped.top;
+            pinBox.style.right = 'auto';
+            pinBox.style.bottom = 'auto';
+        }
+    });
+
+    // Double-click header to reset back to default position (Image 2)
+    pinHeader.addEventListener('dblclick', () => {
+        pinBox.style.top = '10px';
+        pinBox.style.left = 'max(15px, calc(50% - 220px))';
+        pinBox.style.right = 'auto';
+        pinBox.style.bottom = 'auto';
+        chrome.storage.local.remove(['pin_custom_left', 'pin_custom_top']);
+    });
 
     // Start live OTP polling for this widget with visibility-aware adaptive scheduling
     const otpBox = shadow.getElementById('otp-display');
