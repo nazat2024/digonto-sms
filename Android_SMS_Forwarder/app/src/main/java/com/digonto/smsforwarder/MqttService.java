@@ -335,8 +335,8 @@ public class MqttService extends Service {
                                     String code = topic.replace("digonto_ivac_sms_", "").replace("_sys", "");
                                     lastPongReceivedTimes.put(code, System.currentTimeMillis());
                                     if ("desktop_ready".equals(type)) {
-                                        // Desktop announced startup: send ping immediately!
-                                        sendSinglePingInternal();
+                                        // Desktop announced startup: send ping asynchronously on netExecutor!
+                                        sendSinglePing();
                                     }
                                 } else if ("set_device_name".equals(type)) {
                                     String targetDevId = sysData.optString("device_id");
@@ -483,8 +483,6 @@ public class MqttService extends Service {
                     mqttClient.publish(sysTopic, msg);
                 } catch (Exception e) {
                     Log.w(TAG, "MQTT ping publish failed: " + e.getMessage());
-                    isConnectedToBroker = false;
-                    triggerReconnect(true);
                 }
             }
         } catch (Exception ignored) {}

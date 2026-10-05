@@ -47,8 +47,8 @@ jobs:
     - name: Release APK
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v4.0.8
-        name: "IVAC Mobile Proxy Node v4.0.8"
+        tag_name: v4.0.9
+        name: "IVAC Mobile Proxy Node v4.0.9"
         files: Android_SMS_Forwarder/app/build/outputs/apk/release/app-release-unsigned.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
