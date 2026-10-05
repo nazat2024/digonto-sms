@@ -392,7 +392,13 @@ public class MainActivity extends AppCompatActivity {
             }
 
             // Start service and connect
-            startMqttService();
+            Intent serviceIntent = new Intent(this, MqttService.class);
+            serviceIntent.putExtra("new_pairing_code", code);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
             if (MqttService.instance != null) {
                 MqttService.instance.subscribeToCode(code);
                 MqttService.instance.sendSinglePing();
@@ -1170,8 +1176,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Layer 2: Query Live Carrier Network via USSD (*511# for BL, *2# for GP/Robi/Airtel, *551# for Teletalk)
-        requestNetworkUssd(tm, subId, slot, carrier, showToast);
+        // Layer 2: Query Live Carrier Network via USSD only when user explicitly requested detection
+        if (showToast) {
+            requestNetworkUssd(tm, subId, slot, carrier, true);
+        }
     }
 
     private String extractNumberFromSubscription(SubscriptionManager sm, TelephonyManager tm, SubscriptionInfo info) {
@@ -1403,14 +1411,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startMqttService() {
-        Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
-        if (!codes.isEmpty()) {
-            Intent serviceIntent = new Intent(this, MqttService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent);
-            } else {
-                startService(serviceIntent);
-            }
+        Intent serviceIntent = new Intent(this, MqttService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
         }
     }
 

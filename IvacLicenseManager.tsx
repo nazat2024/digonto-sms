@@ -16,7 +16,7 @@ const ivacFirebaseConfig = {
   appId: "1:569432912971:web:59823945d245f2998f49ce"
 };
 
-const ivacApp = getApps().find(a => a.name === 'ivac-master-pro-app') || initializeApp(ivacFirebaseConfig, 'ivac-master-pro-app');
+const ivacApp = getApps().find((a: any) => a.name === 'ivac-master-pro-app') || initializeApp(ivacFirebaseConfig, 'ivac-master-pro-app');
 const db = getFirestore(ivacApp);
 
 interface IvacLicense {
@@ -39,6 +39,7 @@ interface IvacLicense {
 }
 
 export function getVisiblePaymentInfo(lic: IvacLicense) {
+  if (!lic) return { count: 0, amount: 0, isArchived: false, hiddenCount: 0 };
   const rawCount = lic.payment_count || 0;
   const rawAmount = lic.total_amount || 0;
   const hasAllArchived = Boolean(lic.archived_cutoffs && lic.archived_cutoffs['all']);
@@ -510,8 +511,9 @@ function TursoVaultView({ license, onBack }: {
     }
   };
 
-  const isItemArchived = (profileId: string, timestamp: any) => {
-    const cutoff = Math.max(archivedCutoffs[profileId] || 0, archivedCutoffs['all'] || 0);
+  const isItemArchived = (profileId?: string, timestamp?: any) => {
+    const pId = profileId || 'default';
+    const cutoff = Math.max(archivedCutoffs[pId] || 0, archivedCutoffs['all'] || 0);
     const ts = Number(timestamp || 0);
     return cutoff > 0 && ts > 0 && ts <= cutoff;
   };
@@ -702,8 +704,8 @@ function TursoVaultView({ license, onBack }: {
   // When a hidden profile gets a new activity, it automatically reappears!
   const distinctProfiles = useMemo(() => {
     const map = new Map<string, string>();
-    const actList = showHidden ? combinedActivities : combinedActivities.filter(a => !isItemArchived(a.profile_id, a.timestamp));
-    const payList = showHidden ? payments : payments.filter(p => !isItemArchived(p.profile_id, Number(p.timestamp || 0)));
+    const actList = showHidden ? combinedActivities : combinedActivities.filter((a: ActivityRecord) => !isItemArchived(a.profile_id, a.timestamp));
+    const payList = showHidden ? payments : payments.filter((p: PaymentRecord) => !isItemArchived(p.profile_id, Number(p.timestamp || 0)));
 
     actList.forEach((a: ActivityRecord) => {
       if (a.profile_id) map.set(a.profile_id, a.profile_label || `Profile ${a.profile_id}`);
@@ -717,15 +719,15 @@ function TursoVaultView({ license, onBack }: {
   // Auto-reset selectedProfile if that profile is now archived/hidden
   useEffect(() => {
     if (selectedProfile !== 'all' && !showHidden) {
-      const exists = distinctProfiles.some(([id]) => id === selectedProfile);
+      const exists = distinctProfiles.some(([id]: [string, string]) => id === selectedProfile);
       if (!exists) {
         setSelectedProfile('all');
       }
     }
   }, [distinctProfiles, selectedProfile, showHidden]);
 
-  const hiddenActivitiesCount = combinedActivities.filter(a => (selectedProfile === 'all' || a.profile_id === selectedProfile) && isItemArchived(a.profile_id, a.timestamp)).length;
-  const hiddenPaymentsCount = payments.filter(p => (selectedProfile === 'all' || p.profile_id === selectedProfile) && isItemArchived(p.profile_id, Number(p.timestamp || 0))).length;
+  const hiddenActivitiesCount = combinedActivities.filter((a: ActivityRecord) => (selectedProfile === 'all' || a.profile_id === selectedProfile) && isItemArchived(a.profile_id, a.timestamp)).length;
+  const hiddenPaymentsCount = payments.filter((p: PaymentRecord) => (selectedProfile === 'all' || p.profile_id === selectedProfile) && isItemArchived(p.profile_id, Number(p.timestamp || 0))).length;
   const totalHiddenCount = activeTab === 'activities' ? hiddenActivitiesCount : hiddenPaymentsCount;
   const isProfileArchived = Boolean(archivedCutoffs[selectedProfile] || (selectedProfile === 'all' && Object.keys(archivedCutoffs).length > 0));
 
@@ -1369,55 +1371,44 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
   // Copy key feedback
   const [copied, setCopied] = useState(false);
 
-  // 1. Payments Listener (With Smart Auto-Deduplication & Ghost Burst Cleanup)
+  // 1. Payments Fetch (Single getDocs fetch - 0 Persistent Stream Reads!)
   useEffect(() => {
-    const q = query(collection(db, `ivac_licenses/${license.key}/payments`));
-    const unsubscribe = onSnapshot(q, (snapshot: any) => {
-      const rawData: any[] = [];
-      snapshot.forEach((docSnap: any) => rawData.push({ id: docSnap.id, ref: docSnap.ref, ...docSnap.data() }));
-      rawData.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    let isMounted = true;
+    const fetchPayments = async () => {
+      try {
+        const q = query(collection(db, `ivac_licenses/${license.key}/payments`));
+        const snapshot = await getDocs(q);
+        const rawData: any[] = [];
+        snapshot.forEach((docSnap: any) => rawData.push({ id: docSnap.id, ref: docSnap.ref, ...docSnap.data() }));
+        rawData.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      const uniqueData: PaymentRecord[] = [];
-      const seenSignatures = new Set<string>();
-      const duplicatesToDelete: any[] = [];
+        const uniqueData: PaymentRecord[] = [];
+        const seenSignatures = new Set<string>();
 
-      for (const item of rawData) {
-        const timeBucket15s = Math.floor((item.timestamp || 0) / 15000);
-        const sig = `${item.profile_id || ''}_${(item.rocket_account || '').replace(/[^0-9]/g, '')}_${item.amount || 0}_${timeBucket15s}`;
+        for (const item of rawData) {
+          const timeBucket15s = Math.floor((item.timestamp || 0) / 15000);
+          const sig = `${item.profile_id || ''}_${(item.rocket_account || '').replace(/[^0-9]/g, '')}_${item.amount || 0}_${timeBucket15s}`;
 
-        if (seenSignatures.has(sig)) {
-          duplicatesToDelete.push(item);
-        } else {
-          seenSignatures.add(sig);
-          uniqueData.push(item as PaymentRecord);
-        }
-      }
-
-      if (duplicatesToDelete.length > 0) {
-        duplicatesToDelete.forEach(async (dup) => {
-          try {
-            await deleteDoc(dup.ref);
-            console.log(`[IVAC Auto-Cleanup] Purged duplicate Firestore payment doc: ${dup.id}`);
-          } catch (e) {
-            console.warn('Failed to purge duplicate doc:', e);
+          if (!seenSignatures.has(sig)) {
+            seenSignatures.add(sig);
+            uniqueData.push(item as PaymentRecord);
           }
-        });
+        }
 
-        try {
-          const extraCount = duplicatesToDelete.length;
-          const extraAmount = duplicatesToDelete.reduce((sum, d) => sum + (d.amount || 0), 0);
-          const licenseRef = doc(db, 'ivac_licenses', license.key);
-          updateDoc(licenseRef, {
-            payment_count: Math.max(1, (license.payment_count || 1) - extraCount),
-            total_amount: Math.max(0, (license.total_amount || 0) - extraAmount)
-          }).catch(() => {});
-        } catch (e) {}
+        if (isMounted) {
+          setPayments(uniqueData);
+          setLoadingPayments(false);
+        }
+      } catch (e) {
+        console.error('[Fetch Payments Error]', e);
+        if (isMounted) setLoadingPayments(false);
       }
+    };
 
-      setPayments(uniqueData);
-      setLoadingPayments(false);
-    });
-    return () => unsubscribe();
+    fetchPayments();
+    return () => {
+      isMounted = false;
+    };
   }, [license.key]);
 
   // 2. Real-time Live Connected Chrome Profiles (MQTT Live Tunnel - 0 Firebase Writes & Reads!)
@@ -1718,7 +1709,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                 <input
                   type="text"
                   value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
+                  onChange={(e: any) => setEditName(e.target.value)}
                   placeholder="নাম লিখুন..."
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
@@ -1730,7 +1721,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                 <input
                   type="text"
                   value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
+                  onChange={(e: any) => setEditPhone(e.target.value)}
                   placeholder="ফোন নম্বর লিখুন..."
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
@@ -1741,7 +1732,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                 </label>
                 <textarea
                   value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
+                  onChange={(e: any) => setEditDescription(e.target.value)}
                   placeholder="এই ক্লায়েন্ট সম্পর্কে নোট লিখুন..."
                   rows={3}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
@@ -1852,7 +1843,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                 <input
                   type="number"
                   value={extendDays}
-                  onChange={(e) => setExtendDays(e.target.value)}
+                  onChange={(e: any) => setExtendDays(e.target.value)}
                   className="w-20 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-sm text-center focus:ring-2 focus:ring-blue-500 outline-none"
                   min="1"
                 />
@@ -1976,7 +1967,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                {activeProfiles.filter(p => {
+                {activeProfiles.filter((p: ActiveProfile) => {
                   if (!showHidden && (archivedCutoffs['all'] || 0) > 0 && (p.last_seen || 0) <= (archivedCutoffs['all'] || 0)) return false;
                   return p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS);
                 }).length} Online
@@ -1985,7 +1976,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
           </div>
         </CardHeader>
         <CardContent className="p-4">
-          {activeProfiles.filter(p => {
+          {activeProfiles.filter((p: ActiveProfile) => {
             if (!showHidden && (archivedCutoffs['all'] || 0) > 0 && (p.last_seen || 0) <= (archivedCutoffs['all'] || 0)) return false;
             return p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS);
           }).length === 0 ? (
@@ -1995,10 +1986,10 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {activeProfiles.filter(p => {
+              {activeProfiles.filter((p: ActiveProfile) => {
                 if (!showHidden && (archivedCutoffs['all'] || 0) > 0 && (p.last_seen || 0) <= (archivedCutoffs['all'] || 0)) return false;
                 return p.is_active && (Date.now() - p.last_seen < PROFILE_OFFLINE_THRESHOLD_MS);
-              }).map(prof => {
+              }).map((prof: ActiveProfile) => {
                 const color = getProfileColor(prof.profile_id);
                 const isRecent = (Date.now() - prof.last_seen) < 90000;
                 return (
@@ -2196,7 +2187,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                       ? activeProfiles.find((ap: ActiveProfile) => ap.profile_id === p.profile_id)?.profile_label
                       : null;
                     
-                    let label = p.profile_label;
+                    let label: string = p.profile_label || '';
                     if (!label || label === 'Profile' || label.startsWith('Profile #')) {
                       if (matchedKnown && matchedKnown !== 'Profile') {
                         label = matchedKnown;
@@ -2211,7 +2202,7 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                     const rawNumber = label.replace(/^Profile\s*\(?|\)$/gi, '').trim();
                     const displayPhone = rawNumber.length >= 10 ? rawNumber : (rawNumber.startsWith('#') ? rawNumber : (label || 'Default'));
 
-                    const profId = p.profile_id || (matchedKnown ? activeProfiles.find(ap => ap.profile_label === matchedKnown)?.profile_id || 'prof_default' : 'prof_default');
+                    const profId = p.profile_id || (matchedKnown ? activeProfiles.find((ap: ActiveProfile) => ap.profile_label === matchedKnown)?.profile_id || 'prof_default' : 'prof_default');
                     const profColor = getProfileColor(profId);
                     return (
                       <tr key={p.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${isArchivedRow ? 'bg-amber-50/20 dark:bg-amber-950/10' : ''}`}>
@@ -2424,7 +2415,7 @@ const publishLicenseKillSwitch = (key: string, nextStatus: string, lic?: any) =>
         client.end();
       });
     });
-    client.on('error', (err) => {
+    client.on('error', (err: any) => {
       console.warn('MQTT kill switch error:', err);
     });
   } catch (err) {
@@ -2432,8 +2423,59 @@ const publishLicenseKillSwitch = (key: string, nextStatus: string, lic?: any) =>
   }
 };
 
+// ===== ERROR BOUNDARY =====
+interface IvacErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface IvacErrorBoundaryState {
+  hasError: boolean;
+  errorMessage: string;
+}
+
+class IvacErrorBoundary extends React.Component<IvacErrorBoundaryProps, IvacErrorBoundaryState> {
+  constructor(props: IvacErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+
+  static getDerivedStateFromError(error: any): IvacErrorBoundaryState {
+    return { hasError: true, errorMessage: error?.message || 'একটি অপ্রত্যাশিত সমস্যা হয়েছে।' };
+  }
+
+  componentDidCatch(error: any, errorInfo: React.ErrorInfo) {
+    console.error('[IVAC License Manager Error Caught]', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-center bg-red-50 dark:bg-red-950/30 rounded-2xl border border-red-200 dark:border-red-900/50 m-6">
+          <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/50 flex items-center justify-center mx-auto mb-4 text-red-600">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <h3 className="text-xl font-bold text-red-800 dark:text-red-300 mb-2">IVAC লাইসেন্স ম্যানেজার লোড হতে সমস্যা হয়েছে</h3>
+          <p className="text-sm text-red-600 dark:text-red-400 mb-4 max-w-md mx-auto">
+            {this.state.errorMessage}
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, errorMessage: '' });
+              window.location.reload();
+            }}
+            className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl text-sm transition-colors shadow-sm cursor-pointer"
+          >
+            পুনরায় লোড করুন (Reload)
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ===== MAIN COMPONENT =====
-export default function IvacLicenseManager() {
+function IvacLicenseManagerInner() {
   const [licenses, setLicenses] = useState<IvacLicense[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2443,7 +2485,7 @@ export default function IvacLicenseManager() {
   const [selectedLicenseKey, setSelectedLicenseKey] = useState<string | null>(null);
   const selectedLicense = useMemo(() => {
     if (!selectedLicenseKey) return null;
-    return licenses.find(l => l.key === selectedLicenseKey || l.id === selectedLicenseKey) || null;
+    return licenses.find((l: IvacLicense) => l.key === selectedLicenseKey || l.id === selectedLicenseKey) || null;
   }, [licenses, selectedLicenseKey]);
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState<string | null>(null);
@@ -2488,22 +2530,40 @@ export default function IvacLicenseManager() {
     }
   };
 
-  useEffect(() => {
-    // Listen to ivac_licenses in real-time (mounts ONCE, 0 duplicate reads)
-    const q = query(collection(db, 'ivac_licenses'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+  // Fetch licenses once on mount or when refreshed (Zero persistent WebSocket reads!)
+  const fetchLicenses = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const q = query(collection(db, 'ivac_licenses'));
+      const snapshot = await getDocs(q);
       const data: IvacLicense[] = [];
-      snapshot.forEach((doc) => {
-        data.push({ id: doc.id, ...doc.data() } as IvacLicense);
+      snapshot.forEach((docSnap: any) => {
+        const raw = docSnap.data() || {};
+        const safeKey = String(raw.key || docSnap.id || '').trim();
+        data.push({
+          id: docSnap.id,
+          status: 'active',
+          payment_count: 0,
+          total_amount: 0,
+          created_at: Date.now(),
+          bound_at: null,
+          hwid: null,
+          ...raw,
+          key: safeKey || docSnap.id || '',
+        } as IvacLicense);
       });
-      // Sort by latest created
-      data.sort((a, b) => b.created_at - a.created_at);
+      data.sort((a: IvacLicense, b: IvacLicense) => (Number(b.created_at) || 0) - (Number(a.created_at) || 0));
       setLicenses(data);
+    } catch (err) {
+      console.error('[Fetch Licenses Error]', err);
+    } finally {
       setLoading(false);
-    });
+    }
+  };
 
-    return () => unsubscribe();
-  }, []); // Empty dependency array prevents re-subscription read storms!
+  useEffect(() => {
+    fetchLicenses();
+  }, []);
 
   const generateKey = async (days: number) => {
     setIsGenerating(true);
@@ -2551,8 +2611,8 @@ export default function IvacLicenseManager() {
       await updateDoc(doc(db, 'ivac_licenses', key), {
         status: nextStatus
       });
-      setLicenses(prev => prev.map(l => l.key === key ? { ...l, status: nextStatus } : l));
-      const targetLic = licenses.find(l => l.key === key) || selectedLicense;
+      setLicenses((prev: IvacLicense[]) => prev.map((l: IvacLicense) => l.key === key ? { ...l, status: nextStatus } : l));
+      const targetLic = licenses.find((l: IvacLicense) => l.key === key) || selectedLicense;
       publishLicenseKillSwitch(key, nextStatus, targetLic);
     } catch (error) {
       console.error("Error updating key:", error);
@@ -2612,7 +2672,7 @@ export default function IvacLicenseManager() {
       try {
         const subPayQuery = query(collection(db, `ivac_licenses/${key}/payments`));
         const subSnap = await getDocs(subPayQuery);
-        await Promise.all(subSnap.docs.map(d => deleteDoc(d.ref)));
+        await Promise.all(subSnap.docs.map((d: any) => deleteDoc(d.ref)));
         console.log(`[Firestore Purge] Purged ${subSnap.docs.length} subcollection payments for key: ${key}`);
       } catch (subErr) {
         console.error('[Firestore Sub-Payments Purge Error]', subErr);
@@ -2622,7 +2682,7 @@ export default function IvacLicenseManager() {
       try {
         const payQuery = query(collection(db, 'payments'), where('license_key', '==', key));
         const snap = await getDocs(payQuery);
-        await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+        await Promise.all(snap.docs.map((d: any) => deleteDoc(d.ref)));
         console.log(`[Firestore Purge] Purged ${snap.docs.length} root payments for key: ${key}`);
       } catch (payErr) {
         console.error('[Firestore Payments Purge Error]', payErr);
@@ -2667,16 +2727,19 @@ export default function IvacLicenseManager() {
 
   // Stats
   const totalKeys = licenses.length;
-  const activeKeys = licenses.filter(l => l.status === 'active' && l.hwid !== null).length;
-  const totalPayments = licenses.reduce((sum, l) => sum + getVisiblePaymentInfo(l).count, 0);
-  const totalRevenue = licenses.reduce((sum, l) => sum + getVisiblePaymentInfo(l).amount, 0);
+  const activeKeys = licenses.filter((l: IvacLicense) => l && (l.status === 'active' || !l.status) && Boolean(l.hwid)).length;
+  const totalPayments = licenses.reduce((sum: number, l: IvacLicense) => sum + (l ? getVisiblePaymentInfo(l).count : 0), 0);
+  const totalRevenue = licenses.reduce((sum: number, l: IvacLicense) => sum + (l ? getVisiblePaymentInfo(l).amount : 0), 0);
 
-  const filteredLicenses = licenses.filter(l =>
-    l.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (l.hwid && l.hwid.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (l.client_name && l.client_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (l.client_phone && l.client_phone.includes(searchQuery))
-  );
+  const queryStr = (searchQuery || '').toLowerCase().trim();
+  const filteredLicenses = licenses.filter((l: IvacLicense) => {
+    if (!l) return false;
+    const k = (l.key || l.id || '').toLowerCase();
+    const h = (l.hwid || '').toLowerCase();
+    const name = (l.client_name || '').toLowerCase();
+    const phone = (l.client_phone || '').toLowerCase();
+    return k.includes(queryStr) || h.includes(queryStr) || name.includes(queryStr) || phone.includes(queryStr);
+  });
 
   return (
     <div className="space-y-6">
@@ -2685,6 +2748,14 @@ export default function IvacLicenseManager() {
           <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
             <Key className="h-7 w-7 text-indigo-500" /> IVAC License Manager
           </h2>
+          <button
+            onClick={() => fetchLicenses(true)}
+            disabled={loading}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="রিফ্রেশ করুন"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
           <span className="text-xs px-2.5 py-1 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 rounded-full font-semibold flex items-center gap-1.5 border border-emerald-300 dark:border-emerald-700 shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             ivac-master-pro
@@ -2774,7 +2845,7 @@ export default function IvacLicenseManager() {
                 <input
                   type="text"
                   value={clientNameInput}
-                  onChange={(e) => setClientNameInput(e.target.value)}
+                  onChange={(e: any) => setClientNameInput(e.target.value)}
                   placeholder="ক্লায়েন্টের নাম..."
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
@@ -2787,7 +2858,7 @@ export default function IvacLicenseManager() {
                   <input
                     type="number"
                     value={customDays}
-                    onChange={(e) => setCustomDays(e.target.value)}
+                    onChange={(e: any) => setCustomDays(e.target.value)}
                     className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                     min="1"
                   />
@@ -2808,7 +2879,7 @@ export default function IvacLicenseManager() {
               <div className="pt-2">
                 <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-2">Quick Presets</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {[30, 90, 180, 365].map(d => (
+                  {[30, 90, 180, 365].map((d: number) => (
                     <button
                       key={d}
                       onClick={() => { setCustomDays(String(d)); generateKey(d); }}
@@ -2835,7 +2906,7 @@ export default function IvacLicenseManager() {
                   type="text"
                   placeholder="Search name, key, HWID..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e: any) => setSearchQuery(e.target.value)}
                   className="pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-transparent rounded-lg text-sm w-64 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
                 {searchQuery && (
@@ -3013,5 +3084,13 @@ export default function IvacLicenseManager() {
         />
       )}
     </div>
+  );
+}
+
+export default function IvacLicenseManager() {
+  return (
+    <IvacErrorBoundary>
+      <IvacLicenseManagerInner />
+    </IvacErrorBoundary>
   );
 }

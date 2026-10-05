@@ -1768,6 +1768,11 @@ try:
             if installed_key:
                 client.subscribe(f"digonto_kill_{installed_key}")
             client.subscribe("digonto_license_event")
+            try:
+                ready_msg = json.dumps({"type": "desktop_ready"}).encode('utf-8')
+                client.publish(MQTT_SYS_TOPIC, ready_msg)
+            except Exception:
+                pass
         else:
             print(f"[Cloud Sync] Connect failed with code {rc}")
 

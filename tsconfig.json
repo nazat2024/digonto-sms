@@ -12,11 +12,30 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "typeRoots": [
+      "./node_modules/@types",
+      "D:/1. digonto website/digonto-edu/node_modules/@types"
+    ],
+    "paths": {
+      "react": ["D:/1. digonto website/digonto-edu/node_modules/react"],
+      "react/*": ["D:/1. digonto website/digonto-edu/node_modules/react/*"],
+      "react/jsx-runtime": ["D:/1. digonto website/digonto-edu/node_modules/react/jsx-runtime"],
+      "lucide-react": ["D:/1. digonto website/digonto-edu/node_modules/lucide-react"],
+      "mqtt": ["D:/1. digonto website/digonto-edu/node_modules/mqtt"],
+      "firebase/*": ["D:/1. digonto website/digonto-edu/node_modules/firebase/*"]
+    }
   },
-  "include": ["chrome_extension/**/*"],
+  "include": [
+    "chrome_extension/**/*",
+    "IvacLicenseManager.tsx",
+    "ui/**/*",
+    "declarations.d.ts"
+  ],
   "exclude": [
-    "node_modules",
-    "IvacLicenseManager.tsx"
+    "node_modules"
   ]
 }

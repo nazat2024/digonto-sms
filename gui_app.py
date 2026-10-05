@@ -1562,13 +1562,23 @@ class IVACApp(ctk.CTk):
                     if dev.get("sim2_name"): sims.append(dev["sim2_name"])
                     proxy_active = dev.get("proxy_active", False)
                     proxy_addr = dev.get("proxy_address", "")
-                    proxy_tag = f" • 🌐 Proxy: {proxy_addr}" if (proxy_active and proxy_addr) else ""
-                    sim_text = (" | ".join(sims) if sims else "No SIM set") + proxy_tag
-                    
+
+                    # Clean IP extraction - no "Proxy:" prefix, pure IP
+                    ip_clean = ""
+                    if proxy_active and proxy_addr:
+                        ip_clean = str(proxy_addr).strip()
+                        for prefix in ["http://", "https://", "socks5://"]:
+                            if ip_clean.lower().startswith(prefix):
+                                ip_clean = ip_clean[len(prefix):]
+
+                    sim_text = " | ".join(sims) if sims else "No SIM set"
+                    ip_text = f"🌐 {ip_clean}" if ip_clean else "🌐 -"
+                    ip_color = "#0284c7" if ip_clean else "#64748b"
+
                     status_icon = "🟢" if is_online else "⚪"
                     color = "#059669" if is_online else "#495670"
                     display_text = f"  {status_icon}  {dev_name}"
-                    
+
                     if dev_id in self._device_rows:
                         entry = self._device_rows[dev_id]
                         # Only update if changed - ZERO canvas redraw if unchanged!
@@ -1577,8 +1587,13 @@ class IVACApp(ctk.CTk):
                             entry["display_text"] = display_text
                             entry["color"] = color
                         if entry.get("sim_text") != sim_text:
-                            entry["sim_label"].configure(text=f"SIMs: {sim_text}  ")
+                            entry["sim_label"].configure(text=sim_text)
                             entry["sim_text"] = sim_text
+                        if entry.get("ip_text") != ip_text or entry.get("ip_color") != ip_color:
+                            if "ip_label" in entry:
+                                entry["ip_label"].configure(text=ip_text, text_color=ip_color)
+                            entry["ip_text"] = ip_text
+                            entry["ip_color"] = ip_color
                         if entry.get("is_active") != is_active:
                             if is_active: entry["switch"].select()
                             else: entry["switch"].deselect()
@@ -1586,7 +1601,7 @@ class IVACApp(ctk.CTk):
                         entry["dev_name"] = dev_name
                     else:
                         # First time seeing this device: create row once
-                        self._add_device_row_incremental(dev, dev_id, display_text, color, sim_text, is_active, dev_name)
+                        self._add_device_row_incremental(dev, dev_id, display_text, color, sim_text, ip_text, ip_color, is_active, dev_name)
                         
                 # Clean up removed devices
                 for old_id in list(self._device_rows.keys()):
@@ -1933,19 +1948,21 @@ class IVACApp(ctk.CTk):
                     pass
             threading.Thread(target=update_task, daemon=True).start()
 
-    def _add_device_row_incremental(self, dev_data, dev_id, display_text, color, sim_text, is_active, dev_name):
-        row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=34, border_width=1, border_color=THEME["border_color"])
+    def _add_device_row_incremental(self, dev_data, dev_id, display_text, color, sim_text, ip_text, ip_color, is_active, dev_name):
+        row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=36, border_width=1, border_color=THEME["border_color"])
         row.pack(fill="x", pady=2, padx=2)
         row.pack_propagate(False)
         
+        # 1. Left: Status LED & Device Name
         name_label = ctk.CTkLabel(
             row, text=display_text,
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=color,
-            height=18
+            height=20
         )
-        name_label.pack(side="left", padx=10)
+        name_label.pack(side="left", padx=(10, 5))
         
+        # 2. Right: Active / Inactive Switch
         switch = ctk.CTkSwitch(
             row, text="", width=38, height=18, switch_width=32, switch_height=16,
             command=lambda: self._toggle_device_status(dev_id, switch.get())
@@ -1954,6 +1971,7 @@ class IVACApp(ctk.CTk):
         else: switch.deselect()
         switch.pack(side="right", padx=(5, 10))
         
+        # 3. Right: Edit Name Button
         ctk.CTkButton(
             row, text="✏️ Edit Name", width=52, height=20,
             font=ctk.CTkFont(size=10, weight="bold"), fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
@@ -1961,22 +1979,35 @@ class IVACApp(ctk.CTk):
             command=lambda: self._rename_device(dev_id)
         ).pack(side="right", padx=5)
         
-        sim_label = ctk.CTkLabel(
-            row, text=f"SIMs: {sim_text}  ",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=THEME["text_primary"],
-            height=18
+        # 4. Right: Dedicated IP Section (Clean IP badge, no "Proxy:" prefix)
+        ip_label = ctk.CTkLabel(
+            row, text=ip_text,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=ip_color,
+            height=20
         )
-        sim_label.pack(side="right", padx=10)
+        ip_label.pack(side="right", padx=(5, 12))
+
+        # 5. Right: Dedicated SIMs Section (Clean phone numbers, zero truncation)
+        sim_label = ctk.CTkLabel(
+            row, text=sim_text,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=THEME["text_primary"],
+            height=20
+        )
+        sim_label.pack(side="right", padx=(5, 15))
         
         self._device_rows[dev_id] = {
             "row": row,
             "name_label": name_label,
             "switch": switch,
             "sim_label": sim_label,
+            "ip_label": ip_label,
             "display_text": display_text,
             "color": color,
             "sim_text": sim_text,
+            "ip_text": ip_text,
+            "ip_color": ip_color,
             "is_active": is_active,
             "dev_name": dev_name
         }
@@ -1992,8 +2023,20 @@ class IVACApp(ctk.CTk):
         if dev_data.get("sim1_name"): sims.append(dev_data["sim1_name"])
         if dev_data.get("sim2_name"): sims.append(dev_data["sim2_name"])
         sim_text = " | ".join(sims) if sims else "No SIM set"
+
+        proxy_active = dev_data.get("proxy_active", False)
+        proxy_addr = dev_data.get("proxy_address", "")
+        ip_clean = ""
+        if proxy_active and proxy_addr:
+            ip_clean = str(proxy_addr).strip()
+            for prefix in ["http://", "https://", "socks5://"]:
+                if ip_clean.lower().startswith(prefix):
+                    ip_clean = ip_clean[len(prefix):]
+        ip_text = f"🌐 {ip_clean}" if ip_clean else "🌐 -"
+        ip_color = "#0284c7" if ip_clean else "#64748b"
+
         display_text = f"  {status_icon}  {dev_name}"
-        self._add_device_row_incremental(dev_data, dev_id, display_text, color, sim_text, is_active, dev_name)
+        self._add_device_row_incremental(dev_data, dev_id, display_text, color, sim_text, ip_text, ip_color, is_active, dev_name)
 
     
     # ===== PROFILES TAB =====

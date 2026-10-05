@@ -1022,6 +1022,15 @@ function createPinWidget() {
             .action-btn:hover {
                 background: #e2e8f0;
             }
+            @keyframes ivacCaptchaBlink {
+                0% { background: #fee2e2; border-color: #ef4444; box-shadow: 0 0 0 rgba(239, 68, 68, 0.2); }
+                50% { background: #fecaca; border-color: #dc2626; box-shadow: 0 0 10px rgba(220, 38, 38, 0.7); }
+                100% { background: #fee2e2; border-color: #ef4444; box-shadow: 0 0 0 rgba(239, 68, 68, 0.2); }
+            }
+            @keyframes ivacPulseBadge {
+                0% { opacity: 0.6; transform: scale(0.95); }
+                100% { opacity: 1; transform: scale(1.05); }
+            }
         </style>
                 <div id="pin-box">
             <div id="pin-header">
@@ -1029,6 +1038,7 @@ function createPinWidget() {
                     <span id="pin-icon">📋</span>
                     <span id="pin-title">IVAC OTP</span>
                     <span id="pin-device-badge" style="display:none; font-size:9px; background:rgba(255,255,255,0.22); padding:1px 4px; border-radius:3px; margin-left:4px; font-weight:700; letter-spacing:0.3px;" title="সংযুক্ত মোবাইল / মোট মোবাইল">📱 0/0</span>
+                    <span id="pin-captcha-badge" style="display:none; font-size:8px; background:#ef4444; color:#fff; padding:1px 4px; border-radius:3px; margin-left:3px; font-weight:800; animation:ivacPulseBadge 0.8s infinite alternate;" title="ক্যাপচা এখনো টিক করা হয়নি!">⚠️ CAPTCHA</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:2px;">
                     <button class="hdr-btn" id="min-btn" title="মিনিমাইজ">−</button>
@@ -1038,6 +1048,13 @@ function createPinWidget() {
             <div id="pin-body">
                 <div id="otp-display">
                     <span class="c-gray" style="font-size:10px;">অপেক্ষায় আছে...</span>
+                </div>
+                <!-- Live Captcha Attention Banner -->
+                <div id="captcha-alert-banner" style="display: none; margin-top: 5px; padding: 6px 8px; background: #fee2e2; border: 1.5px solid #ef4444; border-radius: 6px; text-align: center; cursor: pointer; animation: ivacCaptchaBlink 0.9s infinite alternate;" title="ক্লিক করলে ক্যাপচায় স্ক্রোল করবে">
+                    <div style="font-size: 11px; font-weight: 800; color: #b91c1c; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                        <span>⚠️</span> <span>ক্যাপচায় টিক করুন!</span>
+                    </div>
+                    <div style="font-size: 9px; color: #991b1b; margin-top: 2px;">এখানে চাপলে সরাসরি বক্সে নিয়ে যাবে ⬇️</div>
                 </div>
                 <!-- Live 20-Second Slot Rotation & Countdown Panel -->
                 <div id="slot-timer-panel" style="display: none; margin-top: 6px; padding: 6px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px;">
@@ -1255,8 +1272,10 @@ async function updateWidgetOtp(box) {
                          </div>`;
         return;
     } else {
-        if (pinHeader) pinHeader.style.background = '#059669';
-        if (pinBoxEl) pinBoxEl.style.borderColor = '#059669';
+        if (!isCaptchaAlertActive) {
+            if (pinHeader) pinHeader.style.background = '#059669';
+            if (pinBoxEl) pinBoxEl.style.borderColor = '#059669';
+        }
         if (pinTitle) pinTitle.textContent = "IVAC OTP";
         if (pinIcon) pinIcon.textContent = "📋";
         if (pinDeviceBadge) {
@@ -1538,11 +1557,17 @@ function isElementVisible(el) {
     return style.display !== 'none' && style.visibility !== 'hidden' && el.offsetWidth > 0 && el.offsetHeight > 0;
 }
 
-// ===== Captcha Check =====
+// ===== Captcha Check & Helper =====
+function getTurnstileElement() {
+    return document.querySelector('iframe[src*="cloudflare"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare.com"], iframe[id*="cf-chl-widget"]') 
+        || document.querySelector('.cf-turnstile')
+        || document.querySelector('[name="cf-turnstile-response"]')?.parentElement;
+}
+
 function isCaptchaResolved() {
     const cf = document.querySelector('[name="cf-turnstile-response"]');
     const rc = document.querySelector('[name="g-recaptcha-response"]');
-    const cfFrame = document.querySelector('iframe[src*="cloudflare"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare.com"]');
+    const cfFrame = getTurnstileElement();
     
     if (cfFrame || cf) {
         return !!(cf && cf.value && cf.value.length > 10);
@@ -1551,6 +1576,285 @@ function isCaptchaResolved() {
         return !!(rc.value && rc.value.length > 10);
     }
     return true;
+}
+
+// ===== Smart Cloudflare Turnstile Alert & Auto-Scroll Watcher =====
+let _turnstileWatcherStarted = false;
+let isCaptchaAlertActive = false;
+let turnstileIframeState = 'IDLE'; // 'IDLE' | 'SPINNING' | 'WAITING_CLICK' | 'SUCCESS'
+let turnstileCheckboxAppearTime = null;
+let turnstileLastResetTime = Date.now();
+let wasTurnstileResolved = false;
+
+function resetTurnstileWatch(reason) {
+    turnstileLastResetTime = Date.now();
+    turnstileCheckboxAppearTime = null;
+    if (turnstileIframeState !== 'SPINNING' && turnstileIframeState !== 'WAITING_CLICK') {
+        turnstileIframeState = 'IDLE';
+    }
+    
+    // Immediately dismiss any active red alert
+    if (isCaptchaAlertActive) {
+        isCaptchaAlertActive = false;
+        dismissCaptchaAlertUI();
+    }
+}
+
+function dismissCaptchaAlertUI() {
+    const shadow = shadowDomRoot;
+    if (!shadow) return;
+    const captchaBanner = shadow.getElementById('captcha-alert-banner');
+    const pinCaptchaBadge = shadow.getElementById('pin-captcha-badge');
+    const pinHeader = shadow.getElementById('pin-header');
+    const pinBoxEl = shadow.getElementById('pin-box');
+
+    if (captchaBanner) captchaBanner.style.display = 'none';
+    if (pinCaptchaBadge) pinCaptchaBadge.style.display = 'none';
+    if (pinHeader) pinHeader.style.background = '#059669';
+    if (pinBoxEl) pinBoxEl.style.borderColor = '#059669';
+
+    const cfElement = getTurnstileElement();
+    if (cfElement) {
+        cfElement.style.outline = '';
+        cfElement.style.boxShadow = '';
+    }
+}
+
+function showCaptchaSuccessUI() {
+    const shadow = shadowDomRoot;
+    if (!shadow) return;
+    const captchaBanner = shadow.getElementById('captcha-alert-banner');
+    const pinCaptchaBadge = shadow.getElementById('pin-captcha-badge');
+    const pinHeader = shadow.getElementById('pin-header');
+    const pinBoxEl = shadow.getElementById('pin-box');
+
+    if (pinCaptchaBadge) pinCaptchaBadge.style.display = 'none';
+    if (pinHeader) pinHeader.style.background = '#059669';
+    if (pinBoxEl) pinBoxEl.style.borderColor = '#059669';
+
+    if (captchaBanner) {
+        captchaBanner.style.display = 'block';
+        captchaBanner.style.animation = 'none';
+        captchaBanner.style.background = '#ecfdf5';
+        captchaBanner.style.borderColor = '#10b981';
+        captchaBanner.innerHTML = `
+            <div style="font-size: 11px; font-weight: 800; color: #047857; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <span>✅</span> <span>ক্যাপচা সম্পন্ন হয়েছে!</span>
+            </div>
+        `;
+        setTimeout(() => {
+            if (!isCaptchaAlertActive && captchaBanner) {
+                captchaBanner.style.display = 'none';
+            }
+        }, 2200);
+    }
+
+    const cfElement = getTurnstileElement();
+    if (cfElement) {
+        cfElement.style.outline = '2px solid #10b981';
+        cfElement.style.boxShadow = '0 0 16px 3px rgba(16, 185, 129, 0.7)';
+        setTimeout(() => {
+            if (cfElement) {
+                cfElement.style.outline = '';
+                cfElement.style.boxShadow = '';
+            }
+        }, 2000);
+    }
+}
+
+function triggerCaptchaAlertUI() {
+    if (isCaptchaAlertActive) return;
+    isCaptchaAlertActive = true;
+
+    const shadow = shadowDomRoot;
+    if (!shadow) return;
+    const captchaBanner = shadow.getElementById('captcha-alert-banner');
+    const pinCaptchaBadge = shadow.getElementById('pin-captcha-badge');
+    const pinHeader = shadow.getElementById('pin-header');
+    const pinBoxEl = shadow.getElementById('pin-box');
+
+    if (captchaBanner) {
+        captchaBanner.style.display = 'block';
+        captchaBanner.style.animation = 'ivacCaptchaBlink 0.9s infinite alternate';
+        captchaBanner.style.background = '#fee2e2';
+        captchaBanner.style.borderColor = '#ef4444';
+        captchaBanner.innerHTML = `
+            <div style="font-size: 11px; font-weight: 800; color: #b91c1c; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <span>⚠️</span> <span>ক্যাপচায় টিক করুন!</span>
+            </div>
+            <div style="font-size: 9px; color: #991b1b; margin-top: 2px;">এখানে চাপলে সরাসরি বক্সে নিয়ে যাবে ⬇️</div>
+        `;
+    }
+    if (pinCaptchaBadge) pinCaptchaBadge.style.display = 'inline-block';
+    if (pinHeader) pinHeader.style.background = '#dc2626';
+    if (pinBoxEl) pinBoxEl.style.borderColor = '#dc2626';
+
+    scrollToTurnstileElement();
+}
+
+function scrollToTurnstileElement() {
+    const el = getTurnstileElement();
+    if (el) {
+        try {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } catch (e) {
+            el.scrollIntoView(true);
+        }
+        el.style.transition = 'box-shadow 0.3s ease, outline 0.3s ease';
+        el.style.outline = '3px solid #ef4444';
+        el.style.outlineOffset = '4px';
+        el.style.boxShadow = '0 0 20px 5px rgba(239, 68, 68, 0.85)';
+        el.style.borderRadius = '8px';
+    }
+}
+
+function initCloudflareTurnstileWatcher() {
+    if (window.self !== window.top) return;
+    if (_turnstileWatcherStarted) return;
+    _turnstileWatcherStarted = true;
+
+    let lastUrl = window.location.href;
+    let lastIframeSrc = '';
+
+    // Listen to real-time reports from Turnstile iframe (via inject.js)
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'IVAC_CF_STATE') {
+            const reportedState = event.data.state;
+            if (reportedState === 'SPINNING') {
+                turnstileIframeState = 'SPINNING';
+                checkboxFirstAppearedTime = null;
+                // Spinner is actively turning -> suppress any alert!
+                if (isCaptchaAlertActive) {
+                    isCaptchaAlertActive = false;
+                    dismissCaptchaAlertUI();
+                }
+            } else if (reportedState === 'WAITING_CLICK') {
+                if (turnstileIframeState !== 'WAITING_CLICK') {
+                    turnstileIframeState = 'WAITING_CLICK';
+                    checkboxFirstAppearedTime = Date.now(); // Start 5-second countdown from now!
+                }
+            } else if (reportedState === 'SUCCESS') {
+                turnstileIframeState = 'SUCCESS';
+                checkboxFirstAppearedTime = null;
+                if (isCaptchaAlertActive) {
+                    isCaptchaAlertActive = false;
+                    showCaptchaSuccessUI();
+                }
+            }
+        }
+    });
+
+    // Global click listener: when user clicks calendar date, month arrow, or button, reset timer immediately!
+    document.addEventListener('click', (e) => {
+        try {
+            const t = e.target;
+            if (!t) return;
+            const isCalendarOrAction = t.closest && t.closest('.calendar, [role="gridcell"], table, td, .fc-day, .ant-picker, .react-calendar, [class*="calendar"], [class*="day"], [class*="date"], button, [role="button"], a');
+            if (isCalendarOrAction) {
+                resetTurnstileWatch('user_click');
+            }
+        } catch(err) {}
+    }, true);
+
+    function ensureBannerClickAttached() {
+        if (!shadowDomRoot) return;
+        const banner = shadowDomRoot.getElementById('captcha-alert-banner');
+        if (banner && !banner.dataset.clickAttached) {
+            banner.dataset.clickAttached = 'true';
+            banner.addEventListener('click', () => {
+                scrollToTurnstileElement();
+            });
+        }
+    }
+
+    setInterval(() => {
+        ensureBannerClickAttached();
+
+        // 1. Reset on URL navigation
+        if (window.location.href !== lastUrl) {
+            lastUrl = window.location.href;
+            resetTurnstileWatch('url_navigation');
+        }
+
+        const cfElement = getTurnstileElement();
+        const cfInput = document.querySelector('[name="cf-turnstile-response"]');
+        const rcInput = document.querySelector('[name="g-recaptcha-response"]');
+
+        const currentTokenVal = (cfInput && cfInput.value) || (rcInput && rcInput.value) || '';
+        const isResolved = !!(
+            (currentTokenVal && currentTokenVal.length > 10) ||
+            turnstileIframeState === 'SUCCESS'
+        );
+
+        // 2. Token cleared / reset detection (e.g. date click cleared the token)
+        if (wasTurnstileResolved && !isResolved) {
+            wasTurnstileResolved = false;
+            resetTurnstileWatch('token_cleared');
+        }
+
+        // 3. Iframe change / reload detection
+        if (cfElement) {
+            const currentSrc = cfElement.src || '';
+            if (currentSrc && currentSrc !== lastIframeSrc) {
+                lastIframeSrc = currentSrc;
+                resetTurnstileWatch('iframe_reloaded');
+            }
+        }
+
+        // If no captcha widget exists on page
+        if (!cfElement && !cfInput && !rcInput) {
+            if (isCaptchaAlertActive) {
+                isCaptchaAlertActive = false;
+                dismissCaptchaAlertUI();
+            }
+            return;
+        }
+
+        // 4. Captcha is Resolved -> Success
+        if (isResolved) {
+            if (!wasTurnstileResolved) {
+                wasTurnstileResolved = true;
+            }
+            if (isCaptchaAlertActive) {
+                isCaptchaAlertActive = false;
+                showCaptchaSuccessUI();
+            }
+            return;
+        }
+
+        // ==================== CAPTCHA NOT RESOLVED ====================
+
+        // RULE 1: If Cloudflare Turnstile is actively SPINNING / VERIFYING ("ঘুরতে দেখলে"):
+        // Absolutely NEVER show red alert while the spinner is spinning!
+        if (turnstileIframeState === 'SPINNING') {
+            if (isCaptchaAlertActive) {
+                isCaptchaAlertActive = false;
+                dismissCaptchaAlertUI();
+            }
+            checkboxFirstAppearedTime = null;
+            return;
+        }
+
+        // RULE 2: If Turnstile reported 'WAITING_CLICK' (empty checkbox is rendered and ready for human click):
+        // Wait FULL 5 SECONDS from the moment the empty checkbox actually appeared!
+        if (turnstileIframeState === 'WAITING_CLICK') {
+            if (!checkboxFirstAppearedTime) {
+                checkboxFirstAppearedTime = Date.now();
+            }
+            const timeSinceCheckbox = Date.now() - checkboxFirstAppearedTime;
+            if (timeSinceCheckbox >= 5000) {
+                triggerCaptchaAlertUI();
+            }
+            return;
+        }
+
+        // RULE 3: Fallback (if no postMessage from iframe received):
+        // Allow at least 7.5 seconds from last reset/date click (2.5s spinner check + 5s human click grace period)
+        const timeSinceReset = Date.now() - turnstileLastResetTime;
+        if (timeSinceReset >= 7500) {
+            triggerCaptchaAlertUI();
+        }
+    }, 400);
 }
 
 function getVisibleApplicantBoxesCount() {
@@ -1825,6 +2129,7 @@ function clickCalendarArrow(direction) {
                 el.classList.contains('calendar-next') || el.classList.contains('fc-next-button')) {
                 const btn = el.closest('button') || el;
                 btn.click();
+                try { if (typeof resetTurnstileWatch === 'function') resetTurnstileWatch('month_arrow_click'); } catch(e) {}
                 console.log('[IVAC Slot] Clicked NEXT month arrow');
                 return true;
             }
@@ -1835,6 +2140,7 @@ function clickCalendarArrow(direction) {
                 el.classList.contains('calendar-prev') || el.classList.contains('fc-prev-button')) {
                 const btn = el.closest('button') || el;
                 btn.click();
+                try { if (typeof resetTurnstileWatch === 'function') resetTurnstileWatch('month_arrow_click'); } catch(e) {}
                 console.log('[IVAC Slot] Clicked PREV month arrow');
                 return true;
             }
@@ -2244,6 +2550,11 @@ function handleSlotRotation() {
 
             // CLICK THE DATE CIRCLE (HEAD's exact working method)
             targetDateObj.element.click();
+            try {
+                if (typeof resetTurnstileWatch === 'function') {
+                    resetTurnstileWatch('slot_rotation_date_click');
+                }
+            } catch(e) {}
 
             const monthLabel = MONTH_NAMES_EN[currentMonth].charAt(0).toUpperCase() + MONTH_NAMES_EN[currentMonth].slice(1);
             console.log(`[IVAC Slot] Selected date: ${targetDateObj.day} ${monthLabel} (Index #${monthDateIdx + 1}/${prioritizedQueue.length})`);
@@ -4118,6 +4429,10 @@ window.addEventListener('keydown', (e) => {
         setTimeout(() => {
             autoFillIvacSignupInfo(false);
         }, 700);
+        // Start Cloudflare Turnstile Watcher immediately
+        try {
+            initCloudflareTurnstileWatcher();
+        } catch (e) {}
     }
 })();
 

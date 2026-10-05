@@ -1,4 +1,17 @@
 (function() {
+    // ===== CAPTURE SHADOW ROOTS FOR CLOUDFLARE TURNSTILE DETECTION =====
+    const capturedShadowRoots = [];
+    try {
+        const origAttachShadow = Element.prototype.attachShadow;
+        Element.prototype.attachShadow = function(init) {
+            const shadow = origAttachShadow.apply(this, arguments);
+            try {
+                if (shadow) capturedShadowRoots.push(shadow);
+            } catch(e) {}
+            return shadow;
+        };
+    } catch(e) {}
+
     // ===== UNIVERSAL COPY, PASTE, CUT & RIGHT-CLICK ENABLER (MAIN WORLD) =====
     const blockedEvents = ['copy', 'cut', 'paste', 'contextmenu', 'selectstart', 'dragstart'];
 
@@ -120,4 +133,80 @@
     window.addEventListener('IVAC_CLICK_BKASH_CONFIRM_EVENT', () => {
         performMainWorldBkashClick();
     });
+
+    // ===== CLOUDFLARE TURNSTILE REAL-TIME STATE REPORTER (ALL FRAMES) =====
+    (function initTurnstileStateReporter() {
+        let lastReportedState = null;
+
+        function checkTurnstileState() {
+            try {
+                const isCfHost = window.location.hostname.includes('cloudflare.com');
+                const hasCfWidget = isCfHost || !!document.querySelector('iframe[src*="cloudflare"], iframe[src*="turnstile"], .cf-turnstile');
+                if (!hasCfWidget && !isCfHost) return;
+
+                let state = 'IDLE';
+                const roots = [document, ...capturedShadowRoots];
+
+                let foundSuccess = false;
+                let foundSpinner = false;
+                let foundCheckbox = false;
+
+                for (const root of roots) {
+                    try {
+                        const text = ((root.textContent || '') + ' ' + (root.body ? root.body.innerText : '')).toLowerCase();
+
+                        // 1. Success check
+                        if ((root.querySelector && root.querySelector('[class*="success"], svg[class*="check"], .ctp-checkbox-checked, #success')) || text.includes('success')) {
+                            foundSuccess = true;
+                            break;
+                        }
+                        const cb = root.querySelector ? root.querySelector('input[type="checkbox"]') : null;
+                        if (cb && cb.checked) {
+                            foundSuccess = true;
+                            break;
+                        }
+
+                        // 2. Spinner check (actively verifying)
+                        if (root.querySelector && root.querySelector('.ctp-spinner, [class*="spinner"], svg[class*="spin"], #spinner')) {
+                            foundSpinner = true;
+                        }
+                        if (text.includes('verifying') || text.includes('checking') || text.includes('যাচাই করা হচ্ছে')) {
+                            foundSpinner = true;
+                        }
+
+                        // 3. Checkbox waiting for human click
+                        if (cb && !cb.checked) {
+                            foundCheckbox = true;
+                        }
+                        if (text.includes('verify you are human') || text.includes('human')) {
+                            if (!foundSpinner) {
+                                foundCheckbox = true;
+                            }
+                        }
+                    } catch(e) {}
+                }
+
+                if (foundSuccess) {
+                    state = 'SUCCESS';
+                } else if (foundSpinner) {
+                    state = 'SPINNING';
+                } else if (foundCheckbox) {
+                    state = 'WAITING_CLICK';
+                }
+
+                if (state !== 'IDLE' && state !== lastReportedState) {
+                    lastReportedState = state;
+                    try {
+                        window.top.postMessage({
+                            type: 'IVAC_CF_STATE',
+                            state: state,
+                            timestamp: Date.now()
+                        }, '*');
+                    } catch(e) {}
+                }
+            } catch(e) {}
+        }
+
+        setInterval(checkTurnstileState, 200);
+    })();
 })();
