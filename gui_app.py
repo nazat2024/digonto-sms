@@ -1915,19 +1915,65 @@ class IVACApp(ctk.CTk):
         threading.Thread(target=toggle_task, daemon=True).start()
 
     def _rename_device(self, dev_id):
-        from tkinter import simpledialog
         import requests, threading
-        
+
         current = "Device"
         if hasattr(self, '_device_rows') and dev_id in self._device_rows:
             current = self._device_rows[dev_id].get("dev_name", "Device")
-            
-        new_name = simpledialog.askstring("Rename Device", "Enter new name for mobile:", initialvalue=current)
-        if new_name is not None:
-            new_name = new_name.strip()
+
+        # Destroy any existing overlay
+        if hasattr(self, '_rename_modal_overlay') and self._rename_modal_overlay and self._rename_modal_overlay.winfo_exists():
+            try:
+                self._rename_modal_overlay.destroy()
+            except Exception:
+                pass
+            self._rename_modal_overlay = None
+
+        # Full-window transparent backdrop catcher
+        backdrop = ctk.CTkFrame(self, fg_color="transparent")
+        backdrop.place(relx=0, rely=0, relwidth=1, relheight=1)
+        backdrop.lift()
+        self._rename_modal_overlay = backdrop
+
+        is_light = THEME.get("appearance_mode") == "light"
+        card_bg = "#ffffff" if is_light else "#151e2e"
+        card_border = "#2563eb" if is_light else "#0284c7"
+        title_color = "#0f172a" if is_light else "#f8fafc"
+        sub_color = "#475569" if is_light else "#94a3b8"
+        entry_bg = "#f8fafc" if is_light else "#0b1120"
+        entry_border = "#94a3b8" if is_light else "#334155"
+        entry_text = "#0f172a" if is_light else "#f1f5f9"
+        cancel_bg = "#e2e8f0" if is_light else "#334155"
+        cancel_hover = "#cbd5e1" if is_light else "#475569"
+        cancel_text = "#1e293b" if is_light else "#cbd5e1"
+
+        # Floating In-Window Modal Card
+        card = ctk.CTkFrame(
+            backdrop,
+            fg_color=card_bg,
+            border_width=2,
+            border_color=card_border,
+            corner_radius=16,
+            width=450,
+            height=215
+        )
+        card.place(relx=0.5, rely=0.45, anchor="center")
+        card.pack_propagate(False)
+
+        def close_modal(e=None):
+            if hasattr(self, '_rename_modal_overlay') and self._rename_modal_overlay and self._rename_modal_overlay.winfo_exists():
+                try:
+                    self._rename_modal_overlay.destroy()
+                except Exception:
+                    pass
+                self._rename_modal_overlay = None
+
+        def save_and_close(e=None):
+            new_name = entry.get().strip()
             if not new_name:
+                close_modal()
                 return
-            
+
             # 1. Immediate 0ms visual feedback in the desktop UI
             if hasattr(self, '_device_rows') and dev_id in self._device_rows:
                 row_info = self._device_rows[dev_id]
@@ -1939,7 +1985,7 @@ class IVACApp(ctk.CTk):
                     row_info["name_label"].configure(text=new_disp)
                 except Exception:
                     pass
-            
+
             # 2. Persist to server and mobile
             def update_task():
                 try:
@@ -1947,6 +1993,100 @@ class IVACApp(ctk.CTk):
                 except Exception:
                     pass
             threading.Thread(target=update_task, daemon=True).start()
+
+            close_modal()
+
+        # Click outside modal card closes it
+        backdrop.bind("<Button-1>", lambda e: close_modal())
+        card.bind("<Button-1>", lambda e: "break")
+
+        # Header Row
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=22, pady=(18, 6))
+
+        title = ctk.CTkLabel(
+            header,
+            text="📱 মোবাইলের নাম পরিবর্তন (Rename Mobile)",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=title_color
+        )
+        title.pack(side="left")
+
+        btn_x = ctk.CTkButton(
+            header,
+            text="✕",
+            width=28,
+            height=28,
+            corner_radius=14,
+            fg_color="transparent",
+            hover_color="#ef4444",
+            text_color=sub_color,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=close_modal
+        )
+        btn_x.pack(side="right")
+
+        # Subtitle
+        sub_lbl = ctk.CTkLabel(
+            card,
+            text="এই মোবাইলের জন্য সহজে চেনার মতো একটি নাম দিন:",
+            font=ctk.CTkFont(size=12),
+            text_color=sub_color,
+            anchor="w"
+        )
+        sub_lbl.pack(fill="x", padx=22, pady=(0, 10))
+
+        # Input Box
+        entry = ctk.CTkEntry(
+            card,
+            height=40,
+            font=ctk.CTkFont(size=14),
+            fg_color=entry_bg,
+            border_width=1,
+            border_color=entry_border,
+            text_color=entry_text,
+            placeholder_text="যেমন: Personal Phone, SIM 1 Node ইত্যাদি"
+        )
+        entry.pack(fill="x", padx=22, pady=(0, 16))
+        entry.insert(0, current)
+        entry.focus_set()
+        entry.select_range(0, 'end')
+
+        # Key binds
+        entry.bind("<Return>", save_and_close)
+        entry.bind("<Escape>", close_modal)
+
+        # Buttons Row
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.pack(fill="x", padx=22, pady=(0, 16))
+
+        btn_cancel = ctk.CTkButton(
+            btn_row,
+            text="বাতিল",
+            width=100,
+            height=34,
+            corner_radius=8,
+            fg_color=cancel_bg,
+            hover_color=cancel_hover,
+            text_color=cancel_text,
+            font=ctk.CTkFont(size=13),
+            command=close_modal
+        )
+        btn_cancel.pack(side="right", padx=(10, 0))
+
+        btn_save = ctk.CTkButton(
+            btn_row,
+            text="✓ সংরক্ষণ করুন",
+            width=135,
+            height=34,
+            corner_radius=8,
+            fg_color="#0284c7",
+            hover_color="#0369a1",
+            text_color="#ffffff",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=save_and_close
+        )
+        btn_save.pack(side="right")
 
     def _get_edit_icon(self):
         if not hasattr(self, '_cached_edit_icon'):
