@@ -6,9 +6,12 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.wifi.WifiManager;
@@ -207,9 +210,9 @@ public class MqttService extends Service {
                 .build();
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            int serviceType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+            int serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
             if (Build.VERSION.SDK_INT >= 34) { // Android 14
-                serviceType |= android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING;
+                serviceType |= 512; // FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
             }
             try {
                 startForeground(NOTIFICATION_ID, notification, serviceType);
