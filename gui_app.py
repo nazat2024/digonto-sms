@@ -1948,6 +1948,21 @@ class IVACApp(ctk.CTk):
                     pass
             threading.Thread(target=update_task, daemon=True).start()
 
+    def _get_edit_icon(self):
+        if not hasattr(self, '_cached_edit_icon'):
+            try:
+                from PIL import Image, ImageDraw
+                im = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
+                d = ImageDraw.Draw(im)
+                col = (241, 245, 249, 255)
+                d.polygon([(7, 25), (10, 25), (25, 10), (22, 7), (7, 22)], outline=col, width=2)
+                d.polygon([(5, 27), (6, 23), (9, 26)], fill=col)
+                d.line([(21, 8), (24, 11)], fill=col, width=2)
+                self._cached_edit_icon = ctk.CTkImage(light_image=im, dark_image=im, size=(13, 13))
+            except Exception:
+                self._cached_edit_icon = None
+        return self._cached_edit_icon
+
     def _add_device_row_incremental(self, dev_data, dev_id, display_text, color, sim_text, ip_text, ip_color, is_active, dev_name):
         row = ctk.CTkFrame(self.device_list_frame, fg_color=THEME["bg_row"], corner_radius=6, height=36, border_width=1, border_color=THEME["border_color"])
         row.pack(fill="x", pady=2, padx=2)
@@ -1956,46 +1971,53 @@ class IVACApp(ctk.CTk):
         # 1. Left: Status LED & Device Name
         name_label = ctk.CTkLabel(
             row, text=display_text,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=color,
-            height=20
+            height=20,
+            anchor="w"
         )
-        name_label.pack(side="left", padx=(10, 5))
+        name_label.pack(side="left", padx=(8, 4))
         
         # 2. Right: Active / Inactive Switch
         switch = ctk.CTkSwitch(
-            row, text="", width=38, height=18, switch_width=32, switch_height=16,
+            row, text="", width=36, height=18, switch_width=32, switch_height=16,
             command=lambda: self._toggle_device_status(dev_id, switch.get())
         )
         if is_active: switch.select()
         else: switch.deselect()
-        switch.pack(side="right", padx=(5, 10))
+        switch.pack(side="right", padx=(2, 8))
         
-        # 3. Right: Edit Name Button
+        # 3. Right: Compact Edit Icon Button (Clean icon button, zero bulky text)
+        edit_icon = self._get_edit_icon()
+        if edit_icon:
+            btn_kwargs = {"image": edit_icon, "text": ""}
+        else:
+            btn_kwargs = {"text": "✎", "font": ctk.CTkFont(size=12, weight="bold")}
+
         ctk.CTkButton(
-            row, text="✏️ Edit Name", width=52, height=20,
-            font=ctk.CTkFont(size=10, weight="bold"), fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
-            text_color=THEME["btn_secondary_text"],
-            command=lambda: self._rename_device(dev_id)
-        ).pack(side="right", padx=5)
+            row, width=24, height=22, corner_radius=5,
+            fg_color=THEME["btn_secondary"], hover_color=THEME["btn_secondary_hover"],
+            command=lambda: self._rename_device(dev_id),
+            **btn_kwargs
+        ).pack(side="right", padx=(2, 5))
         
         # 4. Right: Dedicated IP Section (Clean IP badge, no "Proxy:" prefix)
         ip_label = ctk.CTkLabel(
             row, text=ip_text,
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=10, weight="bold"),
             text_color=ip_color,
             height=20
         )
-        ip_label.pack(side="right", padx=(5, 12))
+        ip_label.pack(side="right", padx=(2, 6))
 
         # 5. Right: Dedicated SIMs Section (Clean phone numbers, zero truncation)
         sim_label = ctk.CTkLabel(
             row, text=sim_text,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=THEME["text_primary"],
             height=20
         )
-        sim_label.pack(side="right", padx=(5, 15))
+        sim_label.pack(side="right", padx=(2, 6))
         
         self._device_rows[dev_id] = {
             "row": row,
