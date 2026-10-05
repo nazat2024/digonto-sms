@@ -1410,6 +1410,36 @@ public class MainActivity extends AppCompatActivity {
         return sms && phone;
     }
 
+    private void checkAndPromptBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                boolean alreadyPrompted = prefs.getBoolean("battery_dialog_shown", false);
+                if (!alreadyPrompted) {
+                    prefs.edit().putBoolean("battery_dialog_shown", true).apply();
+                    new AlertDialog.Builder(this)
+                            .setTitle("২৪ ঘণ্টা কানেকশন চালু রাখুন")
+                            .setMessage("মোবাইলের স্ক্রিন বন্ধ থাকলেও যাতে কানেকশন কখনো ডিসকানেক্ট না হয়, সেজন্য 'অনুমতি দিন (Allow)' চেপে ব্যাটারি অপটিমাইজেশন বন্ধ (Unrestricted) করুন।")
+                            .setPositiveButton("অনুমতি দিন (Allow)", (dialog, which) -> {
+                                try {
+                                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                                    intent.setData(Uri.parse("package:" + getPackageName()));
+                                    startActivity(intent);
+                                } catch (Exception e) {
+                                    try {
+                                        Intent appSettings = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                        appSettings.setData(Uri.parse("package:" + getPackageName()));
+                                        startActivity(appSettings);
+                                    } catch (Exception ignored) {}
+                                }
+                            })
+                            .setNegativeButton("পরে করব", null)
+                            .show();
+                }
+            }
+        }
+    }
+
     private void startMqttService() {
         Intent serviceIntent = new Intent(this, MqttService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1428,6 +1458,7 @@ public class MainActivity extends AppCompatActivity {
                 MqttService.instance.sendSinglePing();
             }
             autoDetectSims(false);
+            checkAndPromptBatteryOptimization();
         }
         resetAmoledTimer();
         // If message tab is open, refresh logs

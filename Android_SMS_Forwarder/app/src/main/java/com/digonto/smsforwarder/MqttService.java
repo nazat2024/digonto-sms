@@ -83,7 +83,29 @@ public class MqttService extends Service {
         }
     };
 
+    public boolean isNetworkAvailable() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    Network activeNetwork = cm.getActiveNetwork();
+                    if (activeNetwork != null) {
+                        android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(activeNetwork);
+                        return caps != null && (caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET));
+                    }
+                } else {
+                    android.net.NetworkInfo activeInfo = cm.getActiveNetworkInfo();
+                    return activeInfo != null && activeInfo.isConnected();
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
     public void checkAndEnsureConnection() {
+        if (!isNetworkAvailable()) {
+            return;
+        }
         if (mqttClient == null || !mqttClient.isConnected()) {
             triggerReconnect();
         }
@@ -92,7 +114,7 @@ public class MqttService extends Service {
     private void ensureWakeLocks() {
         try {
             if (wakeLock != null && !wakeLock.isHeld()) {
-                wakeLock.acquire(10 * 60 * 1000L);
+                wakeLock.acquire(); // Permanent lock: NEVER expire after 10 mins
             }
             if (wifiLock != null && !wifiLock.isHeld()) {
                 wifiLock.acquire();
@@ -123,7 +145,7 @@ public class MqttService extends Service {
             if (pm != null) {
                 wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IVACMasterPro:WakeLock");
                 wakeLock.setReferenceCounted(false);
-                wakeLock.acquire(10 * 60 * 1000L);
+                wakeLock.acquire(); // Permanent lock
             }
         } catch (Exception ignored) {}
 
@@ -180,11 +202,23 @@ public class MqttService extends Service {
                 .setContentTitle("IVAC Master Pro Active")
                 .setContentText(pairingCodes.isEmpty() ? "Waiting for desktop pairing..." : "Connected & listening for SMS live...")
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setOngoing(true)
                 .build();
 
-        startForeground(NOTIFICATION_ID, notification);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            int serviceType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+            if (Build.VERSION.SDK_INT >= 34) { // Android 14
+                serviceType |= android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING;
+            }
+            try {
+                startForeground(NOTIFICATION_ID, notification, serviceType);
+            } catch (Exception e) {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
 
         connectToMqtt(pairingCodes);
         scheduleNextAlarmPing();
@@ -196,6 +230,10 @@ public class MqttService extends Service {
     }
 
     public void triggerReconnect(boolean forceReset) {
+        if (!isNetworkAvailable()) {
+            Log.d(TAG, "Cannot reconnect: Network is offline.");
+            return;
+        }
         Set<String> codes = prefs.getStringSet("pairing_codes", new HashSet<>());
         connectToMqtt(codes, forceReset);
     }
@@ -205,39 +243,44 @@ public class MqttService extends Service {
     }
 
     public void connectToMqtt(final Set<String> pairingCodes, final boolean forceReset) {
+        if (!isNetworkAvailable()) {
+            Log.d(TAG, "connectToMqtt: Network offline, skipping attempt.");
+            return;
+        }
+
+        synchronized (connectionLock) {
+            if (!forceReset && mqttClient != null && mqttClient.isConnected()) {
+                if (pairingCodes != null) {
+                    for (String code : pairingCodes) {
+                        try {
+                            String sysTopic = "digonto_ivac_sms_" + code + "_sys";
+                            mqttClient.subscribe(sysTopic);
+                        } catch (Exception ignored) {}
+                    }
+                }
+                sendSinglePingInternal();
+                return;
+            }
+
+            long now = System.currentTimeMillis();
+            if (isConnecting) {
+                Log.d(TAG, "Connection already in progress, skipping duplicate queue.");
+                return;
+            }
+            if (!forceReset && (now - lastConnectAttemptTime < 2500)) {
+                Log.d(TAG, "Throttled: connection attempt too frequent.");
+                return;
+            }
+
+            isConnecting = true;
+            lastConnectAttemptTime = now;
+        }
+
         if (netExecutor == null || netExecutor.isShutdown()) {
             netExecutor = Executors.newSingleThreadExecutor();
         }
 
         netExecutor.execute(() -> {
-            synchronized (connectionLock) {
-                if (!forceReset && mqttClient != null && mqttClient.isConnected()) {
-                    if (pairingCodes != null) {
-                        for (String code : pairingCodes) {
-                            try {
-                                String sysTopic = "digonto_ivac_sms_" + code + "_sys";
-                                mqttClient.subscribe(sysTopic);
-                            } catch (Exception ignored) {}
-                        }
-                    }
-                    sendSinglePingInternal();
-                    return;
-                }
-
-                long now = System.currentTimeMillis();
-                if (isConnecting) {
-                    Log.d(TAG, "Connection already in progress, skipping.");
-                    return;
-                }
-                if (!forceReset && (now - lastConnectAttemptTime < 2000)) {
-                    Log.d(TAG, "Throttled: connection attempt too frequent.");
-                    return;
-                }
-
-                isConnecting = true;
-                lastConnectAttemptTime = now;
-            }
-
             try {
                 if (mqttClient != null) {
                     try {
@@ -253,7 +296,8 @@ public class MqttService extends Service {
                 }
 
                 String devId = prefs.getString("device_id", UUID.randomUUID().toString()).replace("-", "");
-                String clientId = "ivac_m_" + devId.substring(0, Math.min(devId.length(), 10)) + "_" + (System.currentTimeMillis() % 100000);
+                // Consistent client ID so EMQX drops previous dead socket instantly and doesn't get flooded
+                String clientId = "ivac_m_" + devId.substring(0, Math.min(devId.length(), 16));
 
                 mqttClient = new MqttClient("tcp://broker.emqx.io:1883", clientId, new MemoryPersistence());
 
@@ -269,7 +313,11 @@ public class MqttService extends Service {
                         isConnectedToBroker = false;
                         Log.e(TAG, "MQTT Connection lost: " + (cause != null ? cause.getMessage() : "unknown"));
                         if (pingHandler != null) {
-                            pingHandler.postDelayed(() -> triggerReconnect(true), 2000);
+                            pingHandler.postDelayed(() -> {
+                                if (isNetworkAvailable()) {
+                                    triggerReconnect(true);
+                                }
+                            }, 2000);
                         }
                     }
 
@@ -329,7 +377,11 @@ public class MqttService extends Service {
                 isConnectedToBroker = false;
                 Log.e(TAG, "MQTT Connection error: " + e.getMessage());
                 if (pingHandler != null) {
-                    pingHandler.postDelayed(() -> triggerReconnect(true), 3000);
+                    pingHandler.postDelayed(() -> {
+                        if (isNetworkAvailable()) {
+                            triggerReconnect(true);
+                        }
+                    }, 3500);
                 }
             } finally {
                 synchronized (connectionLock) {
@@ -450,6 +502,30 @@ public class MqttService extends Service {
         }
     }
 
+    private BroadcastReceiver connectivityReceiver;
+
+    private void registerConnectivityReceiver() {
+        if (connectivityReceiver != null) return;
+        connectivityReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                ensureWakeLocks();
+                if (isNetworkAvailable()) {
+                    if (!isConnectedToBroker && !isConnecting) {
+                        Log.d(TAG, "CONNECTIVITY_ACTION: Network available, ensuring connection...");
+                        triggerReconnect(true);
+                    }
+                } else {
+                    isConnectedToBroker = false;
+                }
+            }
+        };
+        try {
+            IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
+            registerReceiver(connectivityReceiver, filter);
+        } catch (Exception ignored) {}
+    }
+
     private void scheduleNextAlarmPing() {
         try {
             AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
@@ -462,12 +538,30 @@ public class MqttService extends Service {
                 }
                 alarmPingIntent = PendingIntent.getService(this, 999, intent, flags);
                 long nextTrigger = SystemClock.elapsedRealtime() + 15000; // 15 seconds watchdog
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                    am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
-                } else {
-                    am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+
+                boolean scheduled = false;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (am.canScheduleExactAlarms()) {
+                        try {
+                            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                            scheduled = true;
+                        } catch (SecurityException ignored) {}
+                    }
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                        scheduled = true;
+                    } catch (Exception ignored) {}
+                }
+
+                if (!scheduled) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                    } else {
+                        am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, nextTrigger, alarmPingIntent);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -483,10 +577,11 @@ public class MqttService extends Service {
                     @Override
                     public void onAvailable(Network network) {
                         Log.d(TAG, "Network became available, ensuring fresh MQTT connection...");
+                        ensureWakeLocks();
                         isConnectedToBroker = false;
                         if (pingHandler != null) {
-                            pingHandler.removeCallbacksAndMessages(null);
-                            pingHandler.postDelayed(() -> triggerReconnect(true), 800);
+                            pingHandler.removeCallbacks(pingRunnable);
+                            pingHandler.postDelayed(() -> triggerReconnect(true), 500);
                             pingHandler.postDelayed(pingRunnable, 2000);
                         } else {
                             triggerReconnect(true);
@@ -520,6 +615,7 @@ public class MqttService extends Service {
         } catch (Exception e) {
             Log.e(TAG, "Error registering network callback", e);
         }
+        registerConnectivityReceiver();
     }
 
     @Override
@@ -674,6 +770,12 @@ public class MqttService extends Service {
                     cm.unregisterNetworkCallback(networkCallback);
                 }
             } catch (Exception ignored) {}
+        }
+        if (connectivityReceiver != null) {
+            try {
+                unregisterReceiver(connectivityReceiver);
+            } catch (Exception ignored) {}
+            connectivityReceiver = null;
         }
         if (alarmPingIntent != null) {
             try {
