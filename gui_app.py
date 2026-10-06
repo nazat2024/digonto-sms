@@ -2275,7 +2275,7 @@ class IVACApp(ctk.CTk):
             border_color=card_border,
             corner_radius=16,
             width=450,
-            height=215
+            height=245
         )
         card.place(relx=0.5, rely=0.45, anchor="center")
         card.pack_propagate(False)
@@ -2291,7 +2291,20 @@ class IVACApp(ctk.CTk):
         def save_and_close(e=None):
             new_name = entry.get().strip()
             if not new_name:
-                close_modal()
+                err_lbl.configure(text="⚠️ অনুগ্রহ করে একটি নাম লিখুন।")
+                entry.focus_set()
+                return
+
+            # Check duplicate against other devices
+            is_dup = False
+            for o_id, o_info in getattr(self, '_device_rows', {}).items():
+                if o_id != dev_id and o_info.get("dev_name", "").strip().lower() == new_name.lower():
+                    is_dup = True
+                    break
+
+            if is_dup:
+                err_lbl.configure(text=f"⚠️ '{new_name}' নামটি ইতিমধ্যে অন্য একটি ফোনে আছে! ভিন্ন নাম দিন।")
+                entry.focus_set()
                 return
 
             # 1. Immediate 0ms visual feedback in the desktop UI
@@ -2354,7 +2367,7 @@ class IVACApp(ctk.CTk):
             text_color=sub_color,
             anchor="w"
         )
-        sub_lbl.pack(fill="x", padx=22, pady=(0, 10))
+        sub_lbl.pack(fill="x", padx=22, pady=(0, 8))
 
         # Input Box
         entry = ctk.CTkEntry(
@@ -2367,14 +2380,25 @@ class IVACApp(ctk.CTk):
             text_color=entry_text,
             placeholder_text="যেমন: Personal Phone, SIM 1 Node ইত্যাদি"
         )
-        entry.pack(fill="x", padx=22, pady=(0, 16))
+        entry.pack(fill="x", padx=22, pady=(0, 6))
         entry.insert(0, current)
         entry.focus_set()
         entry.select_range(0, 'end')
 
+        # Error notification label
+        err_lbl = ctk.CTkLabel(
+            card,
+            text="",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#ef4444",
+            anchor="w"
+        )
+        err_lbl.pack(fill="x", padx=22, pady=(0, 10))
+
         # Key binds
         entry.bind("<Return>", save_and_close)
         entry.bind("<Escape>", close_modal)
+        entry.bind("<Key>", lambda e: err_lbl.configure(text=""))
 
         # Buttons Row
         btn_row = ctk.CTkFrame(card, fg_color="transparent")

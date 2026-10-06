@@ -576,6 +576,20 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Device name saved & synced to all desktops!", Toast.LENGTH_SHORT).show();
         });
 
+    }
+
+    public void updateCustomDeviceNameUI(String newName) {
+        runOnUiThread(() -> {
+            try {
+                if (etCustomDeviceName != null && newName != null && !newName.trim().isEmpty()) {
+                    etCustomDeviceName.setText(newName.trim());
+                }
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void initOtherControls() {
+
         // Focus Mode: DND
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && nm != null) {
@@ -1467,6 +1481,10 @@ public class MainActivity extends AppCompatActivity {
             checkAndPromptBatteryOptimization();
         }
         resetAmoledTimer();
+        String curCustomName = prefs.getString("custom_device_name", "");
+        if (etCustomDeviceName != null && !curCustomName.isEmpty()) {
+            etCustomDeviceName.setText(curCustomName);
+        }
         // If message tab is open, refresh logs
         if (tabMessageLayout.getVisibility() == View.VISIBLE) {
             loadHistoryTab();

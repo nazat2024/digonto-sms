@@ -346,6 +346,9 @@ public class MqttService extends Service {
                                         if (!newName.isEmpty()) {
                                             prefs.edit().putString("custom_device_name", newName).apply();
                                             Log.i(TAG, "Device name updated from desktop: " + newName);
+                                            if (MainActivity.instance != null) {
+                                                MainActivity.instance.updateCustomDeviceNameUI(newName);
+                                            }
                                         }
                                     }
                                 }

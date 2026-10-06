@@ -404,6 +404,38 @@ def receive_email_otp():
         return jsonify({"success": True, "data": record}), 200
     return jsonify({"success": False, "error": "Invalid OTP payload"}), 400
 
+def get_unique_device_name(desired_name: str, dev_id: str) -> str:
+    """Ensure desired_name is strictly unique among all OTHER saved and connected devices."""
+    cand = (desired_name or "").strip()
+    if not cand:
+        cand = "Device"
+        
+    other_names = set()
+    for o_id, d in saved_devices.items():
+        if o_id != dev_id:
+            c = (d.get("custom_name") or "").strip().lower()
+            if c:
+                other_names.add(c)
+    for o_id, d in connected_devices.items():
+        if o_id != dev_id:
+            c = (d.get("custom_name") or d.get("device_name") or "").strip().lower()
+            if c:
+                other_names.add(c)
+                
+    if cand.lower() not in other_names:
+        return cand
+        
+    import re
+    base = re.sub(r'\s*\(\d+\)$', '', cand).strip()
+    if not base:
+        base = "Device"
+    counter = 2
+    unique_cand = f"{base} ({counter})"
+    while unique_cand.lower() in other_names:
+        counter += 1
+        unique_cand = f"{base} ({counter})"
+    return unique_cand
+
 @app.route("/api/device/update", methods=["POST"])
 def update_device():
     global saved_devices, connected_devices, global_mqtt_client, global_mqtt_sys_topic
@@ -413,15 +445,31 @@ def update_device():
     is_active = data.get("is_active")
     
     if dev_id:
+        if custom_name is not None:
+            custom_name = custom_name.strip()
+            if not custom_name:
+                return jsonify({"success": False, "error": "একটি নাম লিখুন।"}), 400
+                
+            # Disallow duplicate name across existing devices
+            other_names = {v.get("custom_name", "").strip().lower() for k, v in saved_devices.items() if k != dev_id and v.get("custom_name")}
+            other_names.update({v.get("custom_name", "").strip().lower() for k, v in connected_devices.items() if k != dev_id and v.get("custom_name")})
+            if custom_name.lower() in other_names:
+                return jsonify({
+                    "success": False,
+                    "error": f"'{custom_name}' নামটি ইতিমধ্যে অন্য একটি ফোনে আছে! অনুগ্রহ করে ভিন্ন নাম দিন।"
+                }), 400
+
         if dev_id not in saved_devices:
+            fallback_model = connected_devices.get(dev_id, {}).get("device_name") if dev_id in connected_devices else "Device"
             saved_devices[dev_id] = {
-                "custom_name": custom_name or (connected_devices.get(dev_id, {}).get("device_name") if dev_id in connected_devices else "Device"),
+                "custom_name": custom_name or get_unique_device_name(fallback_model, dev_id),
                 "is_active": True
             }
         if custom_name is not None:
             saved_devices[dev_id]["custom_name"] = custom_name
             if dev_id in connected_devices:
                 connected_devices[dev_id]["custom_name"] = custom_name
+                connected_devices[dev_id]["phones"] = None
         if is_active is not None:
             saved_devices[dev_id]["is_active"] = is_active
             if dev_id in connected_devices:
@@ -1702,15 +1750,27 @@ try:
                     dev_id = sys_data.get("device_id", "Unknown Device")
                     dev_model = sys_data.get("device_name", "Unknown Model")
                     incoming_custom = (sys_data.get("custom_name") or "").strip()
+                    has_custom = bool(sys_data.get("has_custom_name", False))
                     
                     if dev_id not in saved_devices:
+                        raw_name = incoming_custom if (has_custom and incoming_custom) else dev_model
+                        auto_name = get_unique_device_name(raw_name, dev_id)
                         saved_devices[dev_id] = {
-                            "custom_name": incoming_custom if incoming_custom else dev_model,
+                            "custom_name": auto_name,
                             "is_active": True
                         }
                         save_device_config(saved_devices)
+                        try:
+                            sync_msg = json.dumps({
+                                "type": "set_device_name",
+                                "device_id": dev_id,
+                                "custom_name": auto_name
+                            }).encode('utf-8')
+                            client.publish(MQTT_SYS_TOPIC, sync_msg)
+                        except Exception:
+                            pass
                         
-                    c_name = saved_devices[dev_id].get("custom_name") or incoming_custom or dev_model
+                    c_name = saved_devices[dev_id].get("custom_name") or dev_model
                     
                     # If mobile still has a different name than desktop saved name, sync desktop name to mobile
                     if incoming_custom and incoming_custom != c_name:
@@ -1791,14 +1851,25 @@ try:
                     dev_id = sys_data.get("device_id")
                     incoming_custom = (sys_data.get("custom_name") or "").strip()
                     if dev_id and incoming_custom:
+                        unique_name = get_unique_device_name(incoming_custom, dev_id)
                         if dev_id not in saved_devices:
                             saved_devices[dev_id] = {"is_active": True}
-                        saved_devices[dev_id]["custom_name"] = incoming_custom
+                        saved_devices[dev_id]["custom_name"] = unique_name
                         save_device_config(saved_devices)
                         if dev_id in connected_devices:
-                            connected_devices[dev_id]["custom_name"] = incoming_custom
+                            connected_devices[dev_id]["custom_name"] = unique_name
                             connected_devices[dev_id]["phones"] = None
-                        print(f"[Device Sync] Live updated custom name for {dev_id}: {incoming_custom}")
+                        print(f"[Device Sync] Live updated custom name for {dev_id}: {unique_name}")
+                        if unique_name != incoming_custom:
+                            try:
+                                sync_msg = json.dumps({
+                                    "type": "set_device_name",
+                                    "device_id": dev_id,
+                                    "custom_name": unique_name
+                                }).encode('utf-8')
+                                client.publish(MQTT_SYS_TOPIC, sync_msg)
+                            except Exception:
+                                pass
                 elif sys_data.get("type") == "offline":
                     dev_id = sys_data.get("device_id")
                     if dev_id and dev_id in connected_devices:
