@@ -302,6 +302,11 @@ function emitActivity(eventType, title, details = '', amount = 0, status = 'info
 // ===== PAGE DETECTION & ACTIVITY HOOKS LOOP =====
 setInterval(() => {
     try {
+        const host = window.location.hostname.toLowerCase();
+        const isIvacHost = host.includes('ivacbd.com') || host.includes('indianvisa-bangladesh.nic.in');
+        const isGatewayHost = host.includes('dgepay.net') || host.includes('mynagad.com') || host.includes('nagad.com') || host.includes('bkash.com') || host.includes('122.152.54.218') || host.includes('shurjopay');
+        if (!isIvacHost && !isGatewayHost) return;
+
         const url = window.location.href.toLowerCase();
         const text = (document.body ? document.body.innerText : '').toLowerCase();
 
@@ -478,103 +483,27 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', checkAndLogPaymentSuccess);
 }
 window.addEventListener('load', checkAndLogPaymentSuccess);
-// ===== HIGH-VISIBILITY PAYMENT RESULT OVERLAY BANNER & AUDIO REASSURANCE =====
+// ===== HIGH-VISIBILITY PAYMENT RESULT OVERLAY BANNER (DISABLED) =====
 function renderPaymentOverlayBanner(type, details = {}) {
+    // Disabled as requested by user ("এটা যেন না আসে")
     try {
-        if (document.getElementById('ivac-payment-result-banner')) {
-            return; // already visible on screen
-        }
-        const banner = document.createElement('div');
-        banner.id = 'ivac-payment-result-banner';
-        const isSuccess = (type === 'success');
-        
-        banner.style.cssText = `
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            z-index: 2147483647 !important;
-            padding: 14px 20px !important;
-            box-sizing: border-box !important;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hind Siliguri", sans-serif !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-            text-align: center !important;
-            box-shadow: 0 10px 35px rgba(0,0,0,0.4) !important;
-            border-bottom: 4px solid ${isSuccess ? '#15803d' : '#991b1b'} !important;
-            background: ${isSuccess ? 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%)' : 'linear-gradient(135deg, #7f1d1d 0%, #b91c1c 50%, #dc2626 100%)'} !important;
-            color: #ffffff !important;
-            animation: ivacSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
-        `;
-
-        const icon = isSuccess ? '✔' : '✖';
-        const titleEn = isSuccess ? 'PAYMENT SUCCESSFUL' : 'PAYMENT FAILED';
-        const titleBn = isSuccess ? 'পেমেন্ট ১০০% সফল হয়েছে!' : 'পেমেন্ট সম্পন্ন হয়নি (ব্যর্থ / বাতিল)';
-        
-        let subDetails = '';
-        if (isSuccess) {
-            subDetails = `
-                <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:8px; font-size:13.5px; font-weight:600;">
-                    <span style="background:rgba(255,255,255,0.22); padding:4px 12px; border-radius:20px; border:1px solid rgba(255,255,255,0.3);">
-                        🏷️ ট্রানজেকশন আইডি: <strong style="font-family:monospace; font-size:15px; color:#fef08a;">${details.trxId || 'N/A'}</strong>
-                    </span>
-                    <span style="background:rgba(255,255,255,0.22); padding:4px 12px; border-radius:20px; border:1px solid rgba(255,255,255,0.3);">
-                        💰 টাকার পরিমাণ: <strong style="font-size:15px; color:#fef08a;">৳ ${(details.amount || 0).toLocaleString()}</strong>
-                    </span>
-                    <span style="background:#15803d; border:1px solid #86efac; padding:4px 12px; border-radius:20px; color:#ffffff; font-weight:700;">
-                        ✓ ওনার প্যানেল ও ক্লাউডে সফল হিসেবে সেভ হয়েছে
-                    </span>
-                </div>
-            `;
-        } else {
-            subDetails = `
-                <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:8px; font-size:13.5px; font-weight:600;">
-                    <span style="background:rgba(255,255,255,0.22); padding:4px 12px; border-radius:20px; border:1px solid rgba(255,255,255,0.3);">
-                        ⚠️ কারণ / কোড: <strong style="font-family:monospace; font-size:15px; color:#fef08a;">${details.errorCode || 'Transaction Cancelled / Declined'}</strong>
-                    </span>
-                    <span style="background:#991b1b; border:1px solid #fca5a5; padding:4px 12px; border-radius:20px; color:#ffffff; font-weight:700;">
-                        ✗ ওনার প্যানেলে Failed হিসেবে সেভ হয়েছে (কোনো টাকা কাটা হয়নি)
-                    </span>
-                </div>
-            `;
-        }
-
-        banner.innerHTML = `
-            <style>
-                @keyframes ivacSlideDown {
-                    from { transform: translateY(-100%); opacity: 0; }
-                    to { transform: translateY(0); opacity: 1; }
-                }
-                @keyframes ivacPulseBadge {
-                    0%, 100% { transform: scale(1); }
-                    50% { transform: scale(1.06); }
-                }
-            </style>
-            <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
-                <div style="width:38px; height:38px; border-radius:50%; background:#ffffff; color:${isSuccess ? '#059669' : '#dc2626'}; font-size:24px; font-weight:900; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,0.25); animation:ivacPulseBadge 1.5s infinite;">
-                    ${icon}
-                </div>
-                <div style="font-size:20px; font-weight:800; letter-spacing:0.5px; text-shadow:0 1px 3px rgba(0,0,0,0.3);">
-                    ${titleEn} &nbsp;•&nbsp; ${titleBn}
-                </div>
-            </div>
-            ${subDetails}
-        `;
-
-        const targetParent = document.body || document.documentElement;
-        if (targetParent) {
-            targetParent.appendChild(banner);
-        }
-    } catch(e) {
-        console.error('[IVAC] renderPaymentOverlayBanner error:', e);
-    }
+        const existing = document.getElementById('ivac-payment-result-banner');
+        if (existing) existing.remove();
+    } catch(e) {}
 }
 
 // ===== UNIVERSAL PAYMENT SUCCESS & FAILURE DETECTOR (100,000% ZERO-GUESSWORK) =====
 function checkAndLogPaymentSuccess() {
     try {
+        const host = window.location.hostname.toLowerCase();
+        const isIvacHost = host.includes('ivacbd.com') || host.includes('indianvisa-bangladesh.nic.in');
+        const isGatewayHost = host.includes('dgepay.net') || host.includes('mynagad.com') || host.includes('nagad.com') || host.includes('bkash.com') || host.includes('122.152.54.218') || host.includes('shurjopay');
+        
+        // STRICT SAFETY GUARD: Never execute payment checks on external websites (e.g. GitHub, Google, Facebook)
+        if (!isIvacHost && !isGatewayHost) {
+            return;
+        }
+
         const fullUrl = window.location.href;
         const url = fullUrl.toLowerCase();
         const pathname = window.location.pathname.toLowerCase();
@@ -617,7 +546,6 @@ function checkAndLogPaymentSuccess() {
 
         if (isDgepayFailed) {
             const finalErrorCode = errorCode || '2002/2013';
-            renderPaymentOverlayBanner('failed', { errorCode: finalErrorCode });
 
             if (!sessionStorage.getItem('payment_failed_logged_session')) {
                 sessionStorage.setItem('payment_failed_logged_session', 'true');
@@ -674,7 +602,7 @@ function checkAndLogPaymentSuccess() {
             (text.includes('transaction id') && (text.includes('bdt') || text.includes('amount') || text.includes('ivac')))
         );
 
-        if (isDgepaySuccess || hasPaymentSuccessText || isReceiptPage) {
+        if (isDgepaySuccess || (isIvacReturn && hasPaymentSuccessText) || isReceiptPage) {
             const finalTrxId = trxId || (isDgepaySuccess ? 'DGePay_Success' : 'Completed');
 
             // Extract page amount if visible on screen
@@ -692,8 +620,6 @@ function checkAndLogPaymentSuccess() {
             ], (st) => {
                 const finalAmount = pageAmt || st.last_amount_3 || st.last_amount_2 || st.last_amount_1 || st.last_tracked_amount || 0;
                 const pid = st.current_payment_id || st.current_payment_session_id;
-
-                renderPaymentOverlayBanner('success', { trxId: finalTrxId, amount: finalAmount });
 
                 if (!sessionStorage.getItem('payment_success_logged_session')) {
                     sessionStorage.setItem('payment_success_logged_session', 'true');
