@@ -1207,17 +1207,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Layer 2: SMS Inbox Deep Scan (Robi & Airtel numbers are found in carrier/recharge SMS)
-        detectedNum = scanNumberFromSmsInbox(subId, carrier);
-        if (!detectedNum.isEmpty()) {
-            applyDetectedNumber(slot, detectedNum);
-            if (showToast) {
-                Toast.makeText(this, "SIM " + (slot + 1) + " Auto-Detected: " + detectedNum, Toast.LENGTH_SHORT).show();
-            }
-            return;
-        }
-
-        // Layer 3: Query Live Carrier Network via USSD only when user explicitly requested detection
+        // Layer 2: Query Live Carrier Network via USSD (*2# for GP/Robi/Airtel, *511# for BL)
         if (showToast) {
             requestNetworkUssd(tm, subId, slot, carrier, true);
         }
@@ -1242,96 +1232,6 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Exception ignored) {}
         return isPhoneNumber(num) ? cleanPhoneNumber(num) : "";
-    }
-
-    private String scanNumberFromSmsInbox(int targetSubId, String operatorName) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            return "";
-        }
-        Cursor cursor = null;
-        try {
-            Uri uri = Uri.parse("content://sms");
-            String[] projection = new String[]{"_id", "body", "address", "sub_id"};
-            String sortOrder = "date DESC LIMIT 300";
-            cursor = getContentResolver().query(uri, projection, null, null, sortOrder);
-            if (cursor != null && cursor.moveToFirst()) {
-                int bodyIdx = cursor.getColumnIndex("body");
-                int addrIdx = cursor.getColumnIndex("address");
-                int subIdIdx = cursor.getColumnIndex("sub_id");
-
-                Map<String, Integer> candidateScores = new HashMap<>();
-
-                do {
-                    int subId = subIdIdx != -1 ? cursor.getInt(subIdIdx) : -1;
-                    if (targetSubId != -1 && subId != -1 && subId != targetSubId) {
-                        continue;
-                    }
-
-                    String rawBody = bodyIdx != -1 ? cursor.getString(bodyIdx) : "";
-                    String addr = addrIdx != -1 ? cursor.getString(addrIdx) : "";
-                    if (rawBody == null || rawBody.isEmpty()) continue;
-
-                    String body = convertBengaliToEnglishDigits(rawBody);
-                    String addrLower = (addr != null ? addr.toLowerCase() : "");
-                    String bodyLower = body.toLowerCase();
-                    String op = operatorName != null ? operatorName.toLowerCase() : "";
-
-                    Matcher matcher = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(body);
-                    while (matcher.find()) {
-                        String match = cleanPhoneNumber(matcher.group(1));
-                        if (!isPhoneNumber(match)) continue;
-
-                        int score = 1;
-
-                        // Check prefix matching the carrier
-                        boolean prefixMatches = false;
-                        if ((op.contains("grameen") || op.contains("gp")) && (match.startsWith("017") || match.startsWith("013"))) {
-                            score += 15; prefixMatches = true;
-                        } else if ((op.contains("banglalink") || op.contains("bl")) && (match.startsWith("019") || match.startsWith("014"))) {
-                            score += 15; prefixMatches = true;
-                        } else if (op.contains("airtel") && match.startsWith("016")) {
-                            score += 20; prefixMatches = true;
-                        } else if (op.contains("robi") && match.startsWith("018")) {
-                            score += 20; prefixMatches = true;
-                        } else if (op.contains("teletalk") && match.startsWith("015")) {
-                            score += 15; prefixMatches = true;
-                        }
-
-                        // Discard if prefix doesn't match this carrier at all
-                        if (!prefixMatches) continue;
-
-                        // Carrier system messages
-                        if (addrLower.contains("121") || addrLower.contains("123") || addrLower.contains("robi") || addrLower.contains("airtel")
-                                || addrLower.contains("gp") || addrLower.contains("bl") || addrLower.contains("teletalk")) {
-                            score += 15;
-                        }
-
-                        // Financial / recharge keywords
-                        if (bodyLower.contains("recharge") || bodyLower.contains("রিচার্জ") || bodyLower.contains("টাকা")
-                                || bodyLower.contains("cash in") || bodyLower.contains("balance") || bodyLower.contains("msisdn")
-                                || bodyLower.contains("account") || bodyLower.contains("বিল") || bodyLower.contains("নম্বর")) {
-                            score += 10;
-                        }
-
-                        candidateScores.put(match, candidateScores.getOrDefault(match, 0) + score);
-                    }
-                } while (cursor.moveToNext());
-
-                String bestNum = "";
-                int maxScore = 0;
-                for (Map.Entry<String, Integer> entry : candidateScores.entrySet()) {
-                    if (entry.getValue() > maxScore) {
-                        maxScore = entry.getValue();
-                        bestNum = entry.getKey();
-                    }
-                }
-                return bestNum;
-            }
-        } catch (Exception ignored) {
-        } finally {
-            if (cursor != null) cursor.close();
-        }
-        return "";
     }
 
     private String convertBengaliToEnglishDigits(String str) {
@@ -1383,9 +1283,9 @@ public class MainActivity extends AppCompatActivity {
                     if (returnMessage != null) {
                         String msg = convertBengaliToEnglishDigits(returnMessage.toString());
                         String digitsOnly = msg.replaceAll("[^0-9]", "");
-                        Matcher mDigits = Pattern.compile("(?:88)?(01[3-9]\\d{8})").matcher(digitsOnly);
-                        if (mDigits.find()) {
-                            String found = cleanPhoneNumber(mDigits.group(1));
+                        Matcher m = Pattern.compile("(?:88)?(01[3-9]\\d{8})").matcher(digitsOnly);
+                        if (m.find()) {
+                            String found = cleanPhoneNumber(m.group(1));
                             if (isPhoneNumber(found)) {
                                 runOnUiThread(() -> {
                                     applyDetectedNumber(slot, found);
@@ -1436,11 +1336,8 @@ public class MainActivity extends AppCompatActivity {
         if (carrier == null) return "*2#";
         String l = carrier.toLowerCase();
         if (l.contains("banglalink") || l.contains("bl")) return "*511#";
-        if (l.contains("grameen") || l.contains("gp")) return "*2#";
-        if (l.contains("airtel")) return "*2#";
-        if (l.contains("robi") || l.contains("akt")) return "*2#";
         if (l.contains("teletalk")) return "*551#";
-        return "*2#";
+        return "*2#"; // Grameenphone, Robi, Airtel all use *2#
     }
 
     private void triggerSimUssdForSlot(int targetSlot) {
