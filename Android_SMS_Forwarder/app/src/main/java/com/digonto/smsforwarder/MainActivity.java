@@ -584,20 +584,6 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Device name saved & synced to all desktops!", Toast.LENGTH_SHORT).show();
         });
 
-    }
-
-    public void updateCustomDeviceNameUI(String newName) {
-        runOnUiThread(() -> {
-            try {
-                if (etCustomDeviceName != null && newName != null && !newName.trim().isEmpty()) {
-                    etCustomDeviceName.setText(newName.trim());
-                }
-            } catch (Exception ignored) {}
-        });
-    }
-
-    private void initOtherControls() {
-
         // Focus Mode: DND
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && nm != null) {
@@ -640,6 +626,16 @@ public class MainActivity extends AppCompatActivity {
                     .setPositiveButton("চালু করুন", (dialog, which) -> executeCallDivert("##21#", false))
                     .setNegativeButton("বাতিল", null)
                     .show();
+        });
+    }
+
+    public void updateCustomDeviceNameUI(String newName) {
+        runOnUiThread(() -> {
+            try {
+                if (etCustomDeviceName != null && newName != null && !newName.trim().isEmpty()) {
+                    etCustomDeviceName.setText(newName.trim());
+                }
+            } catch (Exception ignored) {}
         });
     }
 
