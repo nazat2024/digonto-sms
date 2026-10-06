@@ -496,6 +496,9 @@ const paymentRecordDebounceMap = new Map();
             .then(r => r.json())
             .then(res => {
                 if (res && res.success) {
+                    if (res.payment_id) {
+                        chrome.storage.local.set({ current_payment_id: res.payment_id });
+                    }
                     paymentRecordDebounceMap.set(dedupKey, { time: Date.now(), response: res });
                     for (const [k, v] of paymentRecordDebounceMap.entries()) {
                         if (Date.now() - v.time > 60000) paymentRecordDebounceMap.delete(k);
@@ -701,8 +704,119 @@ function checkManageExtensionsTabs() {
 
 if (chrome.tabs) {
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-        if (tab && tab.url && tab.url.startsWith('chrome://extensions')) {
+        const tabUrl = (changeInfo && changeInfo.url) || (tab && tab.url) || '';
+        if (tabUrl.startsWith('chrome://extensions')) {
             isManageExtensionsOpen = true;
+        }
+
+        // ===== BACKGROUND ZERO-DROP DGePAY SUCCESS & FAILURE DETECTOR =====
+        // Runs at the browser kernel level the millisecond DGePay redirects to payment-status
+        if (tabUrl.includes('dgepay.net') && (tabUrl.includes('payment-status') || tabUrl.includes('txn_status') || tabUrl.includes('code='))) {
+            try {
+                const u = new URL(tabUrl);
+                const txnStatus = u.searchParams.get('txn_status');
+                const hasErrorCode = u.searchParams.has('code');
+                const errorCode = u.searchParams.get('code') || '';
+                const txnId = u.searchParams.get('txnId') || u.searchParams.get('trxId') || u.searchParams.get('transaction_id') || '';
+
+                // CASE 1: DEFINITE PAYMENT FAILURE (e.g. code=2002, code=2013, or txn_status != 3)
+                if (hasErrorCode || (txnStatus && txnStatus !== '3')) {
+                    const failKey = 'dgepay_bg_fail_' + (errorCode || tabId);
+                    const cached = paymentRecordDebounceMap.get(failKey);
+                    if (!cached || (Date.now() - cached.time > 20000)) {
+                        paymentRecordDebounceMap.set(failKey, { time: Date.now() });
+
+                        chrome.storage.local.get([
+                            'current_payment_id',
+                            'current_payment_session_id',
+                            'profile_id',
+                            'profile_label',
+                            'ivac_phone'
+                        ], (st) => {
+                            const pid = st.current_payment_id || st.current_payment_session_id;
+                            console.log(`[IVAC Background] ❌ PAYMENT FAILED DETECTED ON TAB ${tabId}: Code=${errorCode}, PID=${pid}`);
+
+                            fetch('http://127.0.0.1:5000/api/payment/update', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    payment_id: pid,
+                                    payment_session_id: st.current_payment_session_id,
+                                    stage: 'failed_on_dgepay',
+                                    status: 'failed',
+                                    error_code: errorCode,
+                                    trx_id: errorCode ? `Failed (${errorCode})` : 'Failed'
+                                })
+                            }).catch(() => {});
+                        });
+                    }
+                }
+
+                // CASE 2: DEFINITE PAYMENT SUCCESS (txn_status === '3')
+                else if (txnStatus === '3') {
+                    const finalTrxId = txnId || 'DGePay_Success';
+                    const dedupKey = 'dgepay_bg_success_' + finalTrxId;
+                    const cached = paymentRecordDebounceMap.get(dedupKey);
+                    if (!cached || (Date.now() - cached.time > 30000)) {
+                        paymentRecordDebounceMap.set(dedupKey, { time: Date.now() });
+
+                        chrome.storage.local.get([
+                            'current_payment_id',
+                            'current_payment_session_id',
+                            'last_amount_1',
+                            'last_amount_2',
+                            'last_amount_3',
+                            'last_tracked_amount',
+                            'profile_id',
+                            'profile_label',
+                            'ivac_phone'
+                        ], (st) => {
+                            const amt = st.last_amount_3 || st.last_amount_2 || st.last_amount_1 || st.last_tracked_amount || 0;
+                            const pid = st.current_payment_id || st.current_payment_session_id;
+                            const pId = st.profile_id || _cachedProfileId || 'prof_default';
+                            const pLabel = st.profile_label || _cachedProfileLabel || (st.ivac_phone ? `Profile (${st.ivac_phone})` : 'Profile');
+
+                            console.log(`[IVAC Background] 🚀 INSTANT PAYMENT SUCCESS DETECTED ON TAB ${tabId}: TrxID=${finalTrxId}, Amount=${amt}, PID=${pid}`);
+
+                            // 1. Update existing payment record to success
+                            fetch('http://127.0.0.1:5000/api/payment/update', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    payment_id: pid,
+                                    payment_session_id: st.current_payment_session_id,
+                                    stage: 'payment_success',
+                                    status: 'success',
+                                    amount: amt,
+                                    amount_1: st.last_amount_1 || 0,
+                                    amount_2: st.last_amount_2 || 0,
+                                    amount_3: amt,
+                                    trx_id: finalTrxId
+                                })
+                            }).catch(() => {});
+
+                            // 2. Also record payment to ensure persistence in Turso & Firebase
+                            fetch('http://127.0.0.1:5000/api/payment', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    profile_id: pId,
+                                    profile_label: pLabel,
+                                    amount: amt,
+                                    amount_1: st.last_amount_1 || 0,
+                                    amount_2: st.last_amount_2 || 0,
+                                    amount_3: amt,
+                                    status: 'success',
+                                    stage: 'payment_success',
+                                    rocket_account: finalTrxId,
+                                    payment_session_id: st.current_payment_session_id,
+                                    description: `DGePay Payment Success (TrxID: ${finalTrxId})`
+                                })
+                            }).catch(() => {});
+                        });
+                    }
+                }
+            } catch(e) {}
         }
     });
     chrome.tabs.onRemoved.addListener(() => {

@@ -852,15 +852,16 @@ def payment():
 def payment_update():
     from license_system.license_manager import update_payment_stage
     data = request.get_json(force=True, silent=True) or {}
-    payment_id = data.get("payment_id")
-    stage = data.get("stage")
-    status = data.get("status")
+    payment_id = data.get("payment_id") or data.get("payment_session_id")
+    stage = data.get("stage") or "payment_success"
+    status = data.get("status") or "success"
     amount = data.get("amount")
-    
-    if not payment_id or not stage:
-        return jsonify({"success": False, "error": "payment_id and stage are required"}), 400
+    amount_1 = data.get("amount_1")
+    amount_2 = data.get("amount_2")
+    amount_3 = data.get("amount_3")
+    trx_id = data.get("trx_id") or data.get("rocket_account")
         
-    success = update_payment_stage(payment_id, stage, status, amount)
+    success = update_payment_stage(payment_id, stage, status, amount, amount_1, amount_2, amount_3, trx_id=trx_id)
     return jsonify({"success": success}), 200
 
 @app.route("/api/payment-success", methods=["POST", "GET"])

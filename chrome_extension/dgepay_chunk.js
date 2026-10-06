@@ -197,7 +197,7 @@
                     const buttons = Array.from(document.querySelectorAll('button, a'));
                     const payBtn = buttons.find(btn => {
                         const text = btn.textContent.trim();
-                        return (text.includes('Pay') && (text.includes('৳') || text.includes('BDT'))) &&
+                        return (text.includes('Pay') && (text.includes('৳') || text.includes('\u09F3') || text.includes('BDT') || text.includes('Tk') || /Pay\s*\(?[\d,]/.test(text))) &&
                                !btn.disabled;
                     });
 
@@ -219,21 +219,25 @@
                                         const timeBucket = Math.floor(Date.now() / 60000);
                                         const paymentSessionId = `pay_dge_${cleanAcc || 'acc'}_${timeBucket}`;
                                         
-                                        chrome.runtime.sendMessage({
-                                            action: 'recordPayment',
-                                            data: {
-                                                payment_session_id: paymentSessionId,
-                                                amount: amount,
-                                                status: 'initiated',
-                                                stage: 'pay_clicked',
-                                                rocket_account: activeAccount.number,
-                                                description: ''
-                                            }
-                                        }, (d) => {
-                                            if (d && d.payment_id) {
-                                                chrome.storage.local.set({ current_payment_id: d.payment_id });
-                                                console.log('[IVAC] Payment initiated recorded, ID:', d.payment_id);
-                                            }
+                                        chrome.storage.local.get(['last_amount_1'], (st) => {
+                                            chrome.runtime.sendMessage({
+                                                action: 'recordPayment',
+                                                data: {
+                                                    payment_session_id: paymentSessionId,
+                                                    amount_1: st.last_amount_1 || 0,
+                                                    amount_2: amount,
+                                                    amount: amount,
+                                                    status: 'initiated',
+                                                    stage: 'pay_clicked',
+                                                    rocket_account: activeAccount.number,
+                                                    description: ''
+                                                }
+                                            }, (d) => {
+                                                if (d && d.payment_id) {
+                                                    chrome.storage.local.set({ current_payment_id: d.payment_id });
+                                                    console.log('[IVAC] Payment initiated recorded, ID:', d.payment_id);
+                                                }
+                                            });
                                         });
                                     }
                                 } catch(e) {}

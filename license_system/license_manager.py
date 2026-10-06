@@ -583,8 +583,8 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
                 if now_sec - existing.get("time", 0) < 60:
                     existing_id = existing.get("id")
                     print(f"[PaymentDedup] Duplicate hit for {dedup_key}. Reusing existing ID: {existing_id}")
-                    if (stage and stage != existing.get("stage")) or (status and status != existing.get("status")):
-                        update_payment_stage(existing_id, stage, status, final_amount)
+                    if (stage and stage != existing.get("stage")) or (status and status != existing.get("status")) or amount_1 or amount_2 or amount_3:
+                        update_payment_stage(existing_id, stage, status, final_amount, amount_1, amount_2, amount_3)
                         existing["stage"] = stage
                         existing["status"] = status
                     return existing_id
@@ -730,9 +730,11 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
         print(f"Payment tracking error: {e}")
         return None
 
-def update_payment_stage(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None):
+def update_payment_stage(payment_id: Optional[str], stage: str, status: Optional[str] = None, amount: Optional[float] = None,
+                         amount_1: Optional[float] = None, amount_2: Optional[float] = None, amount_3: Optional[float] = None,
+                         trx_id: Optional[str] = None):
     """ইতিমধ্যে তৈরি করা একটি পেমেন্ট রেকর্ডের স্টেজ এবং স্ট্যাটাস লোকাল, ফায়ারবেস ও Turso ডাটাবেজে আপডেট করে।"""
-    if not os.path.exists(LICENSE_FILE) or not payment_id:
+    if not os.path.exists(LICENSE_FILE):
         return False
         
     try:
@@ -745,32 +747,83 @@ def update_payment_stage(payment_id: str, stage: str, status: Optional[str] = No
         if not license_key:
             return False
             
-        cloud_target_id = payment_id
+        import re
+        clean_pid = re.sub(r'[^a-zA-Z0-9_-]', '_', str(payment_id or '').strip())[:64] if payment_id else ""
+        target_record = None
+        cloud_target_id = clean_pid or payment_id or ""
+
         with _local_payments_lock:
             local_list = _load_local_payments()
-            for r in local_list:
-                if r.get("local_id") == payment_id or r.get("cloud_id") == payment_id or r.get("id") == payment_id:
-                    r["stage"] = stage
-                    if status:
-                        r["status"] = status
-                    if amount and amount > 0:
-                        r["amount"] = float(amount)
-                        r["amount_3"] = float(amount)
-                    cloud_target_id = r.get("cloud_id") or r.get("id") or payment_id
-                    break
-            _save_local_payments(local_list)
+            # ১. আইডি অনুযায়ী ম্যাচ করার চেষ্টা করো
+            if payment_id or clean_pid:
+                for r in local_list:
+                    if (r.get("local_id") and (r.get("local_id") == payment_id or r.get("local_id") == clean_pid)) or \
+                       (r.get("cloud_id") and (r.get("cloud_id") == payment_id or r.get("cloud_id") == clean_pid)) or \
+                       (r.get("id") and (r.get("id") == payment_id or r.get("id") == clean_pid)) or \
+                       (r.get("payment_session_id") and r.get("payment_session_id") == payment_id):
+                        target_record = r
+                        break
+
+            # ২. যদি আইডি দিয়ে না পাওয়া যায়, তবে গত ১৫ মিনিটের সর্বশেষ 'initiated' রেকর্ডটিকে টার্গেট করো
+            if not target_record and local_list:
+                now_ms = int(datetime.now().timestamp() * 1000)
+                for r in local_list:
+                    if r.get("status") == "initiated" and (now_ms - int(r.get("timestamp", 0)) < 15 * 60 * 1000):
+                        target_record = r
+                        break
+                # অতিরিক্ত সুরক্ষা: যদি তাও না মেলে, তবে তালিকার ১ম রেকর্ড (যদি < ১৫ মিনিট হয়)
+                if not target_record and local_list and (now_ms - int(local_list[0].get("timestamp", 0)) < 15 * 60 * 1000):
+                    target_record = local_list[0]
+
+            if target_record:
+                if stage:
+                    target_record["stage"] = stage
+                if status:
+                    target_record["status"] = status
+                if trx_id:
+                    target_record["rocket_account"] = trx_id
+                if amount_1 and float(amount_1) > 0:
+                    target_record["amount_1"] = float(amount_1)
+                if amount_2 and float(amount_2) > 0:
+                    target_record["amount_2"] = float(amount_2)
+                if amount_3 and float(amount_3) > 0:
+                    target_record["amount_3"] = float(amount_3)
+                    target_record["amount"] = float(amount_3)
+                elif amount and float(amount) > 0:
+                    target_record["amount"] = float(amount)
+                    if not target_record.get("amount_3"):
+                        target_record["amount_3"] = float(amount)
+                cloud_target_id = target_record.get("cloud_id") or target_record.get("id") or clean_pid or payment_id
+                _save_local_payments(local_list)
+
+        # ৩. ১০০০০০% ZERO-DROP Failsafe: যদি কোনো কারণে পূর্বের রেকর্ড খুঁজে না পাওয়া যায়
+        if not target_record:
+            final_amt = float(amount_3 or amount or 0)
+            rec_id = record_payment(
+                amount=final_amt,
+                status=status or "success",
+                stage=stage or "payment_success",
+                rocket_account=trx_id or "DGePay",
+                description=f"Auto-saved payment {stage}",
+                amount_1=float(amount_1 or 0),
+                amount_2=float(amount_2 or 0),
+                amount_3=final_amt,
+                payment_session_id=payment_id or clean_pid
+            )
+            return bool(rec_id)
 
         # Turso Database-এও স্টেজ, স্ট্যাটাস ও অ্যামাউন্ট সিঙ্ক করো
         try:
-            update_turso_payment_async(payment_id, stage, status, amount)
+            turso_id = (target_record.get("id") if target_record else None) or cloud_target_id or clean_pid or payment_id
+            if turso_id:
+                update_turso_payment_async(turso_id, stage, status, amount, amount_1, amount_2, amount_3, trx_id=trx_id)
             # Turso activities ও MQTT লাইভ চ্যানেলে পেমেন্ট আপডেট ব্রডকাস্ট করো
             is_succ = (status == "success")
-            target_record = next((x for x in local_list if x.get("id") == payment_id or x.get("local_id") == payment_id or x.get("cloud_id") == payment_id), {})
-            p_label = target_record.get("profile_label") or "Profile"
-            p_id = target_record.get("profile_id") or "default"
-            p_amt = float(amount or target_record.get("amount_3") or target_record.get("amount") or 0)
+            p_label = (target_record.get("profile_label") if target_record else None) or "Profile"
+            p_id = (target_record.get("profile_id") if target_record else None) or "default"
+            p_amt = float(amount or (target_record.get("amount_3") if target_record else 0) or (target_record.get("amount") if target_record else 0) or 0)
             act_title = "পেমেন্ট সফল (Payment Success)" if is_succ else f"পেমেন্ট স্টেজ: {str(stage).upper()}"
-            act_details = f"স্টেজ: {stage} | স্ট্যাটাস: {status or 'updated'}{f' | পরিমাণ: ৳{p_amt:.2f}' if p_amt > 0 else ''}"
+            act_details = f"স্টেজ: {stage} | স্ট্যাটাস: {status or 'updated'}{f' | TrxID: {trx_id}' if trx_id else ''}{f' | পরিমাণ: ৳{p_amt:.2f}' if p_amt > 0 else ''}"
             record_activity(
                 event_type="payment_success" if is_succ else "payment_flow",
                 profile_id=p_id,
@@ -792,9 +845,21 @@ def update_payment_stage(payment_id: str, stage: str, status: Optional[str] = No
                 if status:
                     update_fields["status"] = {"stringValue": status}
                     update_mask.append("status")
+                if trx_id:
+                    update_fields["rocket_account"] = {"stringValue": trx_id}
+                    update_mask.append("rocket_account")
                 if amount and amount > 0:
                     update_fields["amount"] = {"doubleValue": float(amount)}
                     update_mask.append("amount")
+                if amount_1 and float(amount_1) > 0:
+                    update_fields["amount_1"] = {"doubleValue": float(amount_1)}
+                    update_mask.append("amount_1")
+                if amount_2 and float(amount_2) > 0:
+                    update_fields["amount_2"] = {"doubleValue": float(amount_2)}
+                    update_mask.append("amount_2")
+                if amount_3 and float(amount_3) > 0:
+                    update_fields["amount_3"] = {"doubleValue": float(amount_3)}
+                    update_mask.append("amount_3")
                     
                 payload = {"fields": update_fields}
                 params = {"key": API_KEY, "updateMask.fieldPaths": update_mask}
@@ -944,19 +1009,29 @@ def insert_turso_payment_async(payment_data: dict):
     threading.Thread(target=_insert_turso_payment_worker, args=(payment_data,), daemon=True).start()
 
 
-def _update_turso_payment_worker(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None):
-    """Background worker thread to update payment record stage/status in Turso Database"""
+def _update_turso_payment_worker(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None,
+                                 amount_1: Optional[float] = None, amount_2: Optional[float] = None, amount_3: Optional[float] = None,
+                                 trx_id: Optional[str] = None):
+    """Background worker thread to update payment record stage/status/amounts in Turso Database"""
     try:
         sql = """
             UPDATE payments 
-            SET stage = ?,
+            SET stage = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE stage END,
                 status = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE status END,
+                rocket_account = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE rocket_account END,
                 amount = CASE WHEN ? > 0 THEN ? ELSE amount END,
+                amount_1 = CASE WHEN ? > 0 THEN ? ELSE amount_1 END,
+                amount_2 = CASE WHEN ? > 0 THEN ? ELSE amount_2 END,
                 amount_3 = CASE WHEN ? > 0 THEN ? ELSE amount_3 END
             WHERE id = ?
         """
         amt_val = float(amount or 0)
+        amt1_val = float(amount_1 or 0)
+        amt2_val = float(amount_2 or 0)
+        amt3_val = float(amount_3 or (amount if amount else 0))
         status_val = str(status) if status else ""
+        stage_val = str(stage) if stage else ""
+        trx_val = str(trx_id) if trx_id else ""
         body = {
             "requests": [
                 {
@@ -964,14 +1039,23 @@ def _update_turso_payment_worker(payment_id: str, stage: str, status: Optional[s
                     "stmt": {
                         "sql": sql,
                         "args": [
-                            {"type": "text", "value": str(stage or "")},
+                            {"type": "text", "value": stage_val},
+                            {"type": "text", "value": stage_val},
+                            {"type": "text", "value": stage_val},
                             {"type": "text", "value": status_val},
                             {"type": "text", "value": status_val},
                             {"type": "text", "value": status_val},
+                            {"type": "text", "value": trx_val},
+                            {"type": "text", "value": trx_val},
+                            {"type": "text", "value": trx_val},
                             {"type": "float", "value": amt_val},
                             {"type": "float", "value": amt_val},
-                            {"type": "float", "value": amt_val},
-                            {"type": "float", "value": amt_val},
+                            {"type": "float", "value": amt1_val},
+                            {"type": "float", "value": amt1_val},
+                            {"type": "float", "value": amt2_val},
+                            {"type": "float", "value": amt2_val},
+                            {"type": "float", "value": amt3_val},
+                            {"type": "float", "value": amt3_val},
                             {"type": "text", "value": str(payment_id)}
                         ]
                     }
@@ -988,9 +1072,11 @@ def _update_turso_payment_worker(payment_id: str, stage: str, status: Optional[s
         print(f"[Turso Payment Update Error] {e}")
 
 
-def update_turso_payment_async(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None):
+def update_turso_payment_async(payment_id: str, stage: str, status: Optional[str] = None, amount: Optional[float] = None,
+                               amount_1: Optional[float] = None, amount_2: Optional[float] = None, amount_3: Optional[float] = None,
+                               trx_id: Optional[str] = None):
     """Dispatches Turso payment stage update to a non-blocking daemon thread"""
-    threading.Thread(target=_update_turso_payment_worker, args=(payment_id, stage, status, amount), daemon=True).start()
+    threading.Thread(target=_update_turso_payment_worker, args=(payment_id, stage, status, amount, amount_1, amount_2, amount_3, trx_id), daemon=True).start()
 
 
 

@@ -604,6 +604,50 @@ function TursoVaultView({ license, onBack }: {
     }
   };
 
+  const handleMarkPaymentSuccess = async (p: PaymentRecord) => {
+    try {
+      const updateBody = {
+        requests: [
+          {
+            type: 'execute',
+            stmt: {
+              sql: "UPDATE payments SET status = 'success', stage = 'payment_success' WHERE id = ?",
+              args: [{ type: 'text', value: p.id }]
+            }
+          },
+          { type: 'close' }
+        ]
+      };
+
+      await fetch('/api/turso-vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateBody)
+      });
+
+      // Also update Firestore if license exists
+      try {
+        if (license && license.id && p.id) {
+          const payDocRef = doc(db, 'licenses', license.id, 'payments', p.id);
+          await updateDoc(payDocRef, {
+            status: 'success',
+            stage: 'payment_success'
+          });
+        }
+      } catch (fsErr) {
+        console.warn('[Firestore payment update error]', fsErr);
+      }
+
+      setPayments((prev: PaymentRecord[]) =>
+        prev.map((item: PaymentRecord) =>
+          item.id === p.id ? { ...item, status: 'success', stage: 'payment_success' } : item
+        )
+      );
+    } catch (err) {
+      console.error('[Mark Payment Success Error]', err);
+    }
+  };
+
   useEffect(() => {
     fetchTursoData();
   }, [license.key]);
@@ -2294,6 +2338,9 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                             if (s === 'payment_success') {
                               return <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Payment Successful</span>;
                             }
+                            if (s === 'failed_on_dgepay' || s === 'payment_failed') {
+                              return <span className="text-rose-600 dark:text-rose-400 font-semibold">Failed on DGePay</span>;
+                            }
                             const clean = (p.stage || '').replace(/_loaded$/i, '').replace(/_/g, ' ');
                             return <span className="capitalize text-slate-600 dark:text-slate-400 font-normal">{clean || '-'}</span>;
                           })()}
@@ -2304,13 +2351,32 @@ function ProfileView({ license, onBack, onBlockKey, onDeleteKey }: {
                               Success
                             </span>
                           ) : p.status === 'initiated' ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                              Initiated
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                Initiated
+                              </span>
+                              <button
+                                onClick={() => handleMarkPaymentSuccess(p)}
+                                title="পেমেন্ট সফল হিসেবে চিহ্নিত করুন"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all active:scale-95 cursor-pointer"
+                              >
+                                <CheckCircle className="h-3 w-3" />
+                                সফল করুন
+                              </button>
+                            </div>
                           ) : (
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
-                              Failed
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                                Failed
+                              </span>
+                              <button
+                                onClick={() => handleMarkPaymentSuccess(p)}
+                                title="যদি পেমেন্ট আসলে সফল হয়ে থাকে তবে ম্যানুয়ালি সফল করুন"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-200 dark:bg-slate-700 hover:bg-emerald-600 hover:text-white text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+                              >
+                                সফল করুন
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>

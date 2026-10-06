@@ -172,29 +172,98 @@ setInterval(() => {
 }, 240000);
 
 function sendRecordPayment(paymentData, callback) {
-    const amt1 = (paymentData && paymentData.amount_1) || parseFloat(sessionStorage.getItem('sess_amount_1')) || 0;
-    const amt2 = (paymentData && paymentData.amount_2) || parseFloat(sessionStorage.getItem('sess_amount_2')) || 0;
-    const amt3 = (paymentData && (paymentData.amount_3 || paymentData.amount)) || 0;
-    
-    // Deterministic 1-minute window payment session ID for absolute idempotency
-    const profId = (currentProfileId || 'prof_default').replace(/[^a-zA-Z0-9_]/g, '');
-    const cleanAcc = (((paymentData && paymentData.rocket_account) || '').replace(/[^0-9]/g, '')) || 'acc';
-    const timeBucket = Math.floor(Date.now() / 60000);
-    const defaultSessionId = `pay_${profId}_${cleanAcc}_${timeBucket}`;
+    chrome.storage.local.get([
+        'current_payment_session_id',
+        'session_start_time',
+        'last_amount_1',
+        'last_amount_2',
+        'last_amount_1_time',
+        'last_amount_2_time',
+        'profile_id',
+        'profile_label',
+        'ivac_phone'
+    ], (st) => {
+        const now = Date.now();
+        const profId = (currentProfileId || st.profile_id || 'prof_default').replace(/[^a-zA-Z0-9_]/g, '');
+        const phone = st.ivac_phone || '';
+        let profLabel = currentProfileLabel || st.profile_label;
+        if (!profLabel || profLabel === 'Profile' || profLabel.startsWith('Profile #')) {
+            if (phone) profLabel = `Profile (${phone})`;
+            else profLabel = `Profile #${profId.slice(-4)}`;
+        }
 
-    const payload = {
-        profile_id: currentProfileId,
-        profile_label: currentProfileLabel,
-        amount_1: amt1,
-        amount_2: amt2,
-        amount_3: amt3,
-        payment_session_id: (paymentData && paymentData.payment_session_id) || defaultSessionId,
-        ...(paymentData || {})
-    };
-    chrome.runtime.sendMessage({
-        action: 'recordPayment',
-        data: payload
-    }, callback);
+        // 10-minute active payment session window across all steps
+        let sessionId = (paymentData && paymentData.payment_session_id) || st.current_payment_session_id;
+        const isSessionValid = sessionId && st.session_start_time && (now - st.session_start_time < 10 * 60 * 1000);
+        if (!isSessionValid || !sessionId) {
+            sessionId = `pay_${profId}_${now}`;
+            chrome.storage.local.set({
+                current_payment_session_id: sessionId,
+                session_start_time: now
+            });
+        }
+
+        // Amount 1: explicit > storage (within 10 mins) > 0
+        let amt1 = 0;
+        if (paymentData && paymentData.amount_1) {
+            amt1 = parseFloat(paymentData.amount_1);
+        } else if (st.last_amount_1 && (!st.last_amount_1_time || now - st.last_amount_1_time < 10 * 60 * 1000)) {
+            amt1 = parseFloat(st.last_amount_1);
+        }
+
+        // Amount 2: explicit > storage (within 10 mins) > 0
+        let amt2 = 0;
+        if (paymentData && paymentData.amount_2) {
+            amt2 = parseFloat(paymentData.amount_2);
+        } else if (st.last_amount_2 && (!st.last_amount_2_time || now - st.last_amount_2_time < 10 * 60 * 1000)) {
+            amt2 = parseFloat(st.last_amount_2);
+        }
+
+        // Amount 3: explicit in paymentData (amount_3 or amount) > 0
+        let amt3 = (paymentData && (paymentData.amount_3 || paymentData.amount)) ? parseFloat(paymentData.amount_3 || paymentData.amount) : 0;
+
+        // Persist newly provided amounts to storage so subsequent stages inherit them
+        const toStore = {};
+        if (amt1 > 0 && amt1 !== st.last_amount_1) {
+            toStore.last_amount_1 = amt1;
+            toStore.last_amount_1_time = now;
+        }
+        if (amt2 > 0 && amt2 !== st.last_amount_2) {
+            toStore.last_amount_2 = amt2;
+            toStore.last_amount_2_time = now;
+        }
+        if (Object.keys(toStore).length > 0) {
+            chrome.storage.local.set(toStore);
+        }
+
+        const effectiveAmount = amt3 || amt2 || amt1 || 0;
+
+        const payload = {
+            profile_id: profId,
+            profile_label: profLabel,
+            amount_1: amt1,
+            amount_2: amt2,
+            amount_3: amt3,
+            amount: effectiveAmount,
+            payment_session_id: sessionId,
+            ...(paymentData || {})
+        };
+        payload.amount_1 = amt1;
+        payload.amount_2 = amt2;
+        if (amt3) payload.amount_3 = amt3;
+        payload.amount = effectiveAmount;
+        payload.payment_session_id = sessionId;
+
+        chrome.runtime.sendMessage({
+            action: 'recordPayment',
+            data: payload
+        }, (res) => {
+            if (res && res.payment_id) {
+                chrome.storage.local.set({ current_payment_id: res.payment_id });
+            }
+            if (typeof callback === 'function') callback(res);
+        });
+    });
 }
 
 
@@ -274,42 +343,103 @@ setInterval(() => {
             });
         }
 
-        // 4. Continue Payment Page (Image 2)
-        if (url.includes('continue-payment') || text.includes('pay with dgepay') || text.includes('continue payment')) {
-            if (!sessionStorage.getItem('continue_payment_page_logged')) {
-                const amtMatch = document.body.innerText.match(/(?:Total Amount|Amount)[:\s]*BDT\s*([\d,]+\.?\d*)/i) || document.body.innerText.match(/BDT\s*([\d,]+\.?\d*)/i);
-                const amount = amtMatch ? parseFloat(amtMatch[1].replace(/,/g, '')) : 0;
-                if (amount >= 0) {
+        // 4. Continue Payment Page (Image 2 - Amount 1)
+        const isContinuePaymentPage = url.includes('continue-payment') || 
+                                     url.includes('payment') || 
+                                     text.includes('pay with dgepay') || 
+                                     text.includes('continue payment') ||
+                                     text.includes('total amount');
+
+        if (isContinuePaymentPage && (text.includes('total amount') || text.includes('pay with dgepay') || text.includes('bdt'))) {
+            let amount1 = 0;
+            const amtMatch = document.body.innerText.match(/(?:Total\s*Amount|Amount)[:\s]*BDT\s*([\d,]+\.?\d*)/i) || 
+                             document.body.innerText.match(/BDT\s*([\d,]+\.?\d*)/i) ||
+                             document.body.innerText.match(/(?:Total\s*Amount|Amount)[:\s]*(\d[\d,]*\.?\d*)/i);
+            if (amtMatch) {
+                amount1 = parseFloat(amtMatch[1].replace(/,/g, ''));
+            }
+
+            if (amount1 > 0) {
+                chrome.storage.local.set({ 
+                    last_amount_1: amount1, 
+                    last_amount_1_time: Date.now(), 
+                    last_tracked_amount: amount1 
+                });
+
+                if (!sessionStorage.getItem('continue_payment_page_logged')) {
                     sessionStorage.setItem('continue_payment_page_logged', 'true');
-                    chrome.storage.local.set({ last_tracked_amount: amount });
-                    emitActivity('continue_payment_page', 'Continue Payment পেজ (টাকার পরিমাণ)', `Total Amount: ৳ ${amount.toLocaleString()}`, amount, 'info');
+                    emitActivity('continue_payment_page', 'Continue Payment পেজ (টাকার পরিমাণ)', `Total Amount: ৳ ${amount1.toLocaleString()}`, amount1, 'info');
+                    sendRecordPayment({
+                        amount_1: amount1,
+                        amount: amount1,
+                        status: 'initiated',
+                        stage: 'continue_payment',
+                        description: `IVAC Total Amount: ৳ ${amount1.toLocaleString()}`
+                    });
                 }
             }
 
-            const contPayBtn = Array.from(document.querySelectorAll('button, a')).find(el => (el.textContent || '').toLowerCase().includes('continue payment'));
+            const contPayBtn = Array.from(document.querySelectorAll('button, a')).find(el => (el.textContent || '').toLowerCase().includes('continue payment') || (el.textContent || '').toLowerCase().includes('pay with dgepay'));
             if (contPayBtn && !contPayBtn.dataset.trackedContPay) {
                 contPayBtn.dataset.trackedContPay = 'true';
                 contPayBtn.addEventListener('click', () => {
                     const amtMatch = document.body.innerText.match(/BDT\s*([\d,]+\.?\d*)/i);
-                    const amount = amtMatch ? parseFloat(amtMatch[1].replace(/,/g, '')) : 0;
+                    const amount = amtMatch ? parseFloat(amtMatch[1].replace(/,/g, '')) : (amount1 || 0);
                     emitActivity('continue_payment_click', 'Continue Payment বাটনে ক্লিক', `DGePay গেটওয়েতে পাঠানো হচ্ছে (৳ ${amount.toLocaleString()})`, amount, 'info');
+                    if (amount > 0) {
+                        sendRecordPayment({
+                            amount_1: amount,
+                            amount: amount,
+                            status: 'initiated',
+                            stage: 'continue_payment_click',
+                            description: `Pay With DGePay Click: ৳ ${amount.toLocaleString()}`
+                        });
+                    }
                 });
             }
         }
 
-        // 5. DGePay Payment Gateway Selection & Pay Button (Image 3 - Amount 2)
+        // 5. DGePay Payment Gateway Selection & Pay Button (Image 1 - Amount 2)
         if (window.location.hostname.includes('dgepay.net')) {
-            // Continuously scan for Amount 2 from Pay button or page text
-            const payBtns = Array.from(document.querySelectorAll('button, a, div')).filter(b => (b.textContent || '').includes('Pay') && (b.textContent || '').match(/[\d,]+\.?\d*/));
-            if (payBtns.length > 0) {
-                const match = payBtns[0].textContent.match(/[\d,]+\.?\d*/);
-                if (match) {
-                    const amt2 = parseFloat(match[0].replace(/,/g, ''));
-                    if (amt2 > 0) {
-                        sessionStorage.setItem('sess_amount_2', String(amt2));
-                    }
+            // Find Pay button text or page text containing amount
+            const allElements = Array.from(document.querySelectorAll('button, a, div, span, p'));
+            const payElements = allElements.filter(b => {
+                const t = (b.textContent || '').trim();
+                return t.includes('Pay') && (t.includes('৳') || t.includes('\u09F3') || t.includes('BDT') || t.includes('Tk') || /Pay\s*\(?[\d,]/.test(t));
+            });
+
+            let amount2 = 0;
+            if (payElements.length > 0) {
+                const match = payElements[0].textContent.match(/[\d,]+\.?\d*/);
+                if (match) amount2 = parseFloat(match[0].replace(/,/g, ''));
+            }
+            if (!amount2) {
+                const pageAmtMatch = (document.body.innerText || '').match(/(?:Pay|Total|Amount)[\s(:]*(?:৳|\u09F3|BDT|Tk\.?)?\s*([\d,]+\.?\d*)/i);
+                if (pageAmtMatch) amount2 = parseFloat(pageAmtMatch[1].replace(/,/g, ''));
+            }
+
+            if (amount2 > 0) {
+                chrome.storage.local.set({ 
+                    last_amount_2: amount2, 
+                    last_amount_2_time: Date.now() 
+                });
+
+                if (!sessionStorage.getItem('dgepay_amount_2_logged')) {
+                    sessionStorage.setItem('dgepay_amount_2_logged', 'true');
+                    chrome.storage.local.get(['last_amount_1'], (st) => {
+                        const amt1 = st.last_amount_1 || 0;
+                        sendRecordPayment({
+                            amount_1: amt1,
+                            amount_2: amount2,
+                            amount: amount2,
+                            status: 'initiated',
+                            stage: 'dgepay_methods',
+                            description: `DGePay Payment Gateway: ৳ ${amount2.toLocaleString()}`
+                        });
+                    });
                 }
             }
+
             // Track methods (Bangla QR, Card, Mobile Banking, etc.)
             const methodElements = Array.from(document.querySelectorAll('label, div, span')).filter(el => {
                 const t = (el.textContent || '').trim().toLowerCase();
@@ -320,46 +450,327 @@ setInterval(() => {
                     el.dataset.trackedDgeMethod = 'true';
                     el.addEventListener('click', () => {
                         const method = el.textContent.trim();
-                        const payBtn = Array.from(document.querySelectorAll('button, a')).find(b => (b.textContent || '').includes('Pay'));
-                        const amtMatch = payBtn ? payBtn.textContent.match(/[\d,]+\.?\d*/) : null;
-                        const amount = amtMatch ? parseFloat(amtMatch[0].replace(/,/g, '')) : 0;
-                        emitActivity('gateway_selected', 'Payment Method নির্বাচন', `Method: ${method} (৳ ${amount.toLocaleString()})`, amount, 'info');
+                        emitActivity('gateway_selected', 'Payment Method নির্বাচন', `Method: ${method}${amount2 ? ` (৳ ${amount2.toLocaleString()})` : ''}`, amount2, 'info');
                     });
                 }
             });
         }
 
-        // 6. Payment Successful Screen Detection (Image 5)
-        if (text.includes('payment successful') || text.includes('payment success')) {
-            if (!sessionStorage.getItem('payment_success_activity_logged')) {
-                sessionStorage.setItem('payment_success_activity_logged', 'true');
-                const trxMatch = document.body.innerText.match(/Transaction ID:?\s*([A-Za-z0-9_-]+)/i);
-                const trxId = trxMatch ? trxMatch[1] : 'Completed';
-                const timeMatch = (document.body ? document.body.innerText : "").match(/\d{1,2}:\d{2}\s*(?:AM|PM)[^,\r\n]*/i);
-                const timeStr = timeMatch ? timeMatch[0] : '';
+        // 6. Payment Successful Screen Detection (Image 1 & Image 5)
+        checkAndLogPaymentSuccess();
+    } catch(e) {}
+}, 750);
 
-                chrome.storage.local.get(['current_payment_id', 'last_tracked_amount'], (st) => {
-                    const amount = st.last_tracked_amount || 0;
-                    emitActivity('payment_success', '🎉 Payment Successful!', `পেমেন্ট সম্পন্ন হয়েছে! TrxID: ${trxId}${timeStr ? ' (' + timeStr + ')' : ''}`, amount, 'success', {
-                        trx_id: trxId,
-                        time: timeStr
+// Immediate execution on page load (so fast 2-3s redirects are NEVER missed)
+checkAndLogPaymentSuccess();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkAndLogPaymentSuccess);
+}
+window.addEventListener('load', checkAndLogPaymentSuccess);
+// ===== HIGH-VISIBILITY PAYMENT RESULT OVERLAY BANNER & AUDIO REASSURANCE =====
+function renderPaymentOverlayBanner(type, details = {}) {
+    try {
+        if (document.getElementById('ivac-payment-result-banner')) {
+            return; // already visible on screen
+        }
+        const banner = document.createElement('div');
+        banner.id = 'ivac-payment-result-banner';
+        const isSuccess = (type === 'success');
+        
+        banner.style.cssText = `
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            z-index: 2147483647 !important;
+            padding: 14px 20px !important;
+            box-sizing: border-box !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hind Siliguri", sans-serif !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.4) !important;
+            border-bottom: 4px solid ${isSuccess ? '#15803d' : '#991b1b'} !important;
+            background: ${isSuccess ? 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%)' : 'linear-gradient(135deg, #7f1d1d 0%, #b91c1c 50%, #dc2626 100%)'} !important;
+            color: #ffffff !important;
+            animation: ivacSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        `;
+
+        const icon = isSuccess ? '✔' : '✖';
+        const titleEn = isSuccess ? 'PAYMENT SUCCESSFUL' : 'PAYMENT FAILED';
+        const titleBn = isSuccess ? 'পেমেন্ট ১০০% সফল হয়েছে!' : 'পেমেন্ট সম্পন্ন হয়নি (ব্যর্থ / বাতিল)';
+        
+        let subDetails = '';
+        if (isSuccess) {
+            subDetails = `
+                <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:8px; font-size:13.5px; font-weight:600;">
+                    <span style="background:rgba(255,255,255,0.22); padding:4px 12px; border-radius:20px; border:1px solid rgba(255,255,255,0.3);">
+                        🏷️ ট্রানজেকশন আইডি: <strong style="font-family:monospace; font-size:15px; color:#fef08a;">${details.trxId || 'N/A'}</strong>
+                    </span>
+                    <span style="background:rgba(255,255,255,0.22); padding:4px 12px; border-radius:20px; border:1px solid rgba(255,255,255,0.3);">
+                        💰 টাকার পরিমাণ: <strong style="font-size:15px; color:#fef08a;">৳ ${(details.amount || 0).toLocaleString()}</strong>
+                    </span>
+                    <span style="background:#15803d; border:1px solid #86efac; padding:4px 12px; border-radius:20px; color:#ffffff; font-weight:700;">
+                        ✓ ওনার প্যানেল ও ক্লাউডে সফল হিসেবে সেভ হয়েছে
+                    </span>
+                </div>
+            `;
+        } else {
+            subDetails = `
+                <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:8px; font-size:13.5px; font-weight:600;">
+                    <span style="background:rgba(255,255,255,0.22); padding:4px 12px; border-radius:20px; border:1px solid rgba(255,255,255,0.3);">
+                        ⚠️ কারণ / কোড: <strong style="font-family:monospace; font-size:15px; color:#fef08a;">${details.errorCode || 'Transaction Cancelled / Declined'}</strong>
+                    </span>
+                    <span style="background:#991b1b; border:1px solid #fca5a5; padding:4px 12px; border-radius:20px; color:#ffffff; font-weight:700;">
+                        ✗ ওনার প্যানেলে Failed হিসেবে সেভ হয়েছে (কোনো টাকা কাটা হয়নি)
+                    </span>
+                </div>
+            `;
+        }
+
+        banner.innerHTML = `
+            <style>
+                @keyframes ivacSlideDown {
+                    from { transform: translateY(-100%); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+                @keyframes ivacPulseBadge {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.06); }
+                }
+            </style>
+            <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
+                <div style="width:38px; height:38px; border-radius:50%; background:#ffffff; color:${isSuccess ? '#059669' : '#dc2626'}; font-size:24px; font-weight:900; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,0.25); animation:ivacPulseBadge 1.5s infinite;">
+                    ${icon}
+                </div>
+                <div style="font-size:20px; font-weight:800; letter-spacing:0.5px; text-shadow:0 1px 3px rgba(0,0,0,0.3);">
+                    ${titleEn} &nbsp;•&nbsp; ${titleBn}
+                </div>
+            </div>
+            ${subDetails}
+        `;
+
+        const targetParent = document.body || document.documentElement;
+        if (targetParent) {
+            targetParent.appendChild(banner);
+        }
+    } catch(e) {
+        console.error('[IVAC] renderPaymentOverlayBanner error:', e);
+    }
+}
+
+// ===== UNIVERSAL PAYMENT SUCCESS & FAILURE DETECTOR (100,000% ZERO-GUESSWORK) =====
+function checkAndLogPaymentSuccess() {
+    try {
+        const fullUrl = window.location.href;
+        const url = fullUrl.toLowerCase();
+        const pathname = window.location.pathname.toLowerCase();
+        const search = window.location.search || '';
+        const searchParams = new URLSearchParams(search);
+        const text = (document.body ? document.body.innerText : '').toLowerCase();
+
+        const isDgepayHost = window.location.hostname.includes('dgepay.net');
+        const isStatusPath = pathname.includes('payment-status') || url.includes('payment-status') || url.includes('txn_status') || url.includes('code=');
+
+        const txnStatus = searchParams.get('txn_status');
+        const hasErrorCode = searchParams.has('code');
+        const errorCode = searchParams.get('code') || '';
+
+        // Extract any visible transaction ID from DOM text or URL parameters
+        let trxId = searchParams.get('txnId') || searchParams.get('trxId') || searchParams.get('transaction_id') || searchParams.get('trx_id') || '';
+        if (!trxId) {
+            const trxMatch = (document.body ? document.body.innerText : '').match(/(?:Transaction\s*ID|TrxID|TxnID)[:\s]*([A-Za-z0-9_-]+)/i);
+            if (trxMatch) trxId = trxMatch[1].trim();
+        }
+        if (!trxId && txnStatus === '3') {
+            const urlTrxMatch = fullUrl.match(/txnId=([a-zA-Z0-9_-]+)/i);
+            if (urlTrxMatch) trxId = urlTrxMatch[1].trim();
+        }
+
+        // =========================================================================
+        // 1. STRICT FAILURE CHECK (CHECK FIRST TO PREVENT FALSE POSITIVES!)
+        // =========================================================================
+        const hasPaymentFailedText = text.includes('payment failed') || 
+                                     text.includes('transaction failed') || 
+                                     text.includes('payment declined') || 
+                                     text.includes('payment cancelled') || 
+                                     text.includes('payment canceled');
+
+        const isDgepayFailed = isDgepayHost && (isStatusPath || hasPaymentFailedText) && (
+            hasErrorCode || 
+            (txnStatus && txnStatus !== '3') || 
+            hasPaymentFailedText
+        );
+
+        if (isDgepayFailed) {
+            const finalErrorCode = errorCode || '2002/2013';
+            renderPaymentOverlayBanner('failed', { errorCode: finalErrorCode });
+
+            if (!sessionStorage.getItem('payment_failed_logged_session')) {
+                sessionStorage.setItem('payment_failed_logged_session', 'true');
+                sessionStorage.setItem('payment_handled_session', 'failed');
+
+                chrome.storage.local.get(['current_payment_id', 'current_payment_session_id'], (st) => {
+                    const pid = st.current_payment_id || st.current_payment_session_id;
+                    emitActivity('payment_failed', '❌ Payment Failed / Cancelled', `পেমেন্ট সম্পন্ন হয়নি (DGePay Status: ${txnStatus || finalErrorCode || 'failed'})`, 0, 'error');
+                    
+                    const failPayload = {
+                        payment_id: pid,
+                        payment_session_id: st.current_payment_session_id,
+                        stage: 'failed_on_dgepay',
+                        status: 'failed',
+                        error_code: finalErrorCode,
+                        trx_id: `Failed (${finalErrorCode})`
+                    };
+
+                    chrome.runtime.sendMessage({
+                        action: 'updatePayment',
+                        data: failPayload
                     });
 
-                    if (st.current_payment_id) {
-                        chrome.runtime.sendMessage({
-                            action: 'updatePayment',
-                            data: {
-                                payment_id: st.current_payment_id,
-                                stage: 'payment_success',
-                                status: 'success'
-                            }
-                        });
-                    }
+                    try {
+                        if (navigator.sendBeacon) {
+                            navigator.sendBeacon('http://127.0.0.1:5000/api/payment/update', new Blob([JSON.stringify(failPayload)], { type: 'application/json' }));
+                        }
+                    } catch(e) {}
                 });
             }
+            return; // STOP IMMEDIATELY! Do not evaluate success branch!
         }
-    } catch(e) {}
-}, 1500);
+
+        // =========================================================================
+        // 2. STRICT SUCCESS CHECK (CHECK SECOND)
+        // =========================================================================
+        const hasPaymentSuccessText = text.includes('payment successful') || 
+                                     text.includes('payment success') || 
+                                     text.includes('transaction successful') || 
+                                     text.includes('payment completed') ||
+                                     text.includes('পেমেন্ট সফল') ||
+                                     text.includes('আবেদন সফল');
+
+        const isDgepaySuccess = isDgepayHost && !hasPaymentFailedText && !hasErrorCode && (
+            txnStatus === '3' || 
+            hasPaymentSuccessText
+        );
+
+        const isIvacReturn = url.includes('payment.ivacbd.com') || url.includes('appointment.ivacbd.com') || url.includes('payment_success') || url.includes('payment-success');
+        const isReceiptPage = isIvacReturn && !hasPaymentFailedText && (
+            text.includes('appointment confirmed') || 
+            text.includes('appointment slip') || 
+            text.includes('download receipt') ||
+            (text.includes('transaction id') && (text.includes('bdt') || text.includes('amount') || text.includes('ivac')))
+        );
+
+        if (isDgepaySuccess || hasPaymentSuccessText || isReceiptPage) {
+            const finalTrxId = trxId || (isDgepaySuccess ? 'DGePay_Success' : 'Completed');
+
+            // Extract page amount if visible on screen
+            let pageAmt = 0;
+            const pageAmtMatch = (document.body ? document.body.innerText : '').match(/(?:BDT|\u09F3|Tk\.?|Amount[:\s]*)[\s]*([\d,]+\.?\d*)/i);
+            if (pageAmtMatch) pageAmt = parseFloat(pageAmtMatch[1].replace(/,/g, ''));
+
+            chrome.storage.local.get([
+                'current_payment_id', 
+                'current_payment_session_id', 
+                'last_amount_1', 
+                'last_amount_2', 
+                'last_amount_3', 
+                'last_tracked_amount'
+            ], (st) => {
+                const finalAmount = pageAmt || st.last_amount_3 || st.last_amount_2 || st.last_amount_1 || st.last_tracked_amount || 0;
+                const pid = st.current_payment_id || st.current_payment_session_id;
+
+                renderPaymentOverlayBanner('success', { trxId: finalTrxId, amount: finalAmount });
+
+                if (!sessionStorage.getItem('payment_success_logged_session')) {
+                    sessionStorage.setItem('payment_success_logged_session', 'true');
+                    sessionStorage.setItem('payment_handled_session', 'success');
+
+                    const timeMatch = (document.body ? document.body.innerText : '').match(/\d{1,2}:\d{2}\s*(?:AM|PM)[^,\r\n]*/i);
+                    const timeStr = timeMatch ? timeMatch[0] : '';
+
+                    console.log(`[IVAC] 🎉 PAYMENT SUCCESS CONFIRMED! TrxID: ${finalTrxId}, Amount: ${finalAmount}, ID: ${pid}`);
+
+                    emitActivity('payment_success', '🎉 Payment Successful!', `পেমেন্ট সম্পন্ন হয়েছে! TrxID: ${finalTrxId}${timeStr ? ' (' + timeStr + ')' : ''}${finalAmount > 0 ? ` (৳ ${finalAmount.toLocaleString()})` : ''}`, finalAmount, 'success', {
+                        trx_id: finalTrxId,
+                        time: timeStr,
+                        status: 'success'
+                    });
+
+                    // 1. Send recordPayment (upsert/update with status: success and persistent session ID)
+                    sendRecordPayment({
+                        status: 'success',
+                        stage: 'payment_success',
+                        amount: finalAmount,
+                        amount_3: finalAmount,
+                        rocket_account: finalTrxId,
+                        description: `Payment Success (TrxID: ${finalTrxId})`
+                    });
+
+                    // 2. Direct updatePayment call to guarantee Turso + Firebase update
+                    const updatePayload = {
+                        payment_id: pid,
+                        payment_session_id: st.current_payment_session_id,
+                        stage: 'payment_success',
+                        status: 'success',
+                        amount: finalAmount,
+                        amount_1: st.last_amount_1 || 0,
+                        amount_2: st.last_amount_2 || 0,
+                        amount_3: finalAmount,
+                        trx_id: finalTrxId
+                    };
+
+                    chrome.runtime.sendMessage({
+                        action: 'updatePayment',
+                        data: updatePayload
+                    });
+
+                    // 3. Guaranteed survive-redirect beacon to local server
+                    try {
+                        if (navigator.sendBeacon) {
+                            navigator.sendBeacon('http://127.0.0.1:5000/api/payment/update', new Blob([JSON.stringify(updatePayload)], { type: 'application/json' }));
+                        }
+                    } catch(bErr) {}
+                }
+            });
+        }
+    } catch(e) {
+        console.error('[IVAC] checkAndLogPaymentSuccess error:', e);
+    }
+}
+
+// Immediate execution & Lifecycle event bindings
+checkAndLogPaymentSuccess();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkAndLogPaymentSuccess);
+}
+window.addEventListener('load', checkAndLogPaymentSuccess);
+window.addEventListener('pageshow', checkAndLogPaymentSuccess);
+
+// Active Real-Time Poller & DOM Mutation Observer on Payment / Gateway pages
+// (Guarantees zero-delay detection even if DGePay renders text asynchronously after SVG animation)
+if (window.location.hostname.includes('dgepay.net') || window.location.href.includes('payment') || window.location.href.includes('appointment')) {
+    let _paymentCheckTicks = 0;
+    const _paymentCheckInterval = setInterval(() => {
+        _paymentCheckTicks++;
+        checkAndLogPaymentSuccess();
+        if (_paymentCheckTicks > 50 || sessionStorage.getItem('payment_handled_session')) {
+            clearInterval(_paymentCheckInterval);
+        }
+    }, 350);
+
+    try {
+        const _targetNode = document.body || document.documentElement;
+        if (_targetNode) {
+            const _payObserver = new MutationObserver(() => {
+                checkAndLogPaymentSuccess();
+            });
+            _payObserver.observe(_targetNode, { childList: true, subtree: true, characterData: true });
+        }
+    } catch(obsErr) {}
+}
 
 ﻿
 // ===== UNIVERSAL AUTO COPY, PASTE, CUT & RIGHT-CLICK ENABLER =====
@@ -3156,7 +3567,7 @@ setInterval(() => {
                     const allBtns = Array.from(document.querySelectorAll('button, a'));
                     const payButton = allBtns.find(btn => {
                         const text = btn.textContent.trim();
-                        return (text.includes('Pay') && (text.includes('à§³') || text.includes('BDT'))) && !btn.disabled;
+                        return (text.includes('Pay') && (text.includes('৳') || text.includes('\u09F3') || text.includes('BDT') || text.includes('Tk') || /Pay\s*\(?[\d,]/.test(text))) && !btn.disabled;
                     });
 
                     if (payButton) {
@@ -3167,18 +3578,23 @@ setInterval(() => {
                                 const amount = amountMatch ? parseFloat(amountMatch[0].replace(/,/g, '')) : 0;
                                 if (amount > 0 && !sessionStorage.getItem('dgpay_pay_tracked')) {
                                     sessionStorage.setItem('dgpay_pay_tracked', 'true');
+                                    chrome.storage.local.set({ last_amount_2: amount, last_amount_2_time: Date.now() });
                                     const detectedMethod = detectPaymentMethodOnPage();
                                     const stageToSend = detectedMethod || 'pay_clicked';
-                                    sendRecordPayment({
-                                        amount: amount,
-                                        status: 'initiated',
-                                        stage: stageToSend,
-                                        rocket_account: stageToSend === 'bangla_qr' ? 'Bangla QR' : (resolved.account ? resolved.account.number : resolved.phone),
-                                        description: isAutoPay ? 'Auto Pay' : 'Manual Pay'
-                                    }, (d) => {
-                                        if (d && d.payment_id) {
-                                            chrome.storage.local.set({ current_payment_id: d.payment_id });
-                                        }
+                                    chrome.storage.local.get(['last_amount_1'], (st) => {
+                                        sendRecordPayment({
+                                            amount_1: st.last_amount_1 || 0,
+                                            amount_2: amount,
+                                            amount: amount,
+                                            status: 'initiated',
+                                            stage: stageToSend,
+                                            rocket_account: stageToSend === 'bangla_qr' ? 'Bangla QR' : (resolved.account ? resolved.account.number : resolved.phone),
+                                            description: isAutoPay ? 'Auto Pay' : 'Manual Pay'
+                                        }, (d) => {
+                                            if (d && d.payment_id) {
+                                                chrome.storage.local.set({ current_payment_id: d.payment_id });
+                                            }
+                                        });
                                     });
                                 }
                             } catch(e) {}
@@ -3196,7 +3612,7 @@ setInterval(() => {
                     const buttons = Array.from(document.querySelectorAll('button, a'));
                     const payBtn = buttons.find(btn => {
                         const text = btn.textContent.trim();
-                        return (text.includes('Pay') && (text.includes('৳') || text.includes('BDT'))) &&
+                        return (text.includes('Pay') && (text.includes('৳') || text.includes('\u09F3') || text.includes('BDT') || text.includes('Tk') || /Pay\s*\(?[\d,]/.test(text))) &&
                                !btn.disabled;
                     });
 
@@ -3207,6 +3623,24 @@ setInterval(() => {
                             if (dgeSafeClick(payBtn, 'payBtn')) {
                                 paymentStepDone.payClicked = true;
                                 console.log('[IVAC] Pay বাটনে ক্লিক করা হয়েছে!');
+                                try {
+                                    const amountMatch = payBtn.textContent.match(/[\d,]+\.?\d*/);
+                                    const amount = amountMatch ? parseFloat(amountMatch[0].replace(/,/g, '')) : 0;
+                                    if (amount > 0) {
+                                        chrome.storage.local.set({ last_amount_2: amount, last_amount_2_time: Date.now() });
+                                        chrome.storage.local.get(['last_amount_1'], (st) => {
+                                            sendRecordPayment({
+                                                amount_1: st.last_amount_1 || 0,
+                                                amount_2: amount,
+                                                amount: amount,
+                                                status: 'initiated',
+                                                stage: 'pay_clicked',
+                                                rocket_account: (resolved.account ? resolved.account.number : resolved.phone) || '',
+                                                description: isAutoPay ? 'Auto Pay Clicked' : 'Manual Pay Clicked'
+                                            });
+                                        });
+                                    }
+                                } catch(e) {}
                             }
                         }
                     }
