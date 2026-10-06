@@ -3381,9 +3381,12 @@ class IVACApp(ctk.CTk):
 
             current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
             if selected_proxy_val:
+                clean_target = re.sub(r'^(?:https?|socks[45])://', '', str(selected_proxy_val)).strip()
                 found = False
-                for lbl, addr in active_devs:
-                    if addr == selected_proxy_val:
+                for item in active_devs:
+                    lbl = item[0]
+                    addr = item[1]
+                    if addr == clean_target or clean_target in lbl or clean_target == addr:
                         current_sel = lbl
                         found = True
                         break
@@ -3428,7 +3431,6 @@ class IVACApp(ctk.CTk):
             )
             refresh_btn.pack(side="right")
 
-        populate_add_proxy_options("")
         
         def toggle_pass_vis():
             if pass_entry.cget("show") == "":
@@ -3554,6 +3556,8 @@ class IVACApp(ctk.CTk):
             command=close_dialog
         ).pack(side="right")
 
+        populate_add_proxy_options("")
+
     def _open_edit_profile_dialog(self, profile, index):
         if hasattr(self, "_active_profile_modal") and self._active_profile_modal is not None:
             try:
@@ -3678,7 +3682,7 @@ class IVACApp(ctk.CTk):
             text_color=THEME.get("text_secondary", "#94a3b8")
         ).pack(side="left")
 
-        proxy_selector_frame = ctk.CTkFrame(card, fg_color="transparent")
+        proxy_selector_frame = ctk.CTkFrame(card, fg_color="transparent", height=30)
         proxy_selector_frame.pack(fill="x", padx=18, pady=(0, 4))
 
         proxy_entry = ctk.CTkEntry(card, width=430, height=28, placeholder_text="যেমন: 192.168.0.105:8080 (বা ড্রপডাউন থেকে সিলেক্ট করুন)")
@@ -3690,67 +3694,70 @@ class IVACApp(ctk.CTk):
         edit_opt_menu_ref = [None]
 
         def populate_edit_proxy_options(selected_proxy_val=""):
-            active_devs = self._get_active_proxy_devices()
-            edit_proxy_mapping.clear()
-            options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
-            edit_proxy_mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
-            for item in active_devs:
-                lbl = item[0]
-                options.append(lbl)
-                edit_proxy_mapping[lbl] = item
-            options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
+            try:
+                active_devs = self._get_active_proxy_devices()
+                edit_proxy_mapping.clear()
+                options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
+                edit_proxy_mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
+                for item in active_devs:
+                    lbl = item[0]
+                    options.append(lbl)
+                    edit_proxy_mapping[lbl] = item
+                options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
 
-            current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
-            if selected_proxy_val:
-                clean_target = re.sub(r'^(?:https?|socks[45])://', '', selected_proxy_val).strip()
-                found = False
-                for lbl, addr in active_devs:
-                    if addr == clean_target or clean_target in lbl:
-                        current_sel = lbl
-                        found = True
-                        break
-                if not found:
-                    current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
+                current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
+                if selected_proxy_val:
+                    clean_target = re.sub(r'^(?:https?|socks[45])://', '', str(selected_proxy_val)).strip()
+                    found = False
+                    for item in active_devs:
+                        lbl = item[0]
+                        addr = item[1]
+                        if addr == clean_target or clean_target in lbl or clean_target == addr:
+                            current_sel = lbl
+                            found = True
+                            break
+                    if not found:
+                        current_sel = "✏️ Custom IP (ম্যানুয়ালি লিখুন)"
 
-            def on_proxy_select(choice):
-                if choice == "❌ No Proxy (পিসির ইন্টারনেট)":
-                    proxy_entry.delete(0, "end")
-                elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
-                    proxy_entry.focus_set()
-                else:
-                    addr = self._extract_proxy_addr(choice, edit_proxy_mapping)
-                    proxy_entry.delete(0, "end")
-                    if addr:
-                        proxy_entry.insert(0, addr)
+                def on_proxy_select(choice):
+                    if choice == "❌ No Proxy (পিসির ইন্টারনেট)":
+                        proxy_entry.delete(0, "end")
+                    elif choice == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
+                        proxy_entry.focus_set()
+                    else:
+                        addr = self._extract_proxy_addr(choice, edit_proxy_mapping)
+                        proxy_entry.delete(0, "end")
+                        if addr:
+                            proxy_entry.insert(0, addr)
 
-            for child in proxy_selector_frame.winfo_children():
-                child.destroy()
+                for child in proxy_selector_frame.winfo_children():
+                    child.destroy()
 
-            opt_menu = ctk.CTkOptionMenu(
-                proxy_selector_frame,
-                values=options,
-                command=on_proxy_select,
-                width=380, height=28,
-                fg_color="#1e293b",
-                button_color="#0284c7",
-                button_hover_color="#0369a1",
-                dropdown_fg_color="#0f172a",
-                font=ctk.CTkFont(size=11)
-            )
-            opt_menu.set(current_sel)
-            opt_menu.pack(side="left", fill="x", expand=True, padx=(0, 6))
-            edit_opt_menu_ref[0] = opt_menu
+                opt_menu = ctk.CTkOptionMenu(
+                    proxy_selector_frame,
+                    values=options,
+                    command=on_proxy_select,
+                    width=380, height=28,
+                    fg_color="#1e293b",
+                    button_color="#0284c7",
+                    button_hover_color="#0369a1",
+                    dropdown_fg_color="#0f172a",
+                    font=ctk.CTkFont(size=11)
+                )
+                opt_menu.set(current_sel)
+                opt_menu.pack(side="left", fill="x", expand=True, padx=(0, 6))
+                edit_opt_menu_ref[0] = opt_menu
 
-            refresh_btn = ctk.CTkButton(
-                proxy_selector_frame,
-                text="🔄", width=34, height=28,
-                fg_color="#334155", hover_color="#475569",
-                font=ctk.CTkFont(size=12),
-                command=lambda: populate_edit_proxy_options(proxy_entry.get().strip())
-            )
-            refresh_btn.pack(side="right")
-
-        populate_edit_proxy_options(initial_proxy)
+                refresh_btn = ctk.CTkButton(
+                    proxy_selector_frame,
+                    text="🔄", width=34, height=28,
+                    fg_color="#334155", hover_color="#475569",
+                    font=ctk.CTkFont(size=12),
+                    command=lambda: populate_edit_proxy_options(proxy_entry.get().strip())
+                )
+                refresh_btn.pack(side="right")
+            except Exception as e:
+                logger.error(f"Error in populate_edit_proxy_options: {e}", exc_info=True)
         
         def save_edit():
             name = name_entry.get().strip()
@@ -3835,6 +3842,8 @@ class IVACApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             command=close_dialog
         ).pack(side="right")
+
+        populate_edit_proxy_options(initial_proxy)
         
     def _format_profile_dir(self, p_dir):
         p_dir = str(p_dir).strip()
