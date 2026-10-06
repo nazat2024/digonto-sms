@@ -249,6 +249,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupBottomNavigation() {
+        bottomNavigation.setPadding(0, 0, 0, 0);
         // Prevent system window insets from adding extra bottom gap
         ViewCompat.setOnApplyWindowInsetsListener(bottomNavigation, (view, insets) -> {
             view.setPadding(0, 0, 0, 0);
