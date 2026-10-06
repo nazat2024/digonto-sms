@@ -1285,7 +1285,11 @@
         app:itemIconTint="@color/bottom_nav_color"
         app:itemTextColor="@color/bottom_nav_color"
         app:labelVisibilityMode="labeled"
-        app:menu="@menu/bottom_nav_menu" />
+        app:menu="@menu/bottom_nav_menu"
+        app:paddingBottomSystemWindowInsets="false"
+        app:paddingTopSystemWindowInsets="false"
+        app:paddingStartSystemWindowInsets="false"
+        app:paddingEndSystemWindowInsets="false" />
 
     <!-- AMOLED Black Saver Overlay (Pure pitch black immersive overlay to prevent battery drain) -->
     <FrameLayout
