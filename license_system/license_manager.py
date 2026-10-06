@@ -26,6 +26,52 @@ _local_payments_lock = threading.Lock()
 _payment_dedup_lock = threading.Lock()
 _payment_dedup_cache = {}  # key -> {"id": payment_id, "time": float, "stage": stage, "status": status}
 
+# Payment Stage Priority Ranking (Higher rank cannot be downgraded by lower rank)
+STAGE_RANKS = {
+    "initiated": 1,
+    "continue_payment": 2,
+    "continue_payment_page": 2,
+    "continue_payment_click": 3,
+    "dgepay_methods": 4,
+    "bkash": 10,
+    "bkash_loaded": 10,
+    "nagad": 10,
+    "nagad_loaded": 10,
+    "rocket": 10,
+    "rocket_loaded": 10,
+    "cellfin": 10,
+    "tap": 10,
+    "net_banking": 10,
+    "card": 10,
+    "otp_requested": 15,
+    "otp_sent": 15,
+    "otp_filled": 18,
+    "otp_submitted": 20,
+    "pin_entered": 22,
+    "pin_submitted": 25,
+    "failed_on_dgepay": 30,
+    "payment_failed": 30,
+    "payment_success": 35,
+}
+
+def can_upgrade_stage(current_stage: Optional[str], new_stage: Optional[str]) -> bool:
+    """
+    যাচাই করে যে নতুন স্টেজটি বর্তমান স্টেজের চেয়ে উচ্চতর বা সমমানের কি না।
+    গেটওয়ে বা টার্মিনাল স্টেজ (যেমন nagad, rocket, bkash, payment_success) কখনো নিম্নতর স্টেজে
+    (যেমন continue_payment, continue_payment_click) ডাউনগ্রেড বা ওভাররাইট হতে পারবে না।
+    """
+    if not current_stage or str(current_stage).lower() in ["", "none", "initiated"]:
+        return True
+    if not new_stage or str(new_stage).lower() in ["", "none"]:
+        return False
+    curr_clean = str(current_stage).strip().lower()
+    new_clean = str(new_stage).strip().lower()
+    if curr_clean == new_clean:
+        return True
+    curr_rank = STAGE_RANKS.get(curr_clean, 5)
+    new_rank = STAGE_RANKS.get(new_clean, 5)
+    return new_rank >= curr_rank
+
 
 def _load_local_payments() -> list:
     if not os.path.exists(LOCAL_PAYMENTS_FILE):
@@ -582,11 +628,18 @@ def record_payment(amount: float, status: str, stage: str, rocket_account: str, 
                 existing = _payment_dedup_cache[dedup_key]
                 if now_sec - existing.get("time", 0) < 60:
                     existing_id = existing.get("id")
-                    print(f"[PaymentDedup] Duplicate hit for {dedup_key}. Reusing existing ID: {existing_id}")
-                    if (stage and stage != existing.get("stage")) or (status and status != existing.get("status")) or amount_1 or amount_2 or amount_3:
-                        update_payment_stage(existing_id, stage, status, final_amount, amount_1, amount_2, amount_3)
-                        existing["stage"] = stage
-                        existing["status"] = status
+                    curr_cached_stage = existing.get("stage")
+                    stage_to_apply = stage if can_upgrade_stage(curr_cached_stage, stage) else curr_cached_stage
+                    status_to_apply = status if (status == "success" or existing.get("status") != "success") else existing.get("status")
+
+                    stage_changed = bool(stage_to_apply and stage_to_apply != curr_cached_stage)
+                    status_changed = bool(status_to_apply and status_to_apply != existing.get("status"))
+                    has_amounts = bool(amount_1 or amount_2 or amount_3)
+
+                    if stage_changed or status_changed or has_amounts:
+                        update_payment_stage(existing_id, stage_to_apply, status_to_apply, final_amount, amount_1, amount_2, amount_3)
+                        existing["stage"] = stage_to_apply
+                        existing["status"] = status_to_apply
                     return existing_id
 
             # নতুন পেমেন্ট মেমোরিতে রেজিস্টার করো
@@ -775,11 +828,21 @@ def update_payment_stage(payment_id: Optional[str], stage: str, status: Optional
                 if not target_record and local_list and (now_ms - int(local_list[0].get("timestamp", 0)) < 15 * 60 * 1000):
                     target_record = local_list[0]
 
+            stage_was_upgraded = False
+            stage_for_sync = stage
             if target_record:
-                if stage:
+                curr_stage = target_record.get("stage")
+                if stage and can_upgrade_stage(curr_stage, stage):
                     target_record["stage"] = stage
+                    stage_for_sync = stage
+                    stage_was_upgraded = (str(stage).strip().lower() != str(curr_stage or '').strip().lower())
+                else:
+                    stage_for_sync = curr_stage or stage
+                    stage_was_upgraded = False
+
                 if status:
-                    target_record["status"] = status
+                    if target_record.get("status") != "success" or status == "success":
+                        target_record["status"] = status
                 if trx_id:
                     target_record["rocket_account"] = trx_id
                 if amount_1 and float(amount_1) > 0:
@@ -816,31 +879,32 @@ def update_payment_stage(payment_id: Optional[str], stage: str, status: Optional
         try:
             turso_id = (target_record.get("id") if target_record else None) or cloud_target_id or clean_pid or payment_id
             if turso_id:
-                update_turso_payment_async(turso_id, stage, status, amount, amount_1, amount_2, amount_3, trx_id=trx_id)
-            # Turso activities ও MQTT লাইভ চ্যানেলে পেমেন্ট আপডেট ব্রডকাস্ট করো
+                update_turso_payment_async(turso_id, stage_for_sync, status, amount, amount_1, amount_2, amount_3, trx_id=trx_id)
+            # Turso activities ও MQTT লাইভ চ্যানেলে পেমেন্ট আপডেট ব্রডকাস্ট করো (শুধুমাত্র স্টেজ আপগ্রেড হলে বা সফল হলে)
             is_succ = (status == "success")
-            p_label = (target_record.get("profile_label") if target_record else None) or "Profile"
-            p_id = (target_record.get("profile_id") if target_record else None) or "default"
-            p_amt = float(amount or (target_record.get("amount_3") if target_record else 0) or (target_record.get("amount") if target_record else 0) or 0)
-            act_title = "পেমেন্ট সফল (Payment Success)" if is_succ else f"পেমেন্ট স্টেজ: {str(stage).upper()}"
-            act_details = f"স্টেজ: {stage} | স্ট্যাটাস: {status or 'updated'}{f' | TrxID: {trx_id}' if trx_id else ''}{f' | পরিমাণ: ৳{p_amt:.2f}' if p_amt > 0 else ''}"
-            record_activity(
-                event_type="payment_success" if is_succ else "payment_flow",
-                profile_id=p_id,
-                profile_label=p_label,
-                title=act_title,
-                details=act_details,
-                amount=p_amt,
-                status="success" if is_succ else "info",
-                off_source=stage or "payment"
-            )
+            if is_succ or stage_was_upgraded:
+                p_label = (target_record.get("profile_label") if target_record else None) or "Profile"
+                p_id = (target_record.get("profile_id") if target_record else None) or "default"
+                p_amt = float(amount or (target_record.get("amount_3") if target_record else 0) or (target_record.get("amount") if target_record else 0) or 0)
+                act_title = "পেমেন্ট সফল (Payment Success)" if is_succ else f"পেমেন্ট স্টেজ: {str(stage_for_sync).upper()}"
+                act_details = f"স্টেজ: {stage_for_sync} | স্ট্যাটাস: {status or 'updated'}{f' | TrxID: {trx_id}' if trx_id else ''}{f' | পরিমাণ: ৳{p_amt:.2f}' if p_amt > 0 else ''}"
+                record_activity(
+                    event_type="payment_success" if is_succ else "payment_flow",
+                    profile_id=p_id,
+                    profile_label=p_label,
+                    title=act_title,
+                    details=act_details,
+                    amount=p_amt,
+                    status="success" if is_succ else "info",
+                    off_source=stage_for_sync or "payment"
+                )
         except Exception as turso_err:
             print(f"[Turso Sync Error] {turso_err}")
             
         if cloud_target_id:
             try:
                 payment_doc_url = f"{BASE_URL}/{license_key}/payments/{cloud_target_id}"
-                update_fields = {"stage": {"stringValue": stage}}
+                update_fields = {"stage": {"stringValue": stage_for_sync}}
                 update_mask = ["stage"]
                 if status:
                     update_fields["status"] = {"stringValue": status}

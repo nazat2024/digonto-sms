@@ -344,11 +344,23 @@ setInterval(() => {
         }
 
         // 4. Continue Payment Page (Image 2 - Amount 1)
-        const isContinuePaymentPage = url.includes('continue-payment') || 
-                                     url.includes('payment') || 
-                                     text.includes('pay with dgepay') || 
-                                     text.includes('continue payment') ||
-                                     text.includes('total amount');
+        const isExcludedPaymentUrl = url.includes('payment-status') || 
+                                     url.includes('receipt') || 
+                                     url.includes('status') ||
+                                     window.location.hostname.includes('dgepay.net') ||
+                                     window.location.hostname.includes('mynagad.com') ||
+                                     window.location.hostname.includes('nagad.com') ||
+                                     window.location.hostname.includes('bkash.com') ||
+                                     window.location.hostname.includes('122.152.54.218');
+
+        const contPayBtn = Array.from(document.querySelectorAll('button, a')).find(el => {
+            const t = (el.textContent || '').toLowerCase().trim();
+            return t === 'continue payment' || t.includes('pay with dgepay') || t.includes('continue payment');
+        });
+
+        const isContinuePaymentPage = !isExcludedPaymentUrl && 
+                                     (url.includes('continue-payment') || !!contPayBtn) &&
+                                     (text.includes('total amount') || text.includes('pay with dgepay') || text.includes('bdt'));
 
         if (isContinuePaymentPage && (text.includes('total amount') || text.includes('pay with dgepay') || text.includes('bdt'))) {
             let amount1 = 0;
@@ -379,7 +391,6 @@ setInterval(() => {
                 }
             }
 
-            const contPayBtn = Array.from(document.querySelectorAll('button, a')).find(el => (el.textContent || '').toLowerCase().includes('continue payment') || (el.textContent || '').toLowerCase().includes('pay with dgepay'));
             if (contPayBtn && !contPayBtn.dataset.trackedContPay) {
                 contPayBtn.dataset.trackedContPay = 'true';
                 contPayBtn.addEventListener('click', () => {
