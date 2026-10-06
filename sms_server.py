@@ -975,135 +975,12 @@ def _profile_offline_checker_loop():
 _offline_thread = threading.Thread(target=_profile_offline_checker_loop, daemon=True)
 _offline_thread.start()
 
-# ===== LOCAL LAN 4G MOBILE PROXY AUTO-DISCOVERY & AUTO-HEALING =====
+# ===== LOCAL LAN 4G MOBILE PROXY AUTO-DISCOVERY (DISABLED FOR MULTI-DEVICE INDEPENDENCE) =====
 def _proxy_auto_discovery_loop():
-    import socket
-    from concurrent.futures import ThreadPoolExecutor
+    # Disabled: Each mobile phone reports its own proxy independently via MQTT.
+    # Blind network scanning and "Infinix" matching caused IP cross-contamination across different mobile phones.
+    return
 
-    def _probe_proxy(ip, port=8080, timeout=0.25):
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(timeout)
-            s.connect((ip, port))
-            s.close()
-            return True
-        except Exception:
-            return False
-
-    def _get_local_subnet():
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            parts = ip.split(".")
-            if len(parts) == 4:
-                return f"{parts[0]}.{parts[1]}.{parts[2]}."
-        except Exception:
-            pass
-        return "192.168.0."
-
-    while True:
-        try:
-            time.sleep(1.0)
-            app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
-            cfg_path = os.path.join(app_data_dir, "config.json")
-            if not os.path.exists(cfg_path):
-                continue
-
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg_obj = json.load(f)
-
-            profiles = cfg_obj.get("profiles", [])
-            local_subnet = _get_local_subnet()
-            
-            dead_proxies = set()
-            active_configured_proxies = set()
-
-            for prof in profiles:
-                p_str = str(prof.get("proxy") or "").strip()
-                if p_str and ":" in p_str:
-                    host, port_str = p_str.split(":")[:2]
-                    try:
-                        port = int(port_str)
-                    except Exception:
-                        port = 8080
-                    if host.startswith(local_subnet) or host.startswith("192.168."):
-                        if _probe_proxy(host, port, timeout=0.15):
-                            active_configured_proxies.add(p_str)
-                        else:
-                            dead_proxies.add((p_str, host, port))
-
-            if dead_proxies:
-                candidate_ips = []
-                for _, dead_host, _ in dead_proxies:
-                    try:
-                        last_octet = int(dead_host.split(".")[-1])
-                        for offset in range(-15, 16):
-                            candidate_ip = f"{local_subnet}{last_octet + offset}"
-                            if 2 <= (last_octet + offset) <= 254 and candidate_ip not in candidate_ips:
-                                candidate_ips.append(candidate_ip)
-                    except Exception:
-                        pass
-                
-                def _scan_worker(ip):
-                    if _probe_proxy(ip, 8080, timeout=0.2):
-                        return ip
-                    return None
-
-                with ThreadPoolExecutor(max_workers=25) as executor:
-                    found_live_ips = list(filter(None, executor.map(_scan_worker, candidate_ips)))
-
-                if not found_live_ips:
-                    all_ips = [f"{local_subnet}{i}" for i in range(2, 255) if f"{local_subnet}{i}" not in candidate_ips]
-                    with ThreadPoolExecutor(max_workers=50) as executor:
-                        found_live_ips = list(filter(None, executor.map(_scan_worker, all_ips)))
-
-                if found_live_ips:
-                    new_live_ip = None
-                    for lip in found_live_ips:
-                        candidate_proxy = f"{lip}:8080"
-                        if candidate_proxy not in active_configured_proxies:
-                            new_live_ip = lip
-                            break
-                    if not new_live_ip:
-                        new_live_ip = found_live_ips[0]
-
-                    new_proxy_str = f"{new_live_ip}:8080"
-                    
-                    cfg_mod = False
-                    for prof in profiles:
-                        p_str = str(prof.get("proxy") or "").strip()
-                        if any(p_str == d[0] for d in dead_proxies):
-                            print(f"[Auto-Discovery] Auto-healed profile '{prof.get('name')}' dead proxy {p_str} -> {new_proxy_str}")
-                            prof["proxy"] = new_proxy_str
-                            cfg_mod = True
-
-                    if cfg_mod:
-                        with open(cfg_path, "w", encoding="utf-8") as f:
-                            json.dump(cfg_obj, f, indent=2, ensure_ascii=False)
-                        
-                        global last_config_ts, _cached_status_resp, _cached_config_mtime
-                        last_config_ts = time.time()
-                        _cached_status_resp = None
-                        _cached_config_mtime = 0
-                        
-                        if active_profile_data and isinstance(active_profile_data, dict):
-                            act_p = str(active_profile_data.get("proxy") or "").strip()
-                            if any(act_p == d[0] for d in dead_proxies):
-                                active_profile_data["proxy"] = new_proxy_str
-
-                        for dev in connected_devices.values():
-                            if dev.get("proxy_active") or "Infinix" in dev.get("device_name", ""):
-                                dev["proxy_address"] = new_proxy_str
-                                dev["proxy_active"] = True
-                                dev["online"] = True
-                                dev["last_seen"] = time.time()
-        except Exception:
-            pass
-
-_proxy_discovery_thread = threading.Thread(target=_proxy_auto_discovery_loop, daemon=True)
-_proxy_discovery_thread.start()
 
 # ===== CHROME EXTENSIONS (chrome://extensions) TOGGLE WATCHDOG =====
 _chrome_ext_prev_states = {}       # folder_name -> bool (is_disabled)
@@ -1853,6 +1730,9 @@ try:
                     phone_matches = re.findall(r'\b(01[3-9]\d{8})\b', f"{sim1} {sim2} {c_name} {dev_model}")
                     
                     prev_dev_proxy = connected_devices.get(dev_id, {}).get("proxy_address", "")
+                    is_dev_proxy_active = bool(sys_data.get("proxy_active", False))
+                    dev_proxy = str(sys_data.get("proxy_address", "")).strip() if is_dev_proxy_active else ""
+                    
                     connected_devices[dev_id] = {
                         "device_id": dev_id,
                         "device_name": dev_model,
@@ -1862,13 +1742,13 @@ try:
                         "sim2_name": sim2,
                         "email": c_email,
                         "phones": phone_matches,
-                        "proxy_active": bool(sys_data.get("proxy_active", False)),
-                        "proxy_address": str(sys_data.get("proxy_address", "")).strip(),
+                        "proxy_active": is_dev_proxy_active,
+                        "proxy_address": dev_proxy,
                         "last_seen": time.time(),
                         "online": True
                     }
-                    dev_proxy = str(sys_data.get("proxy_address", "")).strip()
-                    if bool(sys_data.get("proxy_active", False)) and dev_proxy:
+
+                    if is_dev_proxy_active and dev_proxy:
                         try:
                             app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
                             cfg_path = os.path.join(app_data_dir, "config.json")
@@ -1881,15 +1761,12 @@ try:
                                     if old_p and old_p != dev_proxy:
                                         prof_phone = re.sub(r'[^0-9]', '', str(prof.get("phone", "")))
                                         is_match = False
+                                        # Only update if this specific device previously had old_p (same phone DHCP IP changed)
                                         if prev_dev_proxy and old_p == prev_dev_proxy:
                                             is_match = True
                                         elif prof_phone and prof_phone in phone_matches:
                                             is_match = True
-                                        elif ":" in old_p and ":" in dev_proxy:
-                                            old_h, old_pt = old_p.split(":")[:2]
-                                            new_h, new_pt = dev_proxy.split(":")[:2]
-                                            if old_pt == new_pt and old_h.startswith("192.168.") and new_h.startswith("192.168."):
-                                                is_match = True
+                                        # Wildcard removed completely: Never allow one phone to steal another phone's profiles!
                                         if is_match:
                                             prof["proxy"] = dev_proxy
                                             cfg_mod = True
