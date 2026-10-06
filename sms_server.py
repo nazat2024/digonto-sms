@@ -405,22 +405,21 @@ def receive_email_otp():
     return jsonify({"success": False, "error": "Invalid OTP payload"}), 400
 
 def get_unique_device_name(desired_name: str, dev_id: str) -> str:
-    """Ensure desired_name is strictly unique among all OTHER saved and connected devices."""
+    """Ensure desired_name is strictly unique among other CURRENTLY ONLINE / RECENTLY CONNECTED devices."""
     cand = (desired_name or "").strip()
     if not cand:
         cand = "Device"
         
+    current_time = time.time()
     other_names = set()
-    for o_id, d in saved_devices.items():
-        if o_id != dev_id:
-            c = (d.get("custom_name") or "").strip().lower()
-            if c:
-                other_names.add(c)
     for o_id, d in connected_devices.items():
         if o_id != dev_id:
-            c = (d.get("custom_name") or d.get("device_name") or "").strip().lower()
-            if c:
-                other_names.add(c)
+            # Check if this other device is actually online / recently seen within 60 seconds
+            is_active_online = d.get("online", False) or (current_time - d.get("last_seen", 0) <= 60.0)
+            if is_active_online:
+                c = (d.get("custom_name") or d.get("device_name") or "").strip().lower()
+                if c:
+                    other_names.add(c)
                 
     if cand.lower() not in other_names:
         return cand
@@ -450,14 +449,32 @@ def update_device():
             if not custom_name:
                 return jsonify({"success": False, "error": "একটি নাম লিখুন।"}), 400
                 
-            # Disallow duplicate name across existing devices
-            other_names = {v.get("custom_name", "").strip().lower() for k, v in saved_devices.items() if k != dev_id and v.get("custom_name")}
-            other_names.update({v.get("custom_name", "").strip().lower() for k, v in connected_devices.items() if k != dev_id and v.get("custom_name")})
+            # Disallow duplicate name ONLY across other currently active/online devices
+            current_time = time.time()
+            other_names = set()
+            for o_id, d in connected_devices.items():
+                if o_id != dev_id:
+                    is_active_online = d.get("online", False) or (current_time - d.get("last_seen", 0) <= 60.0)
+                    if is_active_online:
+                        c = (d.get("custom_name") or d.get("device_name") or "").strip().lower()
+                        if c:
+                            other_names.add(c)
+
             if custom_name.lower() in other_names:
                 return jsonify({
                     "success": False,
-                    "error": f"'{custom_name}' নামটি ইতিমধ্যে অন্য একটি ফোনে আছে! অনুগ্রহ করে ভিন্ন নাম দিন।"
+                    "error": f"'{custom_name}' নামটি ইতিমধ্যে অন্য একটি সক্রিয় ফোনে আছে! অনুগ্রহ করে ভিন্ন নাম দিন।"
                 }), 400
+
+            # Prune any stale offline entries in saved_devices that held this exact name
+            stale_ids = [
+                k for k, v in list(saved_devices.items())
+                if k != dev_id and v.get("custom_name", "").strip().lower() == custom_name.lower() and (
+                    k not in connected_devices or (current_time - connected_devices[k].get("last_seen", 0) > 60.0)
+                )
+            ]
+            for sid in stale_ids:
+                saved_devices.pop(sid, None)
 
         if dev_id not in saved_devices:
             fallback_model = connected_devices.get(dev_id, {}).get("device_name") if dev_id in connected_devices else "Device"

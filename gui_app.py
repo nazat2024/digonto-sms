@@ -2302,15 +2302,17 @@ class IVACApp(ctk.CTk):
                 entry.focus_set()
                 return
 
-            # Check duplicate against other devices
+            # Check duplicate against other active online devices
             is_dup = False
             for o_id, o_info in getattr(self, '_device_rows', {}).items():
                 if o_id != dev_id and o_info.get("dev_name", "").strip().lower() == new_name.lower():
-                    is_dup = True
-                    break
+                    # Only flag duplicate if this other device is actually online
+                    if "🟢" in o_info.get("display_text", ""):
+                        is_dup = True
+                        break
 
             if is_dup:
-                err_lbl.configure(text=f"⚠️ '{new_name}' নামটি ইতিমধ্যে অন্য একটি ফোনে আছে! ভিন্ন নাম দিন।")
+                err_lbl.configure(text=f"⚠️ '{new_name}' নামটি ইতিমধ্যে অন্য একটি সক্রিয় ফোনে আছে! ভিন্ন নাম দিন।")
                 entry.focus_set()
                 return
 
