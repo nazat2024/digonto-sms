@@ -1382,9 +1382,10 @@ public class MainActivity extends AppCompatActivity {
                 public void onReceiveUssdResponse(TelephonyManager telephonyManager, String request, CharSequence returnMessage) {
                     if (returnMessage != null) {
                         String msg = convertBengaliToEnglishDigits(returnMessage.toString());
-                        Matcher m = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(msg);
-                        if (m.find()) {
-                            String found = cleanPhoneNumber(m.group(1));
+                        String digitsOnly = msg.replaceAll("[^0-9]", "");
+                        Matcher mDigits = Pattern.compile("(?:88)?(01[3-9]\\d{8})").matcher(digitsOnly);
+                        if (mDigits.find()) {
+                            String found = cleanPhoneNumber(mDigits.group(1));
                             if (isPhoneNumber(found)) {
                                 runOnUiThread(() -> {
                                     applyDetectedNumber(slot, found);
@@ -1436,7 +1437,7 @@ public class MainActivity extends AppCompatActivity {
         String l = carrier.toLowerCase();
         if (l.contains("banglalink") || l.contains("bl")) return "*511#";
         if (l.contains("grameen") || l.contains("gp")) return "*2#";
-        if (l.contains("airtel")) return "*121*7*3#";
+        if (l.contains("airtel")) return "*2#";
         if (l.contains("robi") || l.contains("akt")) return "*2#";
         if (l.contains("teletalk")) return "*551#";
         return "*2#";
