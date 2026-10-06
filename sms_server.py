@@ -1809,6 +1809,11 @@ try:
                     }
 
                     if is_dev_proxy_active and dev_proxy:
+                        last_p = saved_devices[dev_id].get("last_known_proxy", "")
+                        if last_p != dev_proxy:
+                            saved_devices[dev_id]["last_known_proxy"] = dev_proxy
+                            save_device_config(saved_devices)
+
                         try:
                             app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), "IVAC_Auto_Fill")
                             cfg_path = os.path.join(app_data_dir, "config.json")
@@ -1818,19 +1823,31 @@ try:
                                 cfg_mod = False
                                 for prof in cfg_obj.get("profiles", []):
                                     old_p = str(prof.get("proxy") or "").strip()
-                                    if old_p and old_p != dev_proxy:
-                                        prof_phone = re.sub(r'[^0-9]', '', str(prof.get("phone", "")))
-                                        is_match = False
-                                        # Only update if this specific device previously had old_p (same phone DHCP IP changed)
-                                        if prev_dev_proxy and old_p == prev_dev_proxy:
-                                            is_match = True
-                                        elif prof_phone and prof_phone in phone_matches:
-                                            is_match = True
-                                        # Wildcard removed completely: Never allow one phone to steal another phone's profiles!
-                                        if is_match:
-                                            prof["proxy"] = dev_proxy
-                                            cfg_mod = True
-                                            print(f"[Proxy Auto-Heal] Updated profile '{prof.get('name')}' proxy: {old_p} -> {dev_proxy}")
+                                    prof_dev_id = prof.get("proxy_device_id")
+                                    prof_dev_name = prof.get("proxy_device_name")
+                                    prof_phone = re.sub(r'[^0-9]', '', str(prof.get("phone", "")))
+
+                                    is_match = False
+                                    # 1. Direct device ID match
+                                    if prof_dev_id and prof_dev_id == dev_id:
+                                        is_match = True
+                                    # 2. Direct device custom name match (e.g. "Nazat")
+                                    elif prof_dev_name and c_name and prof_dev_name.strip().lower() == c_name.strip().lower():
+                                        is_match = True
+                                    # 3. Persistent last known proxy match (even across airplane mode / restart)
+                                    elif last_p and old_p == last_p:
+                                        is_match = True
+                                    elif prev_dev_proxy and old_p == prev_dev_proxy:
+                                        is_match = True
+                                    elif prof_phone and prof_phone in phone_matches:
+                                        is_match = True
+
+                                    if is_match and old_p != dev_proxy:
+                                        prof["proxy"] = dev_proxy
+                                        prof["proxy_device_id"] = dev_id
+                                        prof["proxy_device_name"] = c_name
+                                        cfg_mod = True
+                                        print(f"[Proxy Auto-Heal] Updated profile '{prof.get('name')}' for device '{c_name}': {old_p} -> {dev_proxy}")
                                 if cfg_mod:
                                     with open(cfg_path, "w", encoding="utf-8") as f:
                                         json.dump(cfg_obj, f, indent=2, ensure_ascii=False)

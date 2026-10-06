@@ -1727,6 +1727,35 @@ class IVACApp(ctk.CTk):
                         if self._cache_device_proxy_mapping(d_proxy, d_name):
                             proxy_cache_changed = True
             
+            # Live Profile Auto-Heal: sync profiles when connected mobile IP changes (DHCP / Airplane mode / reconnect)
+            profiles = self.config.get("profiles", []) if hasattr(self, "config") else []
+            profiles_updated = False
+            for dev in devices:
+                d_id = dev.get("device_id")
+                d_name = dev.get("custom_name") or dev.get("device_name")
+                live_p = self._clean_proxy_ip(dev.get("proxy_address"))
+                p_active = bool(dev.get("proxy_active"))
+                if p_active and live_p:
+                    for prof in profiles:
+                        prof_dev_id = prof.get("proxy_device_id")
+                        prof_dev_name = prof.get("proxy_device_name")
+                        current_p = self._clean_proxy_ip(prof.get("proxy"))
+                        is_match = False
+                        if prof_dev_id and prof_dev_id == d_id:
+                            is_match = True
+                        elif prof_dev_name and d_name and prof_dev_name.strip().lower() == d_name.strip().lower():
+                            is_match = True
+                        if is_match and current_p != live_p:
+                            prof["proxy"] = live_p
+                            prof["proxy_device_id"] = d_id
+                            prof["proxy_device_name"] = d_name
+                            profiles_updated = True
+                            print(f"[Live Auto-Heal] Profile '{prof.get('name')}' proxy auto-synced to {d_name} ({live_p})")
+
+            if profiles_updated:
+                self._save_config()
+                proxy_cache_changed = True
+
             if proxy_cache_changed:
                 if hasattr(self, 'tabview') and self.tabview.get() == "👥 Profiles":
                     if hasattr(self, '_refresh_profiles_tab'):
@@ -1993,7 +2022,7 @@ class IVACApp(ctk.CTk):
                 clean_addr = self._clean_proxy_ip(addr)
                 count = proxy_counts.get(clean_addr, 0)
                 label = f"📱 {name}-{addr}-Use: {count}"
-                active_list.append((label, addr))
+                active_list.append((label, addr, d.get("device_id"), name))
         return active_list
 
     def _extract_proxy_addr(self, choice_str, mapping_dict=None):
@@ -2006,7 +2035,10 @@ class IVACApp(ctk.CTk):
         if choice_str == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
             return ""
         if mapping_dict and choice_str in mapping_dict and mapping_dict[choice_str]:
-            return str(mapping_dict[choice_str]).strip()
+            val = mapping_dict[choice_str]
+            if isinstance(val, (list, tuple)) and len(val) >= 2:
+                return str(val[1]).strip()
+            return str(val).strip()
         # Fallback: extract IP:Port directly using regex
         match = re.search(r'(\d{1,3}(?:\.\d{1,3}){3}:\d{2,5})', choice_str)
         if match:
@@ -2889,7 +2921,9 @@ class IVACApp(ctk.CTk):
         dev_mobile_name = ""
         if proxy:
             clean_proxy = self._clean_proxy_ip(proxy)
-            dev_mobile_name = self._resolve_device_name_for_proxy(clean_proxy, phone)
+            dev_mobile_name = p.get("proxy_device_name") or self._resolve_device_name_for_proxy(clean_proxy, phone)
+            if dev_mobile_name and not dev_mobile_name.startswith("@"):
+                dev_mobile_name = f"@{dev_mobile_name}"
             use_cnt = getattr(self, "_current_proxy_counts", {}).get(clean_proxy, 1)
             if dev_mobile_name:
                 details_parts.append(f"🌐{dev_mobile_name}-{clean_proxy}-Use: {use_cnt}")
@@ -3364,9 +3398,10 @@ class IVACApp(ctk.CTk):
             add_proxy_mapping.clear()
             options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
             add_proxy_mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
-            for lbl, addr in active_devs:
+            for item in active_devs:
+                lbl = item[0]
                 options.append(lbl)
-                add_proxy_mapping[lbl] = addr
+                add_proxy_mapping[lbl] = item
             options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
 
             current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
@@ -3479,12 +3514,22 @@ class IVACApp(ctk.CTk):
             password = pass_entry.get().strip()
             
             chosen_opt = str(add_opt_menu_ref[0].get()).strip() if add_opt_menu_ref[0] else ""
+            dev_id_val = None
+            dev_name_val = None
             if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
                 proxy = ""
+            elif chosen_opt == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
+                proxy = proxy_entry.get().strip()
             else:
-                dropdown_addr = self._extract_proxy_addr(chosen_opt, add_proxy_mapping)
-                entry_addr = proxy_entry.get().strip()
-                proxy = dropdown_addr if dropdown_addr else entry_addr
+                mapping_info = add_proxy_mapping.get(chosen_opt)
+                if isinstance(mapping_info, (list, tuple)) and len(mapping_info) >= 4:
+                    proxy = mapping_info[1]
+                    dev_id_val = mapping_info[2]
+                    dev_name_val = mapping_info[3]
+                else:
+                    dropdown_addr = self._extract_proxy_addr(chosen_opt, add_proxy_mapping)
+                    entry_addr = proxy_entry.get().strip()
+                    proxy = dropdown_addr if dropdown_addr else entry_addr
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
@@ -3503,6 +3548,8 @@ class IVACApp(ctk.CTk):
                 "proxy": proxy,
                 "enabled": True
             }
+            if dev_id_val: new_prof["proxy_device_id"] = dev_id_val
+            if dev_name_val: new_prof["proxy_device_name"] = dev_name_val
             self.config["profiles"].append(new_prof)
             self._save_config()
             
@@ -3672,9 +3719,10 @@ class IVACApp(ctk.CTk):
             edit_proxy_mapping.clear()
             options = ["❌ No Proxy (পিসির ইন্টারনেট)"]
             edit_proxy_mapping["❌ No Proxy (পিসির ইন্টারনেট)"] = ""
-            for lbl, addr in active_devs:
+            for item in active_devs:
+                lbl = item[0]
                 options.append(lbl)
-                edit_proxy_mapping[lbl] = addr
+                edit_proxy_mapping[lbl] = item
             options.append("✏️ Custom IP (ম্যানুয়ালি লিখুন)")
 
             current_sel = "❌ No Proxy (পিসির ইন্টারনেট)"
@@ -3740,23 +3788,40 @@ class IVACApp(ctk.CTk):
             password = pass_entry.get().strip()
             
             chosen_opt = str(edit_opt_menu_ref[0].get()).strip() if edit_opt_menu_ref[0] else ""
+            dev_id_val = None
+            dev_name_val = None
             if chosen_opt == "❌ No Proxy (পিসির ইন্টারনেট)":
                 proxy = ""
+            elif chosen_opt == "✏️ Custom IP (ম্যানুয়ালি লিখুন)":
+                proxy = proxy_entry.get().strip()
             else:
-                dropdown_addr = self._extract_proxy_addr(chosen_opt, edit_proxy_mapping)
-                entry_addr = proxy_entry.get().strip()
-                proxy = dropdown_addr if dropdown_addr else entry_addr
+                mapping_info = edit_proxy_mapping.get(chosen_opt)
+                if isinstance(mapping_info, (list, tuple)) and len(mapping_info) >= 4:
+                    proxy = mapping_info[1]
+                    dev_id_val = mapping_info[2]
+                    dev_name_val = mapping_info[3]
+                else:
+                    dropdown_addr = self._extract_proxy_addr(chosen_opt, edit_proxy_mapping)
+                    entry_addr = proxy_entry.get().strip()
+                    proxy = dropdown_addr if dropdown_addr else entry_addr
             
             if not name or not chrome_profile:
                 messagebox.showwarning("Warning", "গ্রাহকের নাম ও ক্রোম প্রোফাইল ফোল্ডারের নাম দিন!", parent=card)
                 return
             
             if 0 <= index < len(self.config.get("profiles", [])):
-                self.config["profiles"][index]["name"] = name
-                self.config["profiles"][index]["chrome_profile"] = chrome_profile
-                self.config["profiles"][index]["phone"] = phone
-                self.config["profiles"][index]["password"] = password
-                self.config["profiles"][index]["proxy"] = proxy
+                prof_target = self.config["profiles"][index]
+                prof_target["name"] = name
+                prof_target["chrome_profile"] = chrome_profile
+                prof_target["phone"] = phone
+                prof_target["password"] = password
+                prof_target["proxy"] = proxy
+                if dev_id_val:
+                    prof_target["proxy_device_id"] = dev_id_val
+                    prof_target["proxy_device_name"] = dev_name_val
+                elif not proxy:
+                    prof_target.pop("proxy_device_id", None)
+                    prof_target.pop("proxy_device_name", None)
             profile["name"] = name
             profile["chrome_profile"] = chrome_profile
             profile["phone"] = phone
