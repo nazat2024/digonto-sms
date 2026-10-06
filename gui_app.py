@@ -1717,15 +1717,13 @@ class IVACApp(ctk.CTk):
             devices = data.get("devices", [])
             self._latest_devices = devices
             
-            # Real-time proxy-to-device mapping cache update
-            proxy_cache_changed = False
+            # Real-time proxy-to-device mapping cache update (silent, in-memory)
             for dev in devices:
                 d_proxy = self._clean_proxy_ip(dev.get("proxy_address"))
                 if d_proxy:
                     d_name = self._format_device_name(dev.get("custom_name"), dev.get("device_name"))
                     if d_name:
-                        if self._cache_device_proxy_mapping(d_proxy, d_name):
-                            proxy_cache_changed = True
+                        self._cache_device_proxy_mapping(d_proxy, d_name)
             
             # Live Profile Auto-Heal: sync profiles when connected mobile IP changes (DHCP / Airplane mode / reconnect)
             profiles = self.config.get("profiles", []) if hasattr(self, "config") else []
@@ -1750,18 +1748,10 @@ class IVACApp(ctk.CTk):
                             prof["proxy_device_id"] = d_id
                             prof["proxy_device_name"] = d_name
                             profiles_updated = True
-                            print(f"[Live Auto-Heal] Profile '{prof.get('name')}' proxy auto-synced to {d_name} ({live_p})")
 
             if profiles_updated:
                 self._save_config()
-                proxy_cache_changed = True
-
-            if proxy_cache_changed:
-                if hasattr(self, 'tabview') and self.tabview.get() == "👥 Profiles":
-                    if hasattr(self, '_refresh_profiles_tab'):
-                        self._refresh_profiles_tab()
-                else:
-                    self._profiles_tab_dirty = True
+                self._profiles_tab_dirty = True
             
             # 1. INCREMENTAL DEVICE UPDATE (ZERO DESTROY LAG FOR 20-30 MOBILES)
             if not hasattr(self, '_device_rows'):
@@ -1949,17 +1939,8 @@ class IVACApp(ctk.CTk):
         if not clean_target:
             return ""
 
-        # 1. Check in-memory devices list (from status poller)
+        # 1. Pure in-memory lookup from latest polled devices
         devices = getattr(self, '_latest_devices', [])
-        if not devices:
-            try:
-                import requests
-                r = requests.get("http://127.0.0.1:5000/api/status", timeout=0.3)
-                if r.ok:
-                    devices = r.json().get("devices", [])
-                    self._latest_devices = devices
-            except Exception:
-                pass
 
         # Check exact proxy match
         for d in devices:
@@ -1967,7 +1948,6 @@ class IVACApp(ctk.CTk):
             if d_proxy and d_proxy == clean_target:
                 name = self._format_device_name(d.get("custom_name"), d.get("device_name"))
                 if name:
-                    self._cache_device_proxy_mapping(clean_target, name)
                     return name
 
         # Check by phone match if proxy host matches
@@ -1982,14 +1962,9 @@ class IVACApp(ctk.CTk):
                     if not target_host or not d_host or target_host == d_host or target_host.startswith("192.168."):
                         name = self._format_device_name(d.get("custom_name"), d.get("device_name"))
                         if name:
-                            self._cache_device_proxy_mapping(clean_target, name)
                             return name
 
-        # 2. Check persistent cache
-        if hasattr(self, '_proxy_device_cache'):
-            if clean_target in self._proxy_device_cache:
-                return self._proxy_device_cache[clean_target]
-        self._load_cached_device_proxy_mappings()
+        # 2. Check in-memory cache
         return getattr(self, '_proxy_device_cache', {}).get(clean_target, "")
 
     def _get_active_proxy_devices(self):
