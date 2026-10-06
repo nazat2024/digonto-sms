@@ -627,13 +627,20 @@ public class MainActivity extends AppCompatActivity {
         btnStartCallDivert.setOnClickListener(v -> {
             new AlertDialog.Builder(this)
                     .setTitle("কল ব্লক (Call Divert)")
-                    .setMessage("কল ব্লক মোড চালু করলে কোনো সাধারণ ভয়েস কল ঢুকবে না (কলারকে বলবে নম্বরটি বন্ধ/ব্যস্ত), কিন্তু 4G ইন্টারনেট ও SMS/OTP ১০০% চালু থাকবে।\n\nআপনি কি কল ব্লক করতে চান?")
+                    .setMessage("কল ব্লক মোড চালু করলে কোনো সাধারণ ভয়েস কল ঢুকবে না (কলারকে বলবে নম্বরটি বন্ধ/ব্যস্ত), কিন্তু 4G ইন্টারনেট ও SMS/OTP ১০০% চালু থাকবে।\n\n'চালু করুন' বাটনে চাপ দিলে ডায়ালারে কোড যাবে, সেখান থেকে আপনার সিমে কল বাটনে চাপ দিন।")
                     .setPositiveButton("চালু করুন", (dialog, which) -> executeCallDivert("*21*01700000000#", true))
                     .setNegativeButton("বাতিল", null)
                     .show();
         });
 
-        btnCancelCallDivert.setOnClickListener(v -> executeCallDivert("##21#", false));
+        btnCancelCallDivert.setOnClickListener(v -> {
+            new AlertDialog.Builder(this)
+                    .setTitle("কল চালু করুন (Cancel Divert)")
+                    .setMessage("কল স্বাভাবিক করার জন্য ডায়ালারে ##21# কোডটি যাবে, সেখান থেকে আপনার সিমে কল বাটনে চাপ দিন।")
+                    .setPositiveButton("চালু করুন", (dialog, which) -> executeCallDivert("##21#", false))
+                    .setNegativeButton("বাতিল", null)
+                    .show();
+        });
     }
 
     // ==================== TAB 3: PROXY SETUP ====================
@@ -809,24 +816,20 @@ public class MainActivity extends AppCompatActivity {
         try {
             // Encode '#' as '%23' for USSD dialer intent
             String encodedUssd = "tel:" + Uri.encode(ussdCode);
-            Intent callIntent = new Intent(Intent.ACTION_CALL, Uri.parse(encodedUssd));
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                startActivity(callIntent);
-            } else {
-                Intent dialIntent = new Intent(Intent.ACTION_DIAL, Uri.parse(encodedUssd));
-                startActivity(dialIntent);
-            }
+            Intent dialIntent = new Intent(Intent.ACTION_DIAL, Uri.parse(encodedUssd));
+            dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(dialIntent);
 
             prefs.edit().putBoolean("divert_active", isDiverting).apply();
             layoutHomeDivertAlert.setVisibility(isDiverting ? View.VISIBLE : View.GONE);
 
             if (isDiverting) {
-                Toast.makeText(this, "কল ব্লক কোড ডায়াল করা হয়েছে। 4G ও SMS সচল থাকবে।", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "ডায়ালারে কল ব্লক কোড পাঠানো হয়েছে। আপনার সিমে কল বাটনে চাপ দিন।", Toast.LENGTH_LONG).show();
             } else {
-                Toast.makeText(this, "কল স্বাভাবিক করার কোড ডায়াল করা হয়েছে।", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "ডায়ালারে কল চালু কোড (##21#) পাঠানো হয়েছে। আপনার সিমে কল বাটনে চাপ দিন।", Toast.LENGTH_LONG).show();
             }
         } catch (Exception e) {
-            Toast.makeText(this, "Error executing USSD: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "ডায়ালার ওপেন করা যায়নি: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -1194,7 +1197,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Layer 1: Query live hardware chip / EF_MSISDN (Zero SMS history)
+        // Layer 1: Query live hardware chip / EF_MSISDN (GP & Banglalink burn this into chip)
         String detectedNum = extractNumberFromSubscription(sm, tm, info);
         if (!detectedNum.isEmpty()) {
             applyDetectedNumber(slot, detectedNum);
@@ -1204,7 +1207,17 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Layer 2: Query Live Carrier Network via USSD only when user explicitly requested detection
+        // Layer 2: SMS Inbox Deep Scan (Robi & Airtel numbers are found in carrier/recharge SMS)
+        detectedNum = scanNumberFromSmsInbox(subId, carrier);
+        if (!detectedNum.isEmpty()) {
+            applyDetectedNumber(slot, detectedNum);
+            if (showToast) {
+                Toast.makeText(this, "SIM " + (slot + 1) + " Auto-Detected: " + detectedNum, Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        // Layer 3: Query Live Carrier Network via USSD only when user explicitly requested detection
         if (showToast) {
             requestNetworkUssd(tm, subId, slot, carrier, true);
         }
@@ -1229,6 +1242,110 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Exception ignored) {}
         return isPhoneNumber(num) ? cleanPhoneNumber(num) : "";
+    }
+
+    private String scanNumberFromSmsInbox(int targetSubId, String operatorName) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return "";
+        }
+        Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://sms");
+            String[] projection = new String[]{"_id", "body", "address", "sub_id"};
+            String sortOrder = "date DESC LIMIT 300";
+            cursor = getContentResolver().query(uri, projection, null, null, sortOrder);
+            if (cursor != null && cursor.moveToFirst()) {
+                int bodyIdx = cursor.getColumnIndex("body");
+                int addrIdx = cursor.getColumnIndex("address");
+                int subIdIdx = cursor.getColumnIndex("sub_id");
+
+                Map<String, Integer> candidateScores = new HashMap<>();
+
+                do {
+                    int subId = subIdIdx != -1 ? cursor.getInt(subIdIdx) : -1;
+                    if (targetSubId != -1 && subId != -1 && subId != targetSubId) {
+                        continue;
+                    }
+
+                    String rawBody = bodyIdx != -1 ? cursor.getString(bodyIdx) : "";
+                    String addr = addrIdx != -1 ? cursor.getString(addrIdx) : "";
+                    if (rawBody == null || rawBody.isEmpty()) continue;
+
+                    String body = convertBengaliToEnglishDigits(rawBody);
+                    String addrLower = (addr != null ? addr.toLowerCase() : "");
+                    String bodyLower = body.toLowerCase();
+                    String op = operatorName != null ? operatorName.toLowerCase() : "";
+
+                    Matcher matcher = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(body);
+                    while (matcher.find()) {
+                        String match = cleanPhoneNumber(matcher.group(1));
+                        if (!isPhoneNumber(match)) continue;
+
+                        int score = 1;
+
+                        // Check prefix matching the carrier
+                        boolean prefixMatches = false;
+                        if ((op.contains("grameen") || op.contains("gp")) && (match.startsWith("017") || match.startsWith("013"))) {
+                            score += 15; prefixMatches = true;
+                        } else if ((op.contains("banglalink") || op.contains("bl")) && (match.startsWith("019") || match.startsWith("014"))) {
+                            score += 15; prefixMatches = true;
+                        } else if (op.contains("airtel") && match.startsWith("016")) {
+                            score += 20; prefixMatches = true;
+                        } else if (op.contains("robi") && match.startsWith("018")) {
+                            score += 20; prefixMatches = true;
+                        } else if (op.contains("teletalk") && match.startsWith("015")) {
+                            score += 15; prefixMatches = true;
+                        }
+
+                        // Discard if prefix doesn't match this carrier at all
+                        if (!prefixMatches) continue;
+
+                        // Carrier system messages
+                        if (addrLower.contains("121") || addrLower.contains("123") || addrLower.contains("robi") || addrLower.contains("airtel")
+                                || addrLower.contains("gp") || addrLower.contains("bl") || addrLower.contains("teletalk")) {
+                            score += 15;
+                        }
+
+                        // Financial / recharge keywords
+                        if (bodyLower.contains("recharge") || bodyLower.contains("রিচার্জ") || bodyLower.contains("টাকা")
+                                || bodyLower.contains("cash in") || bodyLower.contains("balance") || bodyLower.contains("msisdn")
+                                || bodyLower.contains("account") || bodyLower.contains("বিল") || bodyLower.contains("নম্বর")) {
+                            score += 10;
+                        }
+
+                        candidateScores.put(match, candidateScores.getOrDefault(match, 0) + score);
+                    }
+                } while (cursor.moveToNext());
+
+                String bestNum = "";
+                int maxScore = 0;
+                for (Map.Entry<String, Integer> entry : candidateScores.entrySet()) {
+                    if (entry.getValue() > maxScore) {
+                        maxScore = entry.getValue();
+                        bestNum = entry.getKey();
+                    }
+                }
+                return bestNum;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+        return "";
+    }
+
+    private String convertBengaliToEnglishDigits(String str) {
+        if (str == null) return "";
+        return str.replace('০', '0')
+                  .replace('১', '1')
+                  .replace('২', '2')
+                  .replace('৩', '3')
+                  .replace('৪', '4')
+                  .replace('৫', '5')
+                  .replace('৬', '6')
+                  .replace('৭', '7')
+                  .replace('৮', '8')
+                  .replace('৯', '9');
     }
 
     private void requestNetworkUssd(TelephonyManager tm, int subId, int slot, String carrier, boolean userFeedback) {
@@ -1264,7 +1381,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onReceiveUssdResponse(TelephonyManager telephonyManager, String request, CharSequence returnMessage) {
                     if (returnMessage != null) {
-                        String msg = returnMessage.toString();
+                        String msg = convertBengaliToEnglishDigits(returnMessage.toString());
                         Matcher m = Pattern.compile("(?:\\+?88)?(01[3-9]\\d{8})\\b").matcher(msg);
                         if (m.find()) {
                             String found = cleanPhoneNumber(m.group(1));
@@ -1299,13 +1416,12 @@ public class MainActivity extends AppCompatActivity {
     private void promptDirectUssdDial(int slot, String carrier, String ussdCode) {
         new AlertDialog.Builder(this)
                 .setTitle("Verify SIM " + (slot + 1) + " (" + carrier + ")")
-                .setMessage("To view your active mobile number, query " + carrier + " network using code " + ussdCode + ".\n\nTap 'Dial Now' to proceed.")
+                .setMessage("To view your active mobile number, dial " + ussdCode + " on " + carrier + ".\n\nTap 'Dial Now' to open phone dialer.")
                 .setPositiveButton("Dial Now", (dialog, which) -> {
                     try {
                         Uri uri = Uri.parse("tel:" + Uri.encode(ussdCode));
-                        Intent intent = new Intent(Intent.ACTION_CALL, uri);
-                        intent.putExtra("com.android.phone.extra.slot", slot);
-                        intent.putExtra("simSlot", slot);
+                        Intent intent = new Intent(Intent.ACTION_DIAL, uri);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                         startActivity(intent);
                     } catch (Exception e) {
                         Toast.makeText(MainActivity.this, "Dial failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -1316,14 +1432,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String getCarrierUssdCode(String carrier) {
-        if (carrier == null) return "";
+        if (carrier == null) return "*2#";
         String l = carrier.toLowerCase();
         if (l.contains("banglalink") || l.contains("bl")) return "*511#";
         if (l.contains("grameen") || l.contains("gp")) return "*2#";
-        if (l.contains("robi")) return "*2#";
-        if (l.contains("airtel")) return "*2#";
+        if (l.contains("airtel")) return "*121*7*3#";
+        if (l.contains("robi") || l.contains("akt")) return "*2#";
         if (l.contains("teletalk")) return "*551#";
-        return "";
+        return "*2#";
     }
 
     private void triggerSimUssdForSlot(int targetSlot) {
@@ -1400,8 +1516,8 @@ public class MainActivity extends AppCompatActivity {
         String l = raw.toLowerCase();
         if (l.contains("grameen") || l.contains("gp")) return "Grameenphone";
         if (l.contains("banglalink") || l.contains("bl")) return "Banglalink";
-        if (l.contains("robi")) return "Robi";
         if (l.contains("airtel")) return "Airtel";
+        if (l.contains("robi") || l.contains("akt")) return "Robi";
         if (l.contains("teletalk")) return "Teletalk";
         return raw;
     }
