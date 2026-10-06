@@ -58,6 +58,9 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import android.telecom.PhoneAccountHandle;
+import android.telecom.TelecomManager;
+import android.text.TextUtils;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.chip.Chip;
@@ -110,6 +113,9 @@ public class MainActivity extends AppCompatActivity {
     private SwitchMaterial switchKeepScreenAwake, switchAmoledSaver, switchFocusModeDnd;
     private TextInputEditText etCustomDeviceName;
     private Button btnSaveCustomDeviceName, btnStartCallDivert, btnCancelCallDivert;
+    private MaterialButton btnToggleAccessibilityHelper;
+    private int waitingForUssdReturnSlot = -1;
+    private BroadcastReceiver simDetectReceiver;
 
     // AMOLED Black Saver Elements
     private FrameLayout layoutBlackSaverOverlay;
@@ -149,6 +155,28 @@ public class MainActivity extends AppCompatActivity {
             registerReceiver(newSmsReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
             registerReceiver(newSmsReceiver, filter);
+        }
+
+        // Register dynamic receiver for real-time USSD auto-detection
+        simDetectReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent == null) return;
+                int slot = intent.getIntExtra(UssdAccessibilityService.EXTRA_SLOT, -1);
+                String number = intent.getStringExtra(UssdAccessibilityService.EXTRA_NUMBER);
+                if (slot != -1 && number != null && isPhoneNumber(number)) {
+                    runOnUiThread(() -> {
+                        applyDetectedNumber(slot, number);
+                        Toast.makeText(MainActivity.this, "🎉 SIM " + (slot + 1) + " অটো-ডিটেক্ট সম্পন্ন: " + number, Toast.LENGTH_LONG).show();
+                    });
+                }
+            }
+        };
+        IntentFilter simDetectFilter = new IntentFilter(UssdAccessibilityService.ACTION_SIM_AUTO_DETECTED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(simDetectReceiver, simDetectFilter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(simDetectReceiver, simDetectFilter);
         }
 
         setContentView(R.layout.activity_main);
@@ -243,6 +271,7 @@ public class MainActivity extends AppCompatActivity {
         btnSaveCustomDeviceName = findViewById(R.id.btnSaveCustomDeviceName);
         btnStartCallDivert = findViewById(R.id.btnStartCallDivert);
         btnCancelCallDivert = findViewById(R.id.btnCancelCallDivert);
+        btnToggleAccessibilityHelper = findViewById(R.id.btnToggleAccessibilityHelper);
 
         // AMOLED Overlay
         layoutBlackSaverOverlay = findViewById(R.id.layoutBlackSaverOverlay);
@@ -627,6 +656,35 @@ public class MainActivity extends AppCompatActivity {
                     .setNegativeButton("বাতিল", null)
                     .show();
         });
+
+        // Auto-Detect Helper Accessibility Button
+        if (btnToggleAccessibilityHelper != null) {
+            updateAccessibilityButtonState();
+            btnToggleAccessibilityHelper.setOnClickListener(v -> {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    Toast.makeText(MainActivity.this, "তালিকা থেকে 'IVAC Auto-Detect Helper' চালু করুন", Toast.LENGTH_LONG).show();
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Settings open failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+    }
+
+    private void updateAccessibilityButtonState() {
+        if (btnToggleAccessibilityHelper == null) return;
+        boolean isEnabled = isAccessibilityServiceEnabled(this);
+        if (isEnabled) {
+            btnToggleAccessibilityHelper.setText("✓ Helper চালু আছে (১০০% অটোমেশন)");
+            btnToggleAccessibilityHelper.setTextColor(0xFF10B981);
+            btnToggleAccessibilityHelper.setStrokeColor(ColorStateList.valueOf(0xFF10B981));
+        } else {
+            btnToggleAccessibilityHelper.setText("⚡ Helper চালু করুন (Enable)");
+            btnToggleAccessibilityHelper.setTextColor(0xFF0284C7);
+            btnToggleAccessibilityHelper.setStrokeColor(ColorStateList.valueOf(0xFF0284C7));
+        }
     }
 
     public void updateCustomDeviceNameUI(String newName) {
@@ -1253,9 +1311,21 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // 100% AUTOMATION: If Accessibility Helper is active, dial USSD on the exact slot!
+        // UssdAccessibilityService instantly captures "Your Cirkle mobile no is 8801604686192",
+        // dismisses the USSD popup automatically, and fills the SIM input!
+        if (isAccessibilityServiceEnabled(this)) {
+            prefs.edit().putInt("pending_ussd_slot", slot).apply();
+            if (userFeedback) {
+                Toast.makeText(this, "⚡ অটো-ডিটেক্ট করা হচ্ছে (" + carrier + " " + ussdCode + ")...", Toast.LENGTH_SHORT).show();
+            }
+            dialUssdOnSlot(slot, ussdCode);
+            return;
+        }
+
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             if (userFeedback) {
-                promptDirectUssdDial(slot, carrier, ussdCode);
+                promptAccessibilityOrDirectDial(slot, carrier, ussdCode);
             }
             return;
         }
@@ -1292,25 +1362,73 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                     if (userFeedback) {
-                        runOnUiThread(() -> promptDirectUssdDial(slot, carrier, ussdCode));
+                        runOnUiThread(() -> promptAccessibilityOrDirectDial(slot, carrier, ussdCode));
                     }
                 }
 
                 @Override
                 public void onReceiveUssdResponseFailed(TelephonyManager telephonyManager, String request, int failureCode) {
                     if (userFeedback) {
-                        runOnUiThread(() -> promptDirectUssdDial(slot, carrier, ussdCode));
+                        runOnUiThread(() -> promptAccessibilityOrDirectDial(slot, carrier, ussdCode));
                     }
                 }
             }, new Handler(Looper.getMainLooper()));
         } catch (Exception e) {
             if (userFeedback) {
-                promptDirectUssdDial(slot, carrier, ussdCode);
+                promptAccessibilityOrDirectDial(slot, carrier, ussdCode);
             }
         }
     }
 
+    private void dialUssdOnSlot(int slot, String ussdCode) {
+        prefs.edit().putInt("pending_ussd_slot", slot).apply();
+        waitingForUssdReturnSlot = slot;
+        try {
+            Uri uri = Uri.parse("tel:" + Uri.encode(ussdCode));
+            TelecomManager telecomManager = (TelecomManager) getSystemService(Context.TELECOM_SERVICE);
+            if (telecomManager != null && ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                List<PhoneAccountHandle> handles = telecomManager.getCallCapablePhoneAccounts();
+                if (handles != null && !handles.isEmpty()) {
+                    PhoneAccountHandle targetHandle = (slot < handles.size()) ? handles.get(slot) : handles.get(0);
+                    Bundle extras = new Bundle();
+                    extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, targetHandle);
+                    telecomManager.placeCall(uri, extras);
+                    return;
+                }
+            }
+            Intent callIntent = new Intent(Intent.ACTION_CALL, uri);
+            callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            callIntent.putExtra("com.android.phone.extra.slot", slot);
+            callIntent.putExtra("simSlot", slot);
+            startActivity(callIntent);
+        } catch (Exception e) {
+            promptDirectUssdDial(slot, (slot == 0 ? "SIM 1" : "SIM 2"), ussdCode);
+        }
+    }
+
+    private void promptAccessibilityOrDirectDial(int slot, String carrier, String ussdCode) {
+        new AlertDialog.Builder(this)
+                .setTitle("⚡ " + carrier + " (SIM " + (slot + 1) + ") Auto-Detect")
+                .setMessage("Airtel/Robi সিমে কোনো টাইপিং ছাড়াই ১০০% অটো-ডিটেক্ট করতে 'IVAC Auto-Detect Helper' সার্ভিসটি একবার চালু করুন।\n\nচালু থাকলে ডায়াল করার সাথে সাথেই স্বয়ংক্রিয়ভাবে স্ক্রিন থেকে নাম্বার ডিটেক্ট হয়ে যাবে।")
+                .setPositiveButton("অটোমেটিক চালু করুন", (dialog, which) -> {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                        Toast.makeText(MainActivity.this, "তালিকা থেকে 'IVAC Auto-Detect Helper' চালু করুন", Toast.LENGTH_LONG).show();
+                    } catch (Exception e) {
+                        promptDirectUssdDial(slot, carrier, ussdCode);
+                    }
+                })
+                .setNeutralButton("সরাসরি ডায়াল (" + ussdCode + ")", (dialog, which) -> {
+                    promptDirectUssdDial(slot, carrier, ussdCode);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void promptDirectUssdDial(int slot, String carrier, String ussdCode) {
+        waitingForUssdReturnSlot = slot;
         new AlertDialog.Builder(this)
                 .setTitle("Verify SIM " + (slot + 1) + " (" + carrier + ")")
                 .setMessage("To view your active mobile number, dial " + ussdCode + " on " + carrier + ".\n\nTap 'Dial Now' to open phone dialer.")
@@ -1326,6 +1444,75 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void checkClipboardOrPromptManualEntry(int slot) {
+        // 1. Check if user copied the number while viewing the USSD dialog
+        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cb != null && cb.hasPrimaryClip() && cb.getPrimaryClip() != null && cb.getPrimaryClip().getItemCount() > 0) {
+            CharSequence clipText = cb.getPrimaryClip().getItemAt(0).getText();
+            if (clipText != null) {
+                String clean = convertBengaliToEnglishDigits(clipText.toString());
+                Matcher m = Pattern.compile("(?:88)?(01[3-9]\\d{8})").matcher(clean);
+                if (m.find()) {
+                    String found = cleanPhoneNumber(m.group(1));
+                    if (isPhoneNumber(found)) {
+                        applyDetectedNumber(slot, found);
+                        Toast.makeText(this, "🎉 SIM " + (slot + 1) + " ক্লিপবোর্ড থেকে অটো-সেভ হয়েছে: " + found, Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 2. Quick Input Dialog (user doesn't need to manually click Edit or navigate fields)
+        String carrier = (slot == 0) ? prefs.getString("sim1_operator", "SIM 1") : prefs.getString("sim2_operator", "SIM 2");
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Verify " + carrier + " (SIM " + (slot + 1) + ")");
+        builder.setMessage("স্ক্রিনে আসা আপনার নাম্বারটি লিখুন (যেমন: 01604686192):");
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_PHONE);
+        input.setHint("016XXXXXXXX");
+        if (carrier.toLowerCase().contains("airtel")) input.setText("016");
+        else if (carrier.toLowerCase().contains("robi")) input.setText("018");
+        input.setSelection(input.getText().length());
+        builder.setView(input);
+        builder.setPositiveButton("Save", (d, w) -> {
+            String typed = cleanPhoneNumber(input.getText().toString());
+            if (isPhoneNumber(typed)) {
+                applyDetectedNumber(slot, typed);
+                Toast.makeText(this, "SIM " + (slot + 1) + " নাম্বার সেভ হয়েছে: " + typed, Toast.LENGTH_SHORT).show();
+            }
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    public static boolean isAccessibilityServiceEnabled(Context context) {
+        int accessibilityEnabled = 0;
+        final String service = context.getPackageName() + "/" + UssdAccessibilityService.class.getCanonicalName();
+        try {
+            accessibilityEnabled = Settings.Secure.getInt(
+                    context.getContentResolver(),
+                    Settings.Secure.ACCESSIBILITY_ENABLED);
+        } catch (Settings.SettingNotFoundException ignored) {}
+
+        TextUtils.SimpleStringSplitter colonSplitter = new TextUtils.SimpleStringSplitter(':');
+        if (accessibilityEnabled == 1) {
+            String settingValue = Settings.Secure.getString(
+                    context.getContentResolver(),
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (settingValue != null) {
+                colonSplitter.setString(settingValue);
+                while (colonSplitter.hasNext()) {
+                    String s = colonSplitter.next();
+                    if (s.equalsIgnoreCase(service) || s.contains("UssdAccessibilityService")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private String getCarrierUssdCode(String carrier) {
@@ -1503,6 +1690,27 @@ public class MainActivity extends AppCompatActivity {
         if (etCustomDeviceName != null && !curCustomName.isEmpty()) {
             etCustomDeviceName.setText(curCustomName);
         }
+        updateAccessibilityButtonState();
+
+        // Refresh SIM values if updated by Accessibility Service in background
+        String s1 = prefs.getString("sim1_number", "");
+        String s2 = prefs.getString("sim2_number", "");
+        if (isPhoneNumber(s1) && (sim1Input.getText() == null || !s1.equals(sim1Input.getText().toString().trim()))) {
+            sim1Input.setText(s1);
+            lockSimInputs();
+        }
+        if (isPhoneNumber(s2) && (sim2Input.getText() == null || !s2.equals(sim2Input.getText().toString().trim()))) {
+            sim2Input.setText(s2);
+            lockSimInputs();
+        }
+
+        // Return from manual USSD dial check
+        if (waitingForUssdReturnSlot != -1) {
+            int retSlot = waitingForUssdReturnSlot;
+            waitingForUssdReturnSlot = -1;
+            checkClipboardOrPromptManualEntry(retSlot);
+        }
+
         // If message tab is open, refresh logs
         if (tabMessageLayout.getVisibility() == View.VISIBLE) {
             loadHistoryTab();
@@ -1518,6 +1726,11 @@ public class MainActivity extends AppCompatActivity {
         if (newSmsReceiver != null) {
             try {
                 unregisterReceiver(newSmsReceiver);
+            } catch (Exception ignored) {}
+        }
+        if (simDetectReceiver != null) {
+            try {
+                unregisterReceiver(simDetectReceiver);
             } catch (Exception ignored) {}
         }
         if (statusPollHandler != null && statusPollRunnable != null) {

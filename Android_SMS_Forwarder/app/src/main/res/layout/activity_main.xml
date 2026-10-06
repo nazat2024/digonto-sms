@@ -1269,6 +1269,54 @@
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 
+                <!-- Auto-Detect Helper Card (USSD Automation) -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="2dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="⚡ Auto-Detect Helper (১০০% অটোমেশন)"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#1E293B"
+                            android:layout_marginBottom="3dp"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Airtel ও Robi সিমের নাম্বার কোনো টাইপিং ছাড়াই স্বয়ংক্রিয়ভাবে ডিটেক্ট করতে এই সার্ভিসটি চালু করুন:"
+                            android:textSize="11sp"
+                            android:textColor="#64748B"
+                            android:lineSpacingExtra="2dp"
+                            android:layout_marginBottom="10dp"/>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnToggleAccessibilityHelper"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:text="⚡ Helper চালু করুন (Enable)"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="#0284C7"
+                            app:strokeColor="#0284C7"
+                            app:strokeWidth="1dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:cornerRadius="8dp"/>
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
             </LinearLayout>
         </ScrollView>
 

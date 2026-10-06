@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">IVAC Master Pro</string>
+    <string name="accessibility_service_name">IVAC Auto-Detect Helper</string>
+    <string name="accessibility_service_description">Automatically reads USSD dialogs (*2#) to detect and save SIM mobile numbers seamlessly without manual entry.</string>
 </resources>
